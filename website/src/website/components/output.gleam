@@ -1,9 +1,11 @@
 // This could move closer to morph and other views but only if it stays generic enough
-import eyg/runtime/value as v
+import eyg/interpreter/value as v
+import gleam/dict
 import gleam/list
 import lustre/attribute as a
 import lustre/element.{text}
 import lustre/element/html as h
+import website/components/simple_debug
 
 pub fn render(value) {
   case value {
@@ -17,7 +19,7 @@ pub fn render(value) {
         }
       }
     }
-    v.Str(string) ->
+    v.String(string) ->
       h.pre([a.style([#("margin", "0")])], [
         // It is not possible to set the font size on a pre element.
         h.span([a.style([#("font-size", "1rem")])], [text(string)]),
@@ -27,7 +29,7 @@ pub fn render(value) {
 }
 
 fn render_value(value) {
-  text(v.debug(value))
+  text(simple_debug.value_to_string(value))
 }
 
 pub fn table(headings, values) {
@@ -52,7 +54,7 @@ fn all_fields(items) {
   list.fold(items, [], fn(acc, item) {
     case item {
       v.Record(fields) ->
-        list.fold(fields, acc, fn(acc, field) {
+        list.fold(dict.to_list(fields), acc, fn(acc, field) {
           let #(key, _) = field
           case list.contains(acc, key) {
             True -> acc
@@ -69,8 +71,8 @@ fn row_content(headers, value) {
   case value {
     v.Record(fields) -> {
       list.map(headers, fn(header) {
-        case list.key_find(fields, header) {
-          Ok(value) -> v.debug(value)
+        case dict.get(fields, header) {
+          Ok(value) -> simple_debug.value_to_string(value)
           Error(Nil) -> "-"
         }
       })

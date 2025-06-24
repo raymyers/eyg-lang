@@ -1,11 +1,11 @@
 import easel/embed
 import eyg/analysis/jm/type_ as t
-import eyg/runtime/cast
-import eyg/runtime/interpreter/runner as r
-import eyg/runtime/interpreter/state
-import eyg/runtime/value as v
-import eygir/annotated as e
-import eygir/decode
+import eyg/interpreter/cast
+import eyg/interpreter/expression as r
+import eyg/interpreter/state
+import eyg/interpreter/value as v
+import eyg/ir/dag_json
+import gleam/bit_array
 import gleam/dict
 import gleam/dynamicx
 import gleam/int
@@ -48,13 +48,19 @@ fn applet(root) {
     Ok(script) -> {
       console.log(script)
       let assert Ok(source) =
-        decode.from_json(string.replace(element.inner_text(script), "\\/", "/"))
+        dag_json.from_block(
+          bit_array.from_string(string.replace(
+            element.inner_text(script),
+            "\\/",
+            "/",
+          )),
+        )
       {
+        // Env is returned but probably not needed
         let env = stdlib.env()
         let rev = []
         let k = dict.new()
-        let source = e.add_annotation(source, Nil)
-        let assert Ok(term) = r.execute(source, env, k)
+        let assert Ok(term) = r.execute(source, [])
         use func <- result.then(cast.field("func", cast.any, term))
         use arg <- result.then(cast.field("arg", cast.any, term))
         // run func arg can be a thing
@@ -68,15 +74,17 @@ fn applet(root) {
             let id = int.to_string(list.length(saved))
             let saved = [action, ..saved]
             ref.set(actions, saved)
-            Ok(v.Str(id))
+            Ok(v.String(id))
           })
           |> dict.insert("Log", console_log().2)
         let state = ref.new(arg)
         let render = fn() {
           let current = ref.get(state)
-          let result = r.call(func, [#(current, Nil)], env, handlers)
+          io.debug("needs to handle handlers")
+
+          let result = r.call(func, [#(current, Nil)])
           let _ = case result {
-            Ok(v.Str(page)) -> element.set_inner_html(root, page)
+            Ok(v.String(page)) -> element.set_inner_html(root, page)
             _ -> {
               io.debug(#("unexpected", result))
               panic("nope")
@@ -92,8 +100,8 @@ fn applet(root) {
                   // handle effects
                   let current = ref.get(state)
                   // io.debug(ref.get(actions))
-                  let assert Ok(next) =
-                    r.call(code, [#(current, Nil)], env, dict.new())
+                  io.debug("This one is supposed to be pure")
+                  let assert Ok(next) = r.call(code, [#(current, Nil)])
                   ref.set(state, next)
                   ref.set(actions, [])
                   render()
@@ -144,6 +152,6 @@ pub fn console_log() {
   #(t.String, t.unit, fn(message) {
     use message <- result.then(cast.as_string(message))
     console.log(message)
-    Ok(v.unit)
+    Ok(v.unit())
   })
 }

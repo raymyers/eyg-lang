@@ -5,10 +5,15 @@ import lustre
 import lustre/attribute as a
 import lustre/element
 import lustre/element/html as h
+import lustre/event
+import morph/editable as e
 import mysig/asset
 import mysig/html
 import website/components
+import website/components/example
+import website/components/example/view
 import website/components/snippet
+import website/components/tree
 import website/routes/common
 import website/routes/documentation/state
 
@@ -27,13 +32,13 @@ fn layout(body) {
         html.stylesheet(asset.src(layout)),
         html.stylesheet(asset.src(neo)),
         common.prism_style(),
-        html.plausible("eyg.run"),
       ],
       common.page_meta(
         "/",
         "EYG",
         "EYG is a programming language for predictable, useful and most of all confident development.",
       ),
+      common.diagnostics(),
     ]),
     body,
   )
@@ -157,6 +162,7 @@ fn render(state) {
               "Closure serialization",
             ]),
             section_content("Editor features", ["Copy paste", "Next vacant"]),
+            section_content("Advanced", ["Show IR"]),
           ]),
         ],
       ),
@@ -443,25 +449,25 @@ fn render(state) {
         ),
         // Abort and flow control
         // chapter("External", [example(state, state.Externals)], None),
-        chapter(
-          "11",
-          "Closure serialization",
-          [
-            example(state, state.capture_key),
-            p(
-              "In EYG any value can be captured, and transformed to EYG source code.
-              This includes functions and their environments and effect handlers applicable at that time.",
-            ),
-            p(
-              "Note, only the required environment is captured. In this example the variable ignore is not part of the bundle.",
-            ),
-            p(
-              "Closure capture and serialization allows EYG programs to extend over multiple machines.
-              Source code can be sent to another interpreter or transpiled using the builtin to_javascript.",
-            ),
-          ],
-          None,
-        ),
+        // chapter(
+        //   "11",
+        //   "Closure serialization",
+        //   [
+        //     example(state, state.capture_key),
+        //     p(
+        //       "In EYG any value can be captured, and transformed to EYG source code.
+        //       This includes functions and their environments and effect handlers applicable at that time.",
+        //     ),
+        //     p(
+        //       "Note, only the required environment is captured. In this example the variable ignore is not part of the bundle.",
+        //     ),
+        //     p(
+        //       "Closure capture and serialization allows EYG programs to extend over multiple machines.
+        //       Source code can be sent to another interpreter or transpiled.",
+        //     ),
+        //   ],
+        //   None,
+        // ),
         chapter(
           "12",
           "Copy paste",
@@ -490,6 +496,15 @@ fn render(state) {
           ],
           None,
         ),
+        chapter(
+          "13",
+          "Show IR",
+          [
+            p("The intermediate representation (IR) is a stable interface."),
+            p("Press '?' in any example to toggle showing the IR"),
+          ],
+          None,
+        ),
         h.div([a.style([#("height", "30vh")])], []),
         components.footer(),
       ]),
@@ -498,11 +513,19 @@ fn render(state) {
 }
 
 fn example(state: state.State, identifier) {
-  let snippet = state.get_example(state, identifier)
-  let failure = case state.active {
-    state.Editing(key, failure) if identifier == key -> failure
-    _ -> None
-  }
-  snippet.render_embedded(snippet, failure)
-  |> element.map(state.SnippetMessage(identifier, _))
+  let example = state.get_example(state, identifier)
+  element.fragment([
+    example
+      |> view.render
+      |> element.map(state.ExampleMessage(identifier, _)),
+    case state.show_help {
+      True ->
+        h.pre(
+          [a.class("leading-none p-2 bg-gray-200")],
+          tree.lines(example.snippet.editable |> e.to_annotated([]))
+            |> list.map(fn(line) { element.text(line <> "\n") }),
+        )
+      False -> element.none()
+    },
+  ])
 }

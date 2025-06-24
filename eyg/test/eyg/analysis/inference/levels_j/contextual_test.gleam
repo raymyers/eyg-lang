@@ -3,8 +3,8 @@ import eyg/analysis/type_/binding
 import eyg/analysis/type_/binding/debug
 import eyg/analysis/type_/binding/error
 import eyg/analysis/type_/isomorphic as t
+import eyg/ir/tree as ir
 import eyg/parse
-import eygir/annotated
 import gleam/dict
 import gleam/list
 import gleeunit/should
@@ -13,12 +13,11 @@ fn parse(src) {
   src
   |> parse.all_from_string()
   |> should.be_ok()
-  |> annotated.drop_annotation()
 }
 
 fn do_resolve(return) {
   let #(acc, bindings) = return
-  let acc = annotated.strip_annotation(acc).1
+  let acc = ir.get_annotation(acc)
   let #(_, acc) =
     list.map_fold(acc, bindings, fn(bindings, node) {
       let #(error, typed, effect, env) = node
@@ -346,7 +345,7 @@ pub fn builtin_test() {
 
   "!not_a_thing"
   |> calc(t.Empty)
-  |> should.equal([#(Error(error.MissingVariable("not_a_thing")), "0", "")])
+  |> should.equal([#(Error(error.MissingBuiltin("not_a_thing")), "0", "")])
 }
 
 // (x) -<Log String {}, Alert String 0, ..1> List(x)

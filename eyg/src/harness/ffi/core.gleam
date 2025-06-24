@@ -1,12 +1,14 @@
 import eyg/analysis/typ as t
 import eyg/compile
-import eyg/runtime/capture
-import eyg/runtime/cast
-import eyg/runtime/interpreter/runner as r
-import eyg/runtime/interpreter/state
-import eyg/runtime/value as v
-import eygir/annotated as e
-import eygir/encode
+import eyg/interpreter/builtin
+import eyg/interpreter/capture
+import eyg/interpreter/cast
+import eyg/interpreter/expression as r
+import eyg/interpreter/state
+import eyg/interpreter/value as v
+import eyg/ir/dag_json
+import eyg/ir/tree as ir
+import eyg/runtime/value as old_value
 import gleam/bit_array
 import gleam/dict
 import gleam/io
@@ -18,22 +20,13 @@ import harness/env.{extend, init}
 import harness/ffi/integer
 import harness/ffi/linked_list
 import harness/ffi/string
-import plinth/browser/window
 import plinth/javascript/console
 import plinth/javascript/global
 
 pub fn equal() {
   let type_ =
     t.Fun(t.Unbound(0), t.Open(1), t.Fun(t.Unbound(0), t.Open(2), t.boolean))
-  #(type_, state.Arity2(do_equal))
-}
-
-fn do_equal(left, right, rev, env, k) {
-  let value = case left == right {
-    True -> v.true
-    False -> v.false
-  }
-  Ok(#(state.V(value), env, k))
+  #(type_, builtin.equal)
 }
 
 pub fn debug() {
@@ -41,8 +34,8 @@ pub fn debug() {
   #(type_, state.Arity1(do_debug))
 }
 
-fn do_debug(term, rev, env, k) {
-  Ok(#(state.V(v.Str(v.debug(term))), env, k))
+fn do_debug(term, _meta, env, k) {
+  Ok(#(state.V(v.String(old_value.debug(term))), env, k))
 }
 
 pub fn fix() {
@@ -52,52 +45,11 @@ pub fn fix() {
       t.Open(-3),
       t.Unbound(-1),
     )
-  #(type_, state.Arity1(do_fix))
-}
-
-fn do_fix(builder, rev, env, k) {
-  state.call(builder, v.Partial(v.Builtin("fixed"), [builder]), rev, env, k)
+  #(type_, builtin.fix)
 }
 
 pub fn fixed() {
-  // I'm not sure a type ever means anything here
-  // fixed is not a function you can reference directly it's just a runtime
-  // value produced by the fix action
-  #(
-    t.Unbound(0),
-    state.Arity2(fn(builder, arg, meta, env, k) {
-      state.call(
-        builder,
-        // always pass a reference to itself
-        v.Partial(v.Builtin("fixed"), [builder]),
-        meta,
-        env,
-        // fn(partial) {
-        //   let #(c, rev, e, k) = state.call(partial, arg, rev, env, k)
-        //   state.K(c, rev, e, k)
-        // },
-        state.Stack(state.CallWith(arg, env), meta, k),
-      )
-    }),
-  )
-  //   #(
-  //   t.Unbound(0),
-  //   state.Arity1(fn(builder, rev, env, k) {
-  //     state.call(
-  //       builder,
-  //       // always pass a reference to itself
-  //       v.Partial(v.Builtin("fixed"), [builder]),
-  //       rev,
-  //       env,
-  //       // fn(partial) {
-  //       //   let #(c, rev, e, k) = state.call(partial, arg, rev, env, k)
-  //       //   state.K(c, rev, e, k)
-  //       // },
-  //       // Some(state.Stack(state.CallWith(arg, rev, env), k)),
-  //       k
-  //     )
-  //   }),
-  // )
+  #(t.Unbound(0), builtin.fixed)
 }
 
 pub fn eval() {
@@ -118,6 +70,7 @@ pub fn lib() {
   |> extend("encode_uri", encode_uri())
   |> extend("decode_uri_component", decode_uri_component())
   |> extend("base64_encode", base64_encode())
+  |> extend("eval", eval())
   // binary
   |> extend("binary_from_integers", binary_from_integers())
   // integer
@@ -126,7 +79,6 @@ pub fn lib() {
   |> extend("int_subtract", integer.subtract())
   |> extend("int_multiply", integer.multiply())
   |> extend("int_divide", integer.divide())
-  |> extend("int_absolute", integer.absolute())
   |> extend("int_parse", integer.parse())
   |> extend("int_to_string", integer.to_string())
   // string
@@ -141,35 +93,34 @@ pub fn lib() {
   |> extend("string_length", string.length())
   |> extend("pop_grapheme", string.pop_grapheme())
   |> extend("string_to_binary", string.to_binary())
-  |> extend("binary_to_string", string.from_binary())
+  |> extend("string_from_binary", string.from_binary())
+  // pop_prefix is the same as split once need some testing on speed
   |> extend("pop_prefix", string.pop_prefix())
   // list
   |> extend("uncons", linked_list.uncons())
   |> extend("list_pop", linked_list.pop())
   |> extend("list_fold", linked_list.fold())
-  |> extend("eval", eval())
 }
 
-pub fn do_eval(source, rev, env, k) {
+pub fn do_eval(source, _meta, env, k) {
   use source <- result.then(cast.as_list(source))
   case language_to_expression(source) {
     Ok(expression) -> {
       // must be value otherwise/effect continuations need sorting
-      let result =
-        r.execute(expression, state.Env([], dict.new(), lib().1), dict.new())
+      let result = r.execute(expression, [])
       let value = case result {
         Ok(value) -> v.ok(value)
         _ -> {
           console.log("failed to run expression")
           console.log(expression)
           console.log(result)
-          v.error(v.unit)
+          v.error(v.unit())
         }
       }
       // console.log(value)
       Ok(#(state.V(value), env, k))
     }
-    Error(_) -> Ok(#(state.V(v.error(v.unit)), env, k))
+    Error(_) -> Ok(#(state.V(v.error(v.unit())), env, k))
   }
 }
 
@@ -181,8 +132,9 @@ pub fn serialize() {
 }
 
 pub fn do_serialize(term, rev, env, k) {
-  let exp = capture.capture(term)
-  Ok(#(state.V(v.Str(encode.to_json(exp))), env, k))
+  let exp = capture.capture(term, rev)
+  let assert Ok(src) = bit_array.to_string(dag_json.to_block(exp))
+  Ok(#(state.V(v.String(src)), env, k))
 }
 
 pub fn capture() {
@@ -193,9 +145,8 @@ pub fn capture() {
 }
 
 pub fn do_capture(term, rev, env, k) {
-  let exp = capture.capture(term)
+  let exp = capture.capture(term, rev)
   // wasteful but ideally capture will return annotated in the future
-  let exp = e.add_annotation(exp, Nil)
   Ok(#(state.V(v.LinkedList(expression_to_language(exp))), env, k))
 }
 
@@ -207,13 +158,11 @@ pub fn to_javascript() {
 }
 
 pub fn do_to_javascript(func, arg, meta, env, k) {
-  let func = capture.capture(func)
-  let func = e.add_annotation(func, Nil)
-  let arg = capture.capture(arg)
-  let arg = e.add_annotation(arg, Nil)
-  let exp = #(e.Apply(func, arg), Nil)
+  let func = capture.capture(func, meta)
+  let arg = capture.capture(arg, meta)
+  let exp = #(ir.Apply(func, arg), meta)
 
-  Ok(#(state.V(v.Str(compile.to_js(exp, dict.new()))), env, k))
+  Ok(#(state.V(v.String(compile.to_js(exp, dict.new()))), env, k))
 }
 
 // block needs squashing with row on the front
@@ -279,14 +228,14 @@ pub fn do_to_javascript(func, arg, meta, env, k) {
 pub fn expression_to_language(exp) {
   let #(exp, _meta) = exp
   case exp {
-    e.Variable(label) -> [v.Tagged("Variable", v.Str(label))]
-    e.Lambda(label, body) -> {
-      let head = v.Tagged("Lambda", v.Str(label))
+    ir.Variable(label) -> [v.Tagged("Variable", v.String(label))]
+    ir.Lambda(label, body) -> {
+      let head = v.Tagged("Lambda", v.String(label))
       let rest = expression_to_language(body)
       [head, ..rest]
     }
-    e.Apply(func, argument) -> {
-      let head = v.Tagged("Apply", v.unit)
+    ir.Apply(func, argument) -> {
+      let head = v.Tagged("Apply", v.unit())
       let rest =
         list.append(
           expression_to_language(func),
@@ -294,8 +243,8 @@ pub fn expression_to_language(exp) {
         )
       [head, ..rest]
     }
-    e.Let(label, definition, body) -> {
-      let head = v.Tagged("Let", v.Str(label))
+    ir.Let(label, definition, body) -> {
+      let head = v.Tagged("Let", v.String(label))
       [
         head,
         ..list.append(
@@ -305,35 +254,37 @@ pub fn expression_to_language(exp) {
       ]
     }
 
-    e.Binary(value) -> [v.Tagged("Binary", v.Binary(value))]
-    e.Integer(value) -> [v.Tagged("Integer", v.Integer(value))]
-    e.Str(value) -> [v.Tagged("String", v.Str(value))]
+    ir.Binary(value) -> [v.Tagged("Binary", v.Binary(value))]
+    ir.Integer(value) -> [v.Tagged("Integer", v.Integer(value))]
+    ir.String(value) -> [v.Tagged("String", v.String(value))]
 
-    e.Tail -> [v.Tagged("Tail", v.unit)]
-    e.Cons -> [v.Tagged("Cons", v.unit)]
+    ir.Tail -> [v.Tagged("Tail", v.unit())]
+    ir.Cons -> [v.Tagged("Cons", v.unit())]
 
-    e.Vacant(comment) -> [v.Tagged("Vacant", v.Str(comment))]
+    ir.Vacant -> [v.Tagged("Vacant", v.unit())]
 
-    e.Empty -> [v.Tagged("Empty", v.unit)]
-    e.Extend(label) -> [v.Tagged("Extend", v.Str(label))]
-    e.Select(label) -> [v.Tagged("Select", v.Str(label))]
-    e.Overwrite(label) -> [v.Tagged("Overwrite", v.Str(label))]
-    e.Tag(label) -> [v.Tagged("Tag", v.Str(label))]
-    e.Case(label) -> [v.Tagged("Case", v.Str(label))]
-    e.NoCases -> [v.Tagged("NoCases", v.unit)]
+    ir.Empty -> [v.Tagged("Empty", v.unit())]
+    ir.Extend(label) -> [v.Tagged("Extend", v.String(label))]
+    ir.Select(label) -> [v.Tagged("Select", v.String(label))]
+    ir.Overwrite(label) -> [v.Tagged("Overwrite", v.String(label))]
+    ir.Tag(label) -> [v.Tagged("Tag", v.String(label))]
+    ir.Case(label) -> [v.Tagged("Case", v.String(label))]
+    ir.NoCases -> [v.Tagged("NoCases", v.unit())]
 
-    e.Perform(label) -> [v.Tagged("Perform", v.Str(label))]
-    e.Handle(label) -> [v.Tagged("Handle", v.Str(label))]
-    e.Shallow(label) -> [v.Tagged("Shallow", v.Str(label))]
-    e.Builtin(identifier) -> [v.Tagged("Builtin", v.Str(identifier))]
-    e.Reference(identifier) -> [v.Tagged("Reference", v.Str(identifier))]
-    e.NamedReference(package, release) -> [
+    ir.Perform(label) -> [v.Tagged("Perform", v.String(label))]
+    ir.Handle(label) -> [v.Tagged("Handle", v.String(label))]
+    ir.Builtin(identifier) -> [v.Tagged("Builtin", v.String(identifier))]
+    ir.Reference(identifier) -> [v.Tagged("Reference", v.String(identifier))]
+    ir.Release(package, release, identifier) -> [
       v.Tagged(
-        "NamedReference",
-        v.Record([
-          #("package", v.Str(package)),
-          #("release", v.Integer(release)),
-        ]),
+        "Release",
+        v.Record(
+          dict.from_list([
+            #("package", v.String(package)),
+            #("release", v.Integer(release)),
+            #("identifier", v.String(identifier)),
+          ]),
+        ),
       ),
     ]
   }
@@ -363,116 +314,119 @@ fn stack_language_to_expression(source, stack) {
 fn apply(exp, stack) {
   case stack {
     [] -> Ok(exp)
-    [DoBody(label), ..stack] -> apply(#(e.Lambda(label, exp), Nil), stack)
+    [DoBody(label), ..stack] -> apply(#(ir.Lambda(label, exp), Nil), stack)
     [DoFunc, ..stack] -> Error([DoArg(exp), ..stack])
-    [DoArg(func), ..stack] -> apply(#(e.Apply(func, exp), Nil), stack)
+    [DoArg(func), ..stack] -> apply(#(ir.Apply(func, exp), Nil), stack)
     [DoValue(label), ..stack] -> Error([DoThen(label, exp), ..stack])
     [DoThen(label, value), ..stack] ->
-      apply(#(e.Let(label, value, exp), Nil), stack)
+      apply(#(ir.Let(label, value, exp), Nil), stack)
   }
 }
 
 type NativeStack(m) {
   DoBody(String)
   DoFunc
-  DoArg(e.Node(m))
+  DoArg(ir.Node(m))
   DoValue(String)
-  DoThen(String, e.Node(m))
+  DoThen(String, ir.Node(m))
 }
 
 fn step(node, stack) {
   case node {
-    v.Tagged("Variable", v.Str(label)) -> {
-      #(Some(e.Variable(label)), stack)
+    v.Tagged("Variable", v.String(label)) -> {
+      #(Some(ir.Variable(label)), stack)
     }
-    v.Tagged("Lambda", v.Str(label)) -> {
+    v.Tagged("Lambda", v.String(label)) -> {
       #(None, [DoBody(label), ..stack])
     }
 
     // TODO can we pattern match on constants
-    v.Tagged("Apply", v.Record([])) -> {
+    v.Tagged("Apply", v.Record(_)) -> {
       // use arg, rest <- do_language_to_expression(rest)
       #(None, [DoFunc, ..stack])
     }
-    v.Tagged("Let", v.Str(label)) -> {
+    v.Tagged("Let", v.String(label)) -> {
       // use then, rest <- do_language_to_expression(rest)
       #(None, [DoValue(label), ..stack])
     }
 
-    v.Tagged("Integer", v.Integer(value)) -> #(Some(e.Integer(value)), stack)
-    v.Tagged("String", v.Str(value)) -> #(Some(e.Str(value)), stack)
-    v.Tagged("Binary", v.Binary(value)) -> #(Some(e.Binary(value)), stack)
+    v.Tagged("Integer", v.Integer(value)) -> #(Some(ir.Integer(value)), stack)
+    v.Tagged("String", v.String(value)) -> #(Some(ir.String(value)), stack)
+    v.Tagged("Binary", v.Binary(value)) -> #(Some(ir.Binary(value)), stack)
 
-    v.Tagged("Tail", v.Record([])) -> #(Some(e.Tail), stack)
-    v.Tagged("Cons", v.Record([])) -> #(Some(e.Cons), stack)
+    v.Tagged("Tail", v.Record(_)) -> #(Some(ir.Tail), stack)
+    v.Tagged("Cons", v.Record(_)) -> #(Some(ir.Cons), stack)
 
-    v.Tagged("Vacant", v.Str(comment)) -> #(Some(e.Vacant(comment)), stack)
+    v.Tagged("Vacant", v.Record(_)) -> #(Some(ir.Vacant), stack)
 
-    v.Tagged("Empty", v.Record([])) -> #(Some(e.Empty), stack)
-    v.Tagged("Extend", v.Str(label)) -> #(Some(e.Extend(label)), stack)
-    v.Tagged("Select", v.Str(label)) -> #(Some(e.Select(label)), stack)
-    v.Tagged("Overwrite", v.Str(label)) -> #(Some(e.Overwrite(label)), stack)
-    v.Tagged("Tag", v.Str(label)) -> #(Some(e.Tag(label)), stack)
-    v.Tagged("Case", v.Str(label)) -> #(Some(e.Case(label)), stack)
-    v.Tagged("NoCases", v.Record([])) -> #(Some(e.NoCases), stack)
+    v.Tagged("Empty", v.Record(_)) -> #(Some(ir.Empty), stack)
+    v.Tagged("Extend", v.String(label)) -> #(Some(ir.Extend(label)), stack)
+    v.Tagged("Select", v.String(label)) -> #(Some(ir.Select(label)), stack)
+    v.Tagged("Overwrite", v.String(label)) -> #(
+      Some(ir.Overwrite(label)),
+      stack,
+    )
+    v.Tagged("Tag", v.String(label)) -> #(Some(ir.Tag(label)), stack)
+    v.Tagged("Case", v.String(label)) -> #(Some(ir.Case(label)), stack)
+    v.Tagged("NoCases", v.Record(_)) -> #(Some(ir.NoCases), stack)
 
-    v.Tagged("Perform", v.Str(label)) -> #(Some(e.Perform(label)), stack)
-    v.Tagged("Handle", v.Str(label)) -> #(Some(e.Handle(label)), stack)
-    v.Tagged("Shallow", v.Str(label)) -> #(Some(e.Shallow(label)), stack)
-    v.Tagged("Builtin", v.Str(identifier)) -> #(
-      Some(e.Builtin(identifier)),
+    v.Tagged("Perform", v.String(label)) -> #(Some(ir.Perform(label)), stack)
+    v.Tagged("Handle", v.String(label)) -> #(Some(ir.Handle(label)), stack)
+    v.Tagged("Builtin", v.String(identifier)) -> #(
+      Some(ir.Builtin(identifier)),
       stack,
     )
     remaining -> {
       io.debug(#("remaining values", remaining, stack))
       // Error("error debuggin expressions")
-      panic("bad decodeding")
+      panic as "bad decodeding"
     }
   }
 }
 
 fn do_language_to_expression(term, k) {
   case term {
-    [v.Tagged("Variable", v.Str(label)), ..rest] -> {
-      k(e.Variable(label), rest)
+    [v.Tagged("Variable", v.String(label)), ..rest] -> {
+      k(ir.Variable(label), rest)
     }
-    [v.Tagged("Lambda", v.Str(label)), ..rest] -> {
+    [v.Tagged("Lambda", v.String(label)), ..rest] -> {
       use body, rest <- do_language_to_expression(rest)
-      k(e.Lambda(label, #(body, Nil)), rest)
+      k(ir.Lambda(label, #(body, Nil)), rest)
     }
-    [v.Tagged("Apply", v.Record([])), ..rest] -> {
+    [v.Tagged("Apply", v.Record(_)), ..rest] -> {
       use func, rest <- do_language_to_expression(rest)
       use arg, rest <- do_language_to_expression(rest)
-      k(e.Apply(#(func, Nil), #(arg, Nil)), rest)
+      k(ir.Apply(#(func, Nil), #(arg, Nil)), rest)
     }
-    [v.Tagged("Let", v.Str(label)), ..rest] -> {
+    [v.Tagged("Let", v.String(label)), ..rest] -> {
       use value, rest <- do_language_to_expression(rest)
       use then, rest <- do_language_to_expression(rest)
-      k(e.Let(label, #(value, Nil), #(then, Nil)), rest)
+      k(ir.Let(label, #(value, Nil), #(then, Nil)), rest)
     }
 
-    [v.Tagged("Integer", v.Integer(value)), ..rest] -> k(e.Integer(value), rest)
-    [v.Tagged("String", v.Str(value)), ..rest] -> k(e.Str(value), rest)
-    [v.Tagged("Binary", v.Binary(value)), ..rest] -> k(e.Binary(value), rest)
+    [v.Tagged("Integer", v.Integer(value)), ..rest] ->
+      k(ir.Integer(value), rest)
+    [v.Tagged("String", v.String(value)), ..rest] -> k(ir.String(value), rest)
+    [v.Tagged("Binary", v.Binary(value)), ..rest] -> k(ir.Binary(value), rest)
 
-    [v.Tagged("Tail", v.Record([])), ..rest] -> k(e.Tail, rest)
-    [v.Tagged("Cons", v.Record([])), ..rest] -> k(e.Cons, rest)
+    [v.Tagged("Tail", v.Record(_)), ..rest] -> k(ir.Tail, rest)
+    [v.Tagged("Cons", v.Record(_)), ..rest] -> k(ir.Cons, rest)
 
-    [v.Tagged("Vacant", v.Str(comment)), ..rest] -> k(e.Vacant(comment), rest)
+    [v.Tagged("Vacant", v.Record(_)), ..rest] -> k(ir.Vacant, rest)
 
-    [v.Tagged("Empty", v.Record([])), ..rest] -> k(e.Empty, rest)
-    [v.Tagged("Extend", v.Str(label)), ..rest] -> k(e.Extend(label), rest)
-    [v.Tagged("Select", v.Str(label)), ..rest] -> k(e.Select(label), rest)
-    [v.Tagged("Overwrite", v.Str(label)), ..rest] -> k(e.Overwrite(label), rest)
-    [v.Tagged("Tag", v.Str(label)), ..rest] -> k(e.Tag(label), rest)
-    [v.Tagged("Case", v.Str(label)), ..rest] -> k(e.Case(label), rest)
-    [v.Tagged("NoCases", v.Record([])), ..rest] -> k(e.NoCases, rest)
+    [v.Tagged("Empty", v.Record(_)), ..rest] -> k(ir.Empty, rest)
+    [v.Tagged("Extend", v.String(label)), ..rest] -> k(ir.Extend(label), rest)
+    [v.Tagged("Select", v.String(label)), ..rest] -> k(ir.Select(label), rest)
+    [v.Tagged("Overwrite", v.String(label)), ..rest] ->
+      k(ir.Overwrite(label), rest)
+    [v.Tagged("Tag", v.String(label)), ..rest] -> k(ir.Tag(label), rest)
+    [v.Tagged("Case", v.String(label)), ..rest] -> k(ir.Case(label), rest)
+    [v.Tagged("NoCases", v.Record(_)), ..rest] -> k(ir.NoCases, rest)
 
-    [v.Tagged("Perform", v.Str(label)), ..rest] -> k(e.Perform(label), rest)
-    [v.Tagged("Handle", v.Str(label)), ..rest] -> k(e.Handle(label), rest)
-    [v.Tagged("Shallow", v.Str(label)), ..rest] -> k(e.Shallow(label), rest)
-    [v.Tagged("Builtin", v.Str(identifier)), ..rest] ->
-      k(e.Builtin(identifier), rest)
+    [v.Tagged("Perform", v.String(label)), ..rest] -> k(ir.Perform(label), rest)
+    [v.Tagged("Handle", v.String(label)), ..rest] -> k(ir.Handle(label), rest)
+    [v.Tagged("Builtin", v.String(identifier)), ..rest] ->
+      k(ir.Builtin(identifier), rest)
     remaining -> {
       io.debug(#("remaining values", remaining, k))
       Error("error debuggin expressions")
@@ -485,9 +439,9 @@ pub fn decode_uri_component() {
   #(type_, state.Arity1(do_decode_uri_component))
 }
 
-pub fn do_decode_uri_component(term, rev, env, k) {
+pub fn do_decode_uri_component(term, _meta, env, k) {
   use unencoded <- result.then(cast.as_string(term))
-  Ok(#(state.V(v.Str(global.decode_uri_component(unencoded))), env, k))
+  Ok(#(state.V(v.String(global.decode_uri_component(unencoded))), env, k))
 }
 
 pub fn encode_uri() {
@@ -495,9 +449,9 @@ pub fn encode_uri() {
   #(type_, state.Arity1(do_encode_uri))
 }
 
-pub fn do_encode_uri(term, rev, env, k) {
+pub fn do_encode_uri(term, _meta, env, k) {
   use unencoded <- result.then(cast.as_string(term))
-  Ok(#(state.V(v.Str(global.encode_uri(unencoded))), env, k))
+  Ok(#(state.V(v.String(global.encode_uri(unencoded))), env, k))
 }
 
 pub fn base64_encode() {
@@ -505,10 +459,10 @@ pub fn base64_encode() {
   #(type_, state.Arity1(do_base64_encode))
 }
 
-pub fn do_base64_encode(term, rev, env, k) {
+pub fn do_base64_encode(term, _meta, env, k) {
   use unencoded <- result.then(cast.as_string(term))
   let value =
-    v.Str(gleam_string.replace(
+    v.String(gleam_string.replace(
       bit_array.base64_encode(bit_array.from_string(unencoded), True),
       "\r\n",
       "",
@@ -518,15 +472,5 @@ pub fn do_base64_encode(term, rev, env, k) {
 
 pub fn binary_from_integers() {
   let type_ = t.Fun(t.LinkedList(t.Integer), t.Open(-1), t.Binary)
-  #(type_, state.Arity1(do_binary_from_integers))
-}
-
-pub fn do_binary_from_integers(term, rev, env, k) {
-  use parts <- result.then(cast.as_list(term))
-  let content =
-    list.fold(list.reverse(parts), <<>>, fn(acc, el) {
-      let assert v.Integer(i) = el
-      <<i, acc:bits>>
-    })
-  Ok(#(state.V(v.Binary(content)), env, k))
+  #(type_, builtin.binary_from_integers)
 }

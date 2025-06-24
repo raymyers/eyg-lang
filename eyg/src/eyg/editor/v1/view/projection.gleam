@@ -2,7 +2,8 @@ import easel/location.{type Location, Location, child, focused, open}
 import eyg/analysis/jm/type_ as t
 import eyg/editor/v1/app.{SelectNode}
 import eyg/editor/v1/view/type_
-import eygir/expression as e
+import eyg/ir/tree as ir
+import eyg/runtime/value as old_value
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -63,23 +64,23 @@ fn click(loc: Location) {
   on_click(SelectNode(loc.path))
 }
 
-pub fn do_render(exp, br, loc, inferred) {
-  case exp {
-    e.Variable(var) -> [variable(var, loc, inferred)]
-    e.Lambda(param, body) -> [lambda(param, body, br, loc, inferred)]
-    e.Apply(func, arg) -> call(func, arg, br, loc, inferred)
-    e.Let(label, value, then) ->
+pub fn do_render(exp: ir.Node(_), br, loc, inferred) {
+  case exp.0 {
+    ir.Variable(var) -> [variable(var, loc, inferred)]
+    ir.Lambda(param, body) -> [lambda(param, body, br, loc, inferred)]
+    ir.Apply(func, arg) -> call(func, arg, br, loc, inferred)
+    ir.Let(label, value, then) ->
       assigment(label, value, then, br, loc, inferred)
-    e.Binary(value) -> [binary(value, loc, inferred)]
-    e.Str(value) -> [string(value, loc, inferred)]
-    e.Integer(value) -> [integer(value, loc, inferred)]
-    e.Tail -> [
+    ir.Binary(value) -> [binary(value, loc, inferred)]
+    ir.String(value) -> [string(value, loc, inferred)]
+    ir.Integer(value) -> [integer(value, loc, inferred)]
+    ir.Tail -> [
       span(
         [click(loc), classes(highlight(focused(loc), error(loc, inferred)))],
         [text("[]")],
       ),
     ]
-    e.Cons -> [
+    ir.Cons -> [
       // maybe gray but probably better rendering in apply
       span(
         [
@@ -92,19 +93,19 @@ pub fn do_render(exp, br, loc, inferred) {
         [text("cons")],
       ),
     ]
-    e.Vacant(comment) -> [vacant(comment, loc, inferred)]
-    e.Empty -> [
+    ir.Vacant -> [vacant(loc, inferred)]
+    ir.Empty -> [
       span(
         [click(loc), classes(highlight(focused(loc), error(loc, inferred)))],
         [text("{}")],
       ),
     ]
-    e.Extend(label) -> [extend(label, loc, inferred)]
-    e.Select(label) -> [select(label, loc, inferred)]
-    e.Overwrite(label) -> [overwrite(label, loc, inferred)]
-    e.Tag(label) -> [tag(label, loc, inferred)]
-    e.Case(label) -> [match(label, br, loc, inferred)]
-    e.NoCases -> [
+    ir.Extend(label) -> [extend(label, loc, inferred)]
+    ir.Select(label) -> [select(label, loc, inferred)]
+    ir.Overwrite(label) -> [overwrite(label, loc, inferred)]
+    ir.Tag(label) -> [tag(label, loc, inferred)]
+    ir.Case(label) -> [match(label, br, loc, inferred)]
+    ir.NoCases -> [
       span(
         [
           click(loc),
@@ -116,20 +117,20 @@ pub fn do_render(exp, br, loc, inferred) {
         [text("nocases")],
       ),
     ]
-    e.Perform(label) -> [perform(label, loc, inferred)]
-    e.Handle(label) -> [handle(label, loc, inferred)]
-    e.Shallow(label) -> [shallow(label, loc, inferred)]
-    e.Builtin(id) -> [builtin(id, loc, inferred)]
-    e.Reference(id) -> [builtin(id, loc, inferred)]
-    e.NamedReference(package, release) -> [
+    ir.Perform(label) -> [perform(label, loc, inferred)]
+    ir.Handle(label) -> [handle(label, loc, inferred)]
+    ir.Builtin(id) -> [builtin(id, loc, inferred)]
+    ir.Reference(id) -> [builtin(id, loc, inferred)]
+    ir.Release(package, release, _id) -> [
+      // TODO use id
       builtin("@" <> package <> ":" <> int.to_string(release), loc, inferred),
     ]
   }
 }
 
-fn render_block(exp, br, loc, inferred) {
-  case exp {
-    e.Let(_, _, _) ->
+fn render_block(exp: ir.Node(_), br, loc, inferred) {
+  case exp.0 {
+    ir.Let(_, _, _) ->
       case open(loc) {
         True -> {
           let br_inner = string.append(br, "  ")
@@ -188,8 +189,8 @@ fn lambda(param, body, br, loc, inferred) {
 
 fn render_branch(
   label,
-  then,
-  otherwise,
+  then: ir.Node(_),
+  otherwise: ir.Node(_),
   br,
   loc_branch,
   loc_otherwise,
@@ -213,14 +214,14 @@ fn render_branch(
       [classes(highlight(focused(loc_branch), error(loc_branch, inferred)))],
       [match, text(" "), ..branch],
     ),
-    ..case otherwise {
-      e.NoCases -> [
+    ..case otherwise.0 {
+      ir.NoCases -> [
         text(br),
         span([class("text-gray-400"), click(loc_otherwise)], [
           text("-- closed --"),
         ]),
       ]
-      e.Apply(e.Apply(e.Case(label), then), otherwise) ->
+      ir.Apply(#(ir.Apply(#(ir.Case(label), _), then), _), otherwise) ->
         render_branch(
           label,
           then,
@@ -239,13 +240,13 @@ fn render_branch(
 // call with binary is error
 // apply to just a case could leave it as ++
 // nocases should be rendered alone as empty match
-fn call(func, arg, br, loc, inferred) {
+fn call(func: ir.Node(_), arg: ir.Node(_), br, loc, inferred) {
   let target = focused(loc)
   let alert = error(loc, inferred)
 
   // not target but any selected
-  let inner = case func, arg {
-    e.Apply(e.Case(label), then), arg -> {
+  let inner = case func.0, arg.0 {
+    ir.Apply(#(ir.Case(label), _), then), _ -> {
       let loc_branch = child(loc, 0)
       let loc_otherwise = child(loc, 1)
       case open(loc_branch) || open(loc_otherwise) {
@@ -277,7 +278,7 @@ fn call(func, arg, br, loc, inferred) {
         ]
       }
     }
-    e.Apply(e.Extend(label), element), arg ->
+    ir.Apply(#(ir.Extend(label), _), element), _ ->
       list.flatten([
         [
           text("{"),
@@ -301,7 +302,7 @@ fn call(func, arg, br, loc, inferred) {
         render_block(arg, br, child(loc, 1), inferred),
         [text("}")],
       ])
-    e.Apply(e.Cons, element), arg -> {
+    ir.Apply(#(ir.Cons, _), element), _ -> {
       let root = #(child(child(loc, 0), 1), element)
       let #(elements, tail) = gather_list(arg, child(loc, 1), [root])
 
@@ -351,12 +352,12 @@ fn call(func, arg, br, loc, inferred) {
     //   render_block(arg, br, child(loc, 1), inferred),
     //   [text("]")],
     // ])
-    e.Select(_), arg ->
+    ir.Select(_), _ ->
       list.flatten([
         render_block(arg, br, child(loc, 1), inferred),
         render_block(func, br, child(loc, 0), inferred),
       ])
-    _, arg ->
+    _, _ ->
       // arg becomes then
       list.flatten([
         render_block(func, br, child(loc, 0), inferred),
@@ -370,14 +371,15 @@ fn call(func, arg, br, loc, inferred) {
 }
 
 fn gather_list(tail, loc, acc) {
-  case tail {
-    e.Apply(e.Apply(e.Cons, element), tail) ->
+  let #(exp, _meta) = tail
+  case exp {
+    ir.Apply(#(ir.Apply(#(ir.Cons, _), element), _), tail) ->
       gather_list(tail, child(loc, 1), [
         #(child(child(loc, 0), 1), element),
         ..acc
       ])
-    e.Tail -> #(acc, None)
-    other -> #(acc, Some(#(other, loc)))
+    ir.Tail -> #(acc, None)
+    _ -> #(acc, Some(#(tail, loc)))
   }
 }
 
@@ -411,7 +413,7 @@ fn error(loc: Location, inferred) {
 fn binary(value, loc, inferred) {
   let target = focused(loc)
   let alert = error(loc, inferred)
-  let content = e.print_bit_string(value)
+  let content = old_value.print_bit_string(value)
   [click(loc), classes([#("text-green-500", True), ..highlight(target, alert)])]
   |> span([text(content)])
 }
@@ -438,7 +440,7 @@ fn integer(value, loc, inferred) {
   |> span([text(int.to_string(value))])
 }
 
-fn vacant(comment, loc, inferred) {
+fn vacant(loc, inferred) {
   let target = focused(loc)
   let alert = error(loc, inferred)
   let content = case inferred {
@@ -455,11 +457,7 @@ fn vacant(comment, loc, inferred) {
           }
         Error(Nil) -> "invalid selection"
       }
-    None ->
-      case comment {
-        "" -> "todo"
-        comment -> comment
-      }
+    None -> "todo"
   }
   [click(loc), classes([#("text-red-500", True), ..highlight(target, alert)])]
   |> span([text(content)])
@@ -519,12 +517,4 @@ fn handle(label, loc, inferred) {
 
   [click(loc), classes(highlight(target, alert))]
   |> span([span([class("text-gray-400")], [text("handle ")]), text(label)])
-}
-
-fn shallow(label, loc, inferred) {
-  let target = focused(loc)
-  let alert = error(loc, inferred)
-
-  [click(loc), classes(highlight(target, alert))]
-  |> span([span([class("text-gray-400")], [text("shallow ")]), text(label)])
 }

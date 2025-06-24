@@ -3,62 +3,62 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import { readFileSync } from "fs";
 import { eval_, Tagged } from "./src/interpreter.mjs";
+import { parse } from "@ipld/dag-json";
 
-const testPath = "../../ir/tests/"
-
-describe("specification tests", () => {
-  [
-    { source: "integer.json", want: 42 },
-    { source: "ignored_argument.json", want: 100 },
-    { source: "ordered_argument.json", want: 2 },
-    { source: "single_let.json", want: 10 },
-
-    { source: "vacant.json", raise: "not implemented" },
-    { source: "string.json", want: "g'day" },
-    { source: "empty_list.json", want: Stack() },
-    { source: "list.json", want: Stack([101, 102]) },
-
-    { source: "match.json", want: "something terrible" },
-    { source: "match_otherwise.json", want: new Tagged("Error", "something interesting") },
-
-    { source: "integer_subtract.json", want: 4 },
-
-  ].forEach(({ source, want, raise }) => {
-    it(source, () => {
-      let d = JSON.parse(readFileSync(testPath + source, "utf8"))
-      let state = eval_(d)
-      if (raise) {
-        assert.deepStrictEqual(state.break.message, raise);
-      } else {
-        assert.deepStrictEqual(state.control, want);
-      }
-    });
-  })
-});
-
-
-
-const goTestPath = "../../mulch/test/"
+const testPath = "../../spec/evaluation/"
 
 describe("specification tests", () => {
   [
-    { source: "environment_capture.json", want: 1 },
-    { source: "nested_apply.json", want: 4 },
-    { source: "nested_let.json", want: 1 },
-    { source: "param_in_env.json", want: 2 },
-    { source: "records/record_select.json", want: "hey" },
-    { source: "effects/continue_exec.json", want: new Tagged("Tagged", 1) },
-    { source: "effects/evaluate_exec_function.json", want: new Tagged("Ok", 5) },
-    { source: "effects/evaluate_handle.json", want: new Tagged("Error", "bang!!") },
-    { source: "effects/multiple_perform.json", want: Stack([1, 2]) },
-    { source: "effects/multiple_resume.json", want: Stack([2, 3]) },
-
-  ].forEach(({ source, want }) => {
-    it(source, () => {
-      let d = JSON.parse(readFileSync(goTestPath + source, "utf8"))
-      let state = eval_(d)
-      assert.deepStrictEqual(state.control, want);
-    });
+    "core_suite.json",
+    "builtins_suite.json",
+    "effects_suite.json"
+  ].forEach((testFile) => {
+    let specs = parse(readFileSync(testPath + testFile, "utf8"))
+    specs.forEach(({ name, source, effects = [], value, break: break_ }) => {
+      // if (!name.includes("effects")) return
+      it(name, () => {
+        let state = eval_(source)
+        effects.reduce((state, expected) => {
+          assert.equal(expected.label, state.break.label)
+          let lift = parseValue(expected.lift)
+          if (lift.equals) {
+            if (!lift.equals(state.break.lift)) {
+              console.log(lift, state.break.lift)
+              throw "not equal to lift"
+            }
+          } else {
+            assert.deepStrictEqual(state.break.lift, lift);
+          }
+          let reply = parseValue(expected.reply)
+          state.resume(reply)
+          return state
+        }, state)
+        if (break_ !== undefined) {
+          assert.deepStrictEqual(state.break, break_);
+        } else {
+          let expected = parseValue(value)
+          if (expected.equals) {
+            if (!expected.equals(state.control)) {
+              console.log(expected, state.control)
+              throw "not equal"
+            }
+          } else {
+            assert.deepStrictEqual(state.control, expected);
+          }
+        }
+      });
+    })
   })
 });
 
+function parseValue(raw) {
+  let { binary, integer, string, list, record, tagged } = raw
+  if (binary !== undefined) return binary
+  if (integer !== undefined) return integer
+  if (string !== undefined) return string
+  if (list !== undefined) return Stack(list.map(parseValue))
+  if (record !== undefined) return Map(Object.entries(record).map(([k, v]) => [k, parseValue(v)]))
+  if (tagged !== undefined) return new Tagged(tagged.label, parseValue(tagged.value))
+  console.log(raw)
+  throw "how to parse"
+}

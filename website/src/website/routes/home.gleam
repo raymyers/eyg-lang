@@ -1,23 +1,17 @@
-import eyg/runtime/value as v
-import eyg/sync/browser
-import eyg/sync/sync
-import gleam/http
 import gleam/list
-import gleam/option.{None}
-import harness/impl/spotless.{Config}
-import harness/impl/spotless/netlify
 import lustre
 import lustre/attribute as a
 import lustre/element
 import lustre/element/html as h
-import lustre/event
 import mysig/asset
 import mysig/asset/client
 import mysig/html
 import website/components
 import website/components/auth_panel
-import website/components/snippet
+import website/components/example/view
+import website/components/reload
 import website/config
+import website/harness/spotless.{Config}
 import website/routes/common
 import website/routes/home/state
 
@@ -26,14 +20,8 @@ import website/routes/home/state
 pub fn app(module, func) {
   use script <- asset.do(asset.bundle(module, func))
   use ssr <- asset.do(view())
-  let config =
-    Config(dnsimple_local: True, netlify: netlify.local, twitter_local: True)
-  let #(state, _eff) =
-    state.init(#(
-      config,
-      sync.Origin(http.Https, "eyg.test", None),
-      auth_panel.in_memory_store(),
-    ))
+  let config = Config(dnsimple_local: True, twitter_local: True)
+  let #(state, _eff) = state.init(#(config, auth_panel.in_memory_store()))
 
   layout([
     h.div([a.id("app")], [ssr(state)]),
@@ -51,13 +39,13 @@ fn layout(body) {
         html.stylesheet(asset.src(layout)),
         html.stylesheet(asset.src(neo)),
         common.prism_style(),
-        html.plausible("eyg.run"),
       ],
       common.page_meta(
         "/",
         "EYG",
         "EYG is a programming language for predictable, useful and most of all confident development.",
       ),
+      common.diagnostics(),
     ]),
     body,
   )
@@ -74,21 +62,21 @@ pub fn client() {
   let assert Ok(render) = client.load_manifest(view())
   let app = lustre.application(state.init, state.update, render)
   let assert Ok(_) =
-    lustre.start(app, "#app", #(
-      config.load(),
-      browser.get_origin(),
-      auth_panel.in_memory_store(),
-    ))
+    lustre.start(app, "#app", #(config.load(), auth_panel.in_memory_store()))
   Nil
 }
 
 pub fn snippet(state: state.State, i) {
-  let failure = case state.active {
-    state.Editing(key, failure) if i == key -> failure
-    _ -> None
+  // let failure = case state.active {
+  //   state.Editing(key, failure) if i == key -> failure
+  //   _ -> None
+  // }
+  case state.get_example(state, i) {
+    state.Simple(example) ->
+      view.render(example) |> element.map(state.SimpleMessage(i, _))
+    state.Reload(example) ->
+      reload.render(example) |> element.map(state.ReloadMessage(i, _))
   }
-  snippet.render_embedded(state.get_snippet(state, i), failure)
-  |> element.map(state.SnippetMessage(i, _))
 }
 
 fn page_area(content) {
@@ -111,14 +99,14 @@ fn feature(title, description, last, item, reverse) {
       a.classes([#("flex-row-reverse", reverse)]),
     ],
     [
-      h.div([a.style([#("flex", "0 1 40%")])], [
+      h.div([a.style([#("width", "40%")])], [
         h.h2([a.class("text-4xl my-8 font-bold")], [element.text(title)]),
         ..list.map(description, fn(d) {
           h.div([a.class("my-2 text-lg")], [element.text(d)])
         })
         |> list.append([last])
       ]),
-      h.div([a.class("overflow-hidden"), a.style([#("flex", "0 1 60%")])], item),
+      h.div([a.class(""), a.style([#("width", "60%")])], item),
     ],
   )
 }
@@ -349,11 +337,7 @@ fn view() {
           "Build client and server as a single strongly typed program. Even extend type guarantees over your build scripts.",
           "Other languages have the possiblity of closure serialisation, but EYG's runtime is designed to make them efficient.",
         ],
-        action(
-          "Read the reference documentation.",
-          "/documentation#closure-serialization",
-          Useful,
-        ),
+        action("Read the documentation.", "/documentation", Useful),
         [snippet(s, state.closure_serialization_key)],
         False,
       ),
@@ -370,52 +354,7 @@ fn view() {
           "#" <> components.signup,
           Confident,
         ),
-        {
-          let snippet = state.get_snippet(s, state.hot_reload_key)
-          [
-            snippet.render_embedded(snippet, None)
-              |> element.map(state.SnippetMessage(state.hot_reload_key, _)),
-            h.p([], [element.text("App state")]),
-            h.div([a.class("border-2 p-2")], [
-              element.text(v.debug(s.example.value)),
-            ]),
-            h.p([], [element.text("Rendered app, click to send message")]),
-            h.div([a.class("border-2 p-2")], [
-              case state.render(s) {
-                Ok(#(page, False)) ->
-                  h.div(
-                    [
-                      a.attribute("dangerous-unescaped-html", page),
-                      event.on_click(state.ClickExample),
-                    ],
-                    [],
-                  )
-                Ok(#(_, True)) ->
-                  h.div([event.on_click(state.ClickExample)], [
-                    element.text("click to upgrade"),
-                  ])
-                Error(errors) ->
-                  // snippet shows these
-                  h.div(
-                    [a.class("border-2 border-orange-3 px-2")],
-                    list.map(errors, fn(error) {
-                      let #(path, reason) = error
-                      h.div(
-                        [
-                          event.on_click(state.SnippetMessage(
-                            state.hot_reload_key,
-                            snippet.UserClickedPath(path),
-                          )),
-                        ],
-                        [element.text(reason)],
-                      )
-                    }),
-                  )
-                // element.none()
-              },
-            ]),
-          ]
-        },
+        [snippet(s, state.hot_reload_key)],
         True,
       ),
       feature(

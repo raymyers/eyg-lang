@@ -1,25 +1,45 @@
+//// The snippet component is the base of editing context for EYG programs,
+//// for example the Reload, Shell and example components
+//// 
+//// It builds upon the morph library, it aims to be separate from type checking and runtime considerations
+//// 
+//// This separation is not perfect as edits want to be informed by type information.
+//// Type information is optional as type checking can be slow and we want to be able to edit programs without type information rather than blocking
+//// 
+//// Some information for helping with edits is not just based on the type situation.
+//// 
+////  1. Releases can be identified by their hash, but we want to show the package name and version number
+////    The index on analysis carries this extra data
+////  2. Most functions are defined in an effect free context, hence the suggested list of effects is hardcoded
+////    It is part of the context on the analysis
+//// 
+//// The type checker shouldn't need to know all the different states a release might be in. i.e. not requested yet.
+//// I also don't want to pass an arbitray function from ref to promise of result of type
+//// Doing so would make type checking async even when all referenes are loaded
+//// Instead we inefficiently pass a map of references in.
+//// Inefficient because it involves building from the whole cache.
+//// 
+//// ## Improvements
+//// 
+////  - The type checking context should always be available even if analysis isn't
+////  - Inversion of control so that the typechecking has a callback that is called when a reference is needed.
+////    This is ok in the morph analysis that is explicitly for editor help
+
 import eyg/analysis/inference/levels_j/contextual
 import eyg/analysis/type_/binding
 import eyg/analysis/type_/binding/debug
-import eyg/analysis/type_/isomorphic as t
-import eyg/runtime/break
-import eyg/runtime/interpreter/block
-import eyg/runtime/interpreter/state as istate
-import eyg/runtime/value as v
-import eyg/sync/sync
-import eyg/website/run
-import eygir/annotated
-import eygir/decode
-import eygir/encode
+import eyg/ir/dag_json
+import eyg/ir/tree as ir
+import gleam/bit_array
 import gleam/dict
 import gleam/dynamicx
 import gleam/int
-import gleam/io
 import gleam/javascript/promise
 import gleam/list
 import gleam/listx
 import gleam/option.{type Option, None, Some}
 import gleam/string
+import gleroglero/outline
 import lustre/attribute as a
 import lustre/element
 import lustre/element/html as h
@@ -42,32 +62,44 @@ import plinth/browser/element as dom_element
 import plinth/browser/event as pevent
 import plinth/browser/window
 import plinth/javascript/console
-import website/components/output
+import website/components/autocomplete
+import website/components/snippet/menu
+import website/components/vertical_menu
 
-const neo_blue_3 = "#87ceeb"
+pub const neo_blue_3 = "#87ceeb"
 
-const neo_green_3 = "#90ee90"
+pub const neo_green_3 = "#90ee90"
 
-const neo_orange_4 = "#ff6b6b"
+pub const neo_orange_4 = "#ff6b6b"
 
 const embed_area_styles = [
-  #("box-shadow", "6px 6px black"), #("border-style", "solid"),
+  #("box-shadow", "6px 6px black"),
+  #("border-style", "solid"),
   #(
     "font-family",
     "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace",
-  ), #("background-color", "rgb(255, 255, 255)"),
-  #("border-color", "rgb(0, 0, 0)"), #("border-width", "1px"),
-  #("flex-direction", "column"), #("display", "flex"),
-  #("margin-bottom", "1.5rem"), #("margin-top", ".5rem"),
+  ),
+  #("background-color", "rgb(255, 255, 255)"),
+  #("border-color", "rgb(0, 0, 0)"),
+  #("border-width", "1px"),
+  #("flex-direction", "column"),
+  #("display", "flex"),
+  #("margin-bottom", "1.5rem"),
+  #("margin-top", ".5rem"),
 ]
 
 const code_area_styles = [
-  #("outline", "2px solid transparent"), #("outline-offset", "2px"),
-  #("padding", ".5rem"), #("white-space", "nowrap"), #("overflow", "auto"),
-  #("margin-top", "auto"), #("margin-bottom", "auto"),
+  #("outline", "2px solid transparent"),
+  #("outline-offset", "2px"),
+  #("padding", ".5rem"),
+  #("white-space", "nowrap"),
+  #("overflow", "auto"),
+  #("margin-top", "auto"),
+  #("margin-bottom", "auto"),
+  #("height", "100%"),
 ]
 
-fn footer_area(color, contents) {
+pub fn footer_area(color, contents) {
   h.div(
     [
       a.style([
@@ -83,25 +115,10 @@ fn footer_area(color, contents) {
   )
 }
 
-type ExternalBlocking =
-  fn(run.Value) -> Result(promise.Promise(run.Value), run.Reason)
-
-type EffectSpec =
-  #(binding.Mono, binding.Mono, ExternalBlocking)
-
 pub type Status {
   Idle
   Editing(Mode)
 }
-
-type Path =
-  Nil
-
-type Value =
-  v.Value(Path, #(List(#(istate.Kontinue(Path), Path)), istate.Env(Path)))
-
-type Scope =
-  List(#(String, Value))
 
 pub type History {
   History(undo: List(p.Projection), redo: List(p.Projection))
@@ -110,125 +127,91 @@ pub type History {
 pub type Failure {
   NoKeyBinding(key: String)
   ActionFailed(action: String)
-  RunFailed(istate.Debug(run.Meta))
+  // RunFailed(istate.Debug(Path))
 }
 
 pub type Mode {
   Command
   Pick(picker: picker.Picker, rebuild: fn(String) -> p.Projection)
+  SelectRelease(
+    autocomplete: autocomplete.State(#(String, Int, String)),
+    rebuild: fn(String, Int, String) -> p.Projection,
+  )
   EditText(String, fn(String) -> p.Projection)
   EditInteger(Int, fn(Int) -> p.Projection)
 }
 
 pub type Snippet {
   Snippet(
+    // ------------------
+    // Editor state
     status: Status,
     expanding: Option(List(Int)),
-    source: #(p.Projection, e.Expression, Option(analysis.Analysis)),
-    using_mouse: Bool,
+    menu: menu.State,
+    // edit history
     history: History,
-    run: run.Run,
-    scope: Scope,
-    effects: List(#(String, EffectSpec)),
-    cache: sync.Sync,
+    projection: p.Projection,
+    // editable is derived from projection
+    editable: e.Expression,
+    // ---------------------
+    // analaysis can be cached as an object
+    analysis: Option(analysis.Analysis),
   )
 }
 
-pub fn init(editable, scope, effects, cache) {
+pub fn init(editable) {
   let editable = e.open_all(editable)
   let proj = navigation.first(editable)
   Snippet(
-    Idle,
-    None,
-    new_source(proj, editable, scope, effects, cache),
-    False,
-    History([], []),
-    run.start(editable, scope, effects, cache),
-    scope,
-    effects,
-    cache,
+    status: Idle,
+    expanding: None,
+    menu: menu.init(),
+    history: History([], []),
+    projection: proj,
+    editable: editable,
+    analysis: None,
   )
 }
 
-pub fn active(editable, scope, effects, cache) {
+pub fn active(editable) {
   let editable = e.open_all(editable)
   let proj = navigation.first(editable)
-
   Snippet(
     Editing(Command),
-    None,
-    new_source(proj, editable, scope, effects, cache),
-    False,
-    History([], []),
-    run.start(editable, scope, effects, cache),
-    scope,
-    effects,
-    cache,
+    expanding: None,
+    menu: menu.init(),
+    history: History([], []),
+    projection: proj,
+    editable: editable,
+    analysis: None,
   )
-}
-
-fn new_source(proj, editable, scope, effects, cache) {
-  let eff =
-    effect_types(effects)
-    |> list.fold(t.Empty, fn(acc, new) {
-      let #(label, #(lift, reply)) = new
-      t.EffectExtend(label, #(lift, reply), acc)
-    })
-  let analysis =
-    analysis.do_analyse(
-      editable,
-      analysis.within_environment(
-        scope,
-        sync.named_types(cache) |> dict.from_list(),
-      ),
-      eff,
-    )
-  #(proj, editable, Some(analysis))
-}
-
-fn effect_types(effects: List(#(String, EffectSpec))) {
-  listx.value_map(effects, fn(details) { #(details.0, details.1) })
-}
-
-pub fn run(state) {
-  let Snippet(run: run, ..) = state
-  run
 }
 
 pub fn source(state) {
-  let Snippet(source: #(_, source, _), ..) = state
-  source
-}
-
-pub fn set_references(state, cache) {
-  let run = run.start(source(state), state.scope, state.effects, cache)
-  let source = state.source
-  let source = new_source(source.0, source.1, state.scope, state.effects, cache)
-  Snippet(..state, source: source, run: run, cache: cache)
+  let Snippet(editable:, ..) = state
+  editable
 }
 
 pub fn references(state) {
-  e.to_annotated(source(state), []) |> annotated.list_references()
+  e.to_annotated(source(state), []) |> ir.list_references()
 }
 
 pub type Message {
   UserFocusedOnCode
-  UserClickRunEffects
   UserPressedCommandKey(String)
   UserClickedPath(List(Int))
   UserClickedCode(List(Int))
   MessageFromInput(input.Message)
   MessageFromPicker(picker.Message)
-  RuntimeRepliedFromExternalEffect(run.Value)
+  SelectReleaseMessage(autocomplete.Message)
+  MessageFromMenu(menu.Message)
   ClipboardReadCompleted(Result(String, String))
   ClipboardWriteCompleted(Result(Nil, String))
 }
 
 pub fn user_message(message) {
   case message {
-    RuntimeRepliedFromExternalEffect(_)
-    | ClipboardReadCompleted(_)
-    | ClipboardWriteCompleted(_) -> False
+    ClipboardReadCompleted(_) | ClipboardWriteCompleted(_) -> False
     _ -> True
   }
 }
@@ -236,15 +219,16 @@ pub fn user_message(message) {
 pub type Effect {
   Nothing
   Failed(Failure)
-  FocusOnCode
+  // This always assume code hasn't changed
+  ReturnToCode
   FocusOnInput
   ToggleHelp
   MoveAbove
   MoveBelow
   WriteToClipboard(String)
   ReadFromClipboard
-  AwaitRunningEffect(promise.Promise(Value))
-  Conclude(Option(Value), List(#(String, #(Value, Value))), Scope)
+  NewCode
+  Confirm
 }
 
 pub fn focus_on_buffer() {
@@ -257,6 +241,9 @@ pub fn focus_on_buffer() {
   Nil
 }
 
+@external(javascript, "../../website_ffi.mjs", "selectAllInput")
+fn select_all_input(element: dom_element.Element) -> Nil
+
 pub fn focus_on_input() {
   window.request_animation_frame(fn(_) {
     case document.query_selector("[autofocus]") {
@@ -264,7 +251,8 @@ pub fn focus_on_input() {
         dom_element.focus(el)
         // This can only be done when we move to a new focus
         // error is something specifically to do with numbers
-        dom_element.set_selection_range(el, 0, -1)
+        // dom_element.set_selection_range(el, 0, -1)
+        select_all_input(el)
       }
       Error(Nil) -> Nil
     }
@@ -281,42 +269,45 @@ pub fn read_from_clipboard() {
   // TODO make busy
 }
 
-pub fn await_running_effect(promise) {
-  promise.map(promise, RuntimeRepliedFromExternalEffect)
-}
-
 fn navigate_source(proj, state) {
-  let Snippet(source: #(_, editable, analysis), ..) = state
-  let source = #(proj, editable, analysis)
   let status = Editing(Command)
-  let state = Snippet(..state, status: status, source: source)
+  let state = Snippet(..state, status: status, projection: proj)
   #(state, Nothing)
 }
 
 fn update_source(proj, state) {
-  let Snippet(source: #(old, _, _), history: history, ..) = state
+  let Snippet(projection: old, history: history, ..) = state
   let editable = p.rebuild(proj)
-  let source =
-    new_source(proj, editable, state.scope, state.effects, state.cache)
   let History(undo: undo, ..) = history
   let undo = [old, ..undo]
   let history = History(undo: undo, redo: [])
   let status = Editing(Command)
-  let run = run.start(editable, state.scope, state.effects, state.cache)
-  Snippet(..state, status: status, source: source, history: history, run: run)
+
+  let analysis = None
+  //   Some(do_analysis(editable, state.scope, state.cache, state.effects))
+  Snippet(
+    ..state,
+    status: status,
+    projection: proj,
+    editable: editable,
+    history: history,
+    analysis:,
+    // evaluated: evaluate(editable, state.scope, state.cache),
+  // run: NotRunning,
+  )
 }
 
 fn update_source_from_buffer(proj, state) {
-  #(update_source(proj, state), Nothing)
+  #(update_source(proj, state), NewCode)
 }
 
 fn update_source_from_pallet(proj, state) {
-  #(update_source(proj, state), FocusOnCode)
+  #(update_source(proj, state), NewCode)
 }
 
 fn return_to_buffer(state) {
   let state = Snippet(..state, status: Editing(Command))
-  #(state, FocusOnCode)
+  #(state, ReturnToCode)
 }
 
 fn change_mode(state, mode) {
@@ -335,13 +326,7 @@ fn action_failed(state, error) {
 }
 
 pub fn update(state, message) {
-  let Snippet(
-    status: status,
-    source: #(proj, editable, _),
-    run: run,
-    effects: effects,
-    ..,
-  ) = state
+  let Snippet(status: status, ..) = state
   case message, status {
     UserFocusedOnCode, Idle -> #(
       Snippet(..state, status: Editing(Command)),
@@ -352,7 +337,6 @@ pub fn update(state, message) {
       Nothing,
     )
     UserPressedCommandKey(key), Editing(Command) -> {
-      let state = Snippet(..state, using_mouse: False)
       case key {
         "ArrowRight" -> move_right(state)
         "ArrowLeft" -> move_left(state)
@@ -365,6 +349,7 @@ pub fn update(state, message) {
         "E" -> assign_above(state)
         "e" -> assign_to(state)
         "r" -> insert_record(state)
+        "R" -> insert_empty_record(state)
         "t" -> insert_tag(state)
         "y" -> copy(state)
         "Y" -> paste(state)
@@ -381,7 +366,7 @@ pub fn update(state, message) {
         "j" -> insert_builtin(state)
         "k" -> toggle_open(state)
         "l" -> insert_list(state)
-        "@" -> insert_named_reference(state)
+        "@" -> insert_release(state)
         "#" -> insert_reference(state)
         "z" -> undo(state)
         "Z" -> redo(state)
@@ -399,36 +384,35 @@ pub fn update(state, message) {
         "TOGGLE OTHERWISE" -> toggle_otherwise(state)
 
         "?" -> #(state, ToggleHelp)
-        "Enter" -> execute(state)
+        "Enter" -> confirm(state)
         _ -> #(state, Failed(NoKeyBinding(key)))
       }
     }
-    UserPressedCommandKey(_), _ -> panic as "should never get a buffer message"
+    UserPressedCommandKey(key), _ -> action_failed(state, key)
     UserClickedPath(path), _ ->
-      navigate_source(p.focus_at(editable, path), state)
+      navigate_source(p.focus_at(state.editable, path), state)
 
     // This is unhelpful as hard if big blocks are selected
     // case listx.starts_with(path, p.path(proj)) && p.path(proj) != [] {
-    UserClickedCode(path), _ ->
-      case proj, p.path(proj) == path {
+    UserClickedCode(path), _ -> {
+      let state = Snippet(..state, status: Editing(Command))
+      case state.projection, p.path(state.projection) == path {
         #(p.Assign(p.AssignStatement(_), _, _, _, _), _), True ->
           toggle_open(state)
         _, _ ->
           case
-            // listx.starts_with(path, p.path(proj))
+            // listx.starts_with(path, p.path(state.projection))
             // path expanding real just means it was the last thing clicked
-            Some(path) == state.expanding && p.path(proj) != []
+            Some(path) == state.expanding && p.path(state.projection) != []
           {
             True -> increase(state)
             False -> {
               let state = Snippet(..state, expanding: Some(path))
-              navigate_source(
-                p.focus_at(editable, path),
-                Snippet(..state, using_mouse: True),
-              )
+              navigate_source(p.focus_at(state.editable, path), state)
             }
           }
       }
+    }
 
     MessageFromInput(message), Editing(EditText(value, rebuild)) ->
       case input.update_text(value, message) {
@@ -453,50 +437,39 @@ pub fn update(state, message) {
     MessageFromPicker(picker.Dismissed), Editing(Pick(_, _rebuild)) ->
       return_to_buffer(state)
     MessageFromPicker(_), _ -> panic as "shouldn't reach picker message"
-    UserClickRunEffects, _ -> run_effects(state)
-    RuntimeRepliedFromExternalEffect(reply), Editing(Command)
-    | RuntimeRepliedFromExternalEffect(reply), Idle
+    SelectReleaseMessage(message), Editing(SelectRelease(autocomplete, rebuild))
     -> {
-      let assert run.Run(run.Handling(label, lift, env, k, _), effect_log) = run
-
-      let effect_log = [#(label, #(lift, reply)), ..effect_log]
-      let status = case block.resume(reply, env, k) {
-        Ok(#(value, env)) -> run.Done(value, env)
-        Error(debug) -> run.handle_extrinsic_effects(debug, effects)
-      }
-      let run = run.Run(status, effect_log)
-      let state = Snippet(..state, run: run)
-      case status {
-        run.Failed(_) -> #(state, Nothing)
-        run.Done(value, env) -> #(state, Conclude(value, run.effects, env))
-
-        run.Handling(_label, lift, env, k, blocking) ->
-          case blocking(lift) {
-            Ok(promise) -> {
-              let run = run.Run(status, effect_log)
-              let state = Snippet(..state, run: run)
-              #(state, AwaitRunningEffect(promise))
-            }
-            Error(reason) -> {
-              let run = run.Run(run.Failed(#(reason, Nil, env, k)), effect_log)
-              let state = Snippet(..state, run: run)
-              #(state, Nothing)
-            }
-          }
+      let #(autocomplete, event) = autocomplete.update(autocomplete, message)
+      case event {
+        autocomplete.Nothing ->
+          keep_editing(state, SelectRelease(autocomplete, rebuild))
+        autocomplete.ItemSelected(#(p, r, cid)) ->
+          update_source_from_pallet(rebuild(p, r, cid), state)
+        autocomplete.Dismiss -> return_to_buffer(state)
       }
     }
-    RuntimeRepliedFromExternalEffect(_), Editing(mode) -> {
-      io.debug(mode)
-      panic as "Should never be editing while running effects"
+    SelectReleaseMessage(_message), _ ->
+      panic as "shouldn;t have select release message in this state"
+
+    MessageFromMenu(message), _ -> {
+      let #(menu, action) = menu.update(state.menu, message)
+      let state = Snippet(..state, menu: menu)
+      case action {
+        None -> #(state, Nothing)
+        Some(key) -> update(state, UserPressedCommandKey(key))
+      }
     }
+    // UserClickRunEffects, _ -> run_effects(state)
+    // RuntimeRepliedFromExternalEffect(#(task_id, reply)), _ ->
+    //   run_handle_effect(state, task_id, reply)
     ClipboardReadCompleted(return), _ -> {
       let assert Editing(Command) = status
       case return {
         Ok(text) ->
-          case decode.from_json(text) {
+          case dag_json.from_block(bit_array.from_string(text)) {
             Ok(expression) -> {
-              let assert #(p.Exp(_), zoom) = proj
-              let proj = #(p.Exp(e.from_expression(expression)), zoom)
+              let assert #(p.Exp(_), zoom) = state.projection
+              let proj = #(p.Exp(e.from_annotated(expression)), zoom)
               update_source_from_buffer(proj, state)
             }
             Error(_) -> action_failed(state, "paste")
@@ -513,17 +486,17 @@ pub fn update(state, message) {
 }
 
 fn move_right(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
   navigate_source(navigation.next(proj), state)
 }
 
 fn move_left(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
   navigate_source(navigation.previous(proj), state)
 }
 
 fn move_up(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case navigation.move_up(proj) {
     Ok(new) -> navigate_source(navigation.next(new), state)
@@ -532,7 +505,7 @@ fn move_up(state) {
 }
 
 fn move_down(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case navigation.move_down(proj) {
     Ok(new) -> navigate_source(navigation.next(new), state)
@@ -541,11 +514,14 @@ fn move_down(state) {
 }
 
 fn copy(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case proj {
     #(p.Exp(expression), _) -> {
-      let text = encode.to_json(e.to_expression(expression))
+      let assert Ok(text) =
+        e.to_annotated(expression, [])
+        |> dag_json.to_block
+        |> bit_array.to_string
       #(state, WriteToClipboard(text))
     }
     _ -> action_failed(state, "copy")
@@ -557,30 +533,38 @@ fn paste(state) {
 }
 
 fn search_vacant(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
-  let new = do_search_vacant(proj)
-  navigate_source(new, state)
+  let Snippet(projection: proj, ..) = state
+  let bottom = p.zoom_in(proj)
+  let initial = p.path(bottom)
+  case do_search_vacant(bottom, initial) {
+    Ok(new) -> navigate_source(new, state)
+    Error(Nil) -> action_failed(state, "jump to error")
+  }
 }
 
-fn do_search_vacant(proj) {
+fn do_search_vacant(proj, initial) {
   let next = navigation.next(proj)
-  case next {
-    #(p.Exp(e.Vacant("")), _zoom) -> next
-    // If at the top break, can search again to loop around
-    #(p.Exp(_), []) -> next
-    _ -> do_search_vacant(next)
+  case p.path(next) == initial {
+    True -> Error(Nil)
+    False ->
+      case next {
+        #(p.Exp(e.Vacant), _zoom) -> Ok(next)
+        // If at the top break, can search again to loop around
+        #(p.Exp(_), []) -> Error(Nil)
+        _ -> do_search_vacant(next, initial)
+      }
   }
 }
 
 fn toggle_open(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   let proj = navigation.toggle_open(proj)
   navigate_source(proj, state)
 }
 
 fn call_with(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
   case transformation.call_with(proj) {
     Ok(new) -> update_source_from_buffer(new, state)
     Error(Nil) -> action_failed(state, "call as argument")
@@ -588,7 +572,7 @@ fn call_with(state) {
 }
 
 fn assign_to(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.assign(proj) {
     Ok(rebuild) -> {
@@ -600,7 +584,7 @@ fn assign_to(state) {
 }
 
 fn assign_above(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.assign_before(proj) {
     Ok(rebuild) -> {
@@ -612,7 +596,7 @@ fn assign_above(state) {
 }
 
 fn insert_record(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
   case action.make_record(proj, analysis) {
     Ok(action.Updated(proj)) -> update_source_from_buffer(proj, state)
     Ok(action.Choose(value, hints, rebuild)) -> {
@@ -623,8 +607,16 @@ fn insert_record(state) {
   }
 }
 
+fn insert_empty_record(state) {
+  let Snippet(projection:, ..) = state
+  case action.make_empty_record(projection) {
+    Ok(projection) -> update_source_from_buffer(projection, state)
+    Error(Nil) -> action_failed(state, "create record")
+  }
+}
+
 fn overwrite_record(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.overwrite_record(proj, analysis) {
     Ok(#(hints, rebuild)) -> {
@@ -636,7 +628,7 @@ fn overwrite_record(state) {
 }
 
 fn insert_tag(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.make_tagged(proj, analysis) {
     Ok(action.Updated(new)) -> update_source_from_buffer(new, state)
@@ -649,7 +641,7 @@ fn insert_tag(state) {
 }
 
 fn extend_before(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.extend_before(proj, analysis) {
     Ok(action.Updated(new)) -> update_source_from_buffer(new, state)
@@ -662,7 +654,7 @@ fn extend_before(state) {
 }
 
 fn extend_after(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.extend_after(proj, analysis) {
     Ok(action.Updated(new)) -> update_source_from_buffer(new, state)
@@ -675,7 +667,7 @@ fn extend_after(state) {
 }
 
 fn insert_mode(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case proj {
     #(p.Exp(e.String(value)), zoom) ->
@@ -693,10 +685,10 @@ fn insert_mode(state) {
 }
 
 fn insert_perform(state) {
-  let Snippet(source: #(proj, _, _), effects: effects, ..) = state
-  let hints = effect_types(effects)
-  case action.perform(proj) {
-    Ok(#(filter, rebuild)) -> {
+  let Snippet(projection: proj, analysis:, ..) = state
+
+  case action.perform(proj, analysis) {
+    Ok(#(filter, hints, rebuild)) -> {
       let hints = listx.value_map(hints, render_effect)
       change_mode(state, Pick(picker.new(filter, hints), rebuild))
     }
@@ -705,7 +697,7 @@ fn insert_perform(state) {
 }
 
 fn increase(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case navigation.increase(proj) {
     Ok(new) -> navigate_source(new, state)
@@ -714,7 +706,7 @@ fn increase(state) {
 }
 
 fn insert_string(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.string(proj) {
     Ok(#(value, rebuild)) -> change_mode(state, EditText(value, rebuild))
@@ -723,7 +715,7 @@ fn insert_string(state) {
 }
 
 fn delete(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.delete(proj) {
     Ok(new) -> update_source_from_buffer(new, state)
@@ -732,7 +724,7 @@ fn delete(state) {
 }
 
 fn insert_function(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.function(proj) {
     Ok(rebuild) -> change_mode(state, Pick(picker.new("", []), rebuild))
@@ -741,7 +733,7 @@ fn insert_function(state) {
 }
 
 fn select_field(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.select_field(proj, analysis) {
     Ok(#(hints, rebuild)) -> {
@@ -753,7 +745,7 @@ fn select_field(state) {
 }
 
 fn insert_handle(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.handle(proj, analysis) {
     Ok(#(filter, hints, rebuild)) -> {
@@ -765,7 +757,7 @@ fn insert_handle(state) {
 }
 
 fn insert_builtin(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case action.insert_builtin(proj, contextual.builtins()) {
     Ok(#(filter, hints, rebuild)) -> {
@@ -777,7 +769,7 @@ fn insert_builtin(state) {
 }
 
 fn insert_list(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.list(proj) {
     Ok(new) -> update_source_from_buffer(new, state)
@@ -785,23 +777,32 @@ fn insert_list(state) {
   }
 }
 
-fn insert_named_reference(state) {
-  let Snippet(source: #(proj, _, _), cache: cache, ..) = state
+fn insert_release(state) {
+  let Snippet(projection: proj, analysis:, ..) = state
 
-  let index =
-    sync.package_index(cache)
-    |> listx.value_map(render_poly)
+  let index = case analysis {
+    Some(analysis.Analysis(context:, ..)) -> context.index
+    None -> []
+  }
 
   case action.insert_named_reference(proj) {
-    Ok(#(filter, rebuild)) -> {
-      change_mode(state, Pick(picker.new(filter, index), rebuild))
+    Ok(#(_filter, rebuild)) -> {
+      change_mode(
+        state,
+        SelectRelease(autocomplete.init(index, release_to_string), rebuild),
+      )
     }
     Error(Nil) -> action_failed(state, "insert reference")
   }
 }
 
+fn release_to_string(release) {
+  let #(package, release, _) = release
+  package <> ":" <> int.to_string(release)
+}
+
 fn insert_reference(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case action.insert_reference(proj) {
     Ok(#(filter, rebuild)) -> {
@@ -812,7 +813,7 @@ fn insert_reference(state) {
 }
 
 fn call_function(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.call_function(proj, analysis) {
     Ok(new) -> update_source_from_buffer(new, state)
@@ -821,7 +822,7 @@ fn call_function(state) {
 }
 
 fn insert_variable(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.insert_variable(proj, analysis) {
     Ok(#(filter, hints, rebuild)) -> {
@@ -833,7 +834,7 @@ fn insert_variable(state) {
 }
 
 fn insert_binary(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.binary(proj) {
     Ok(#(value, rebuild)) -> update_source_from_buffer(rebuild(value), state)
@@ -842,7 +843,7 @@ fn insert_binary(state) {
 }
 
 fn insert_integer(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.integer(proj) {
     Ok(#(value, rebuild)) -> change_mode(state, EditInteger(value, rebuild))
@@ -851,7 +852,7 @@ fn insert_integer(state) {
 }
 
 fn insert_case(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.make_case(proj, analysis) {
     Ok(action.Updated(new)) -> update_source_from_buffer(new, state)
@@ -864,7 +865,7 @@ fn insert_case(state) {
 }
 
 fn insert_open_case(state) {
-  let Snippet(source: #(proj, _, analysis), ..) = state
+  let Snippet(projection: proj, analysis:, ..) = state
 
   case action.make_open_case(proj, analysis) {
     Ok(#(filter, hints, rebuild)) -> {
@@ -876,7 +877,7 @@ fn insert_open_case(state) {
 }
 
 fn spread_list(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.spread_list(proj) {
     Ok(new) -> update_source_from_buffer(new, state)
@@ -885,7 +886,7 @@ fn spread_list(state) {
 }
 
 fn toggle_spread(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.toggle_spread(proj) {
     Ok(new) -> update_source_from_buffer(new, state)
@@ -894,7 +895,7 @@ fn toggle_spread(state) {
 }
 
 fn toggle_otherwise(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case transformation.toggle_otherwise(proj) {
     Ok(new) -> update_source_from_buffer(new, state)
@@ -903,56 +904,69 @@ fn toggle_otherwise(state) {
 }
 
 fn undo(state) {
-  let Snippet(source: #(proj, _, _), history: history, ..) = state
+  let Snippet(projection: proj, history: history, ..) = state
   case history.undo {
     [] -> action_failed(state, "undo")
     [saved, ..rest] -> {
-      let source =
-        new_source(
-          saved,
-          p.rebuild(saved),
-          state.scope,
-          state.effects,
-          state.cache,
-        )
+      let editable = p.rebuild(saved)
+      let analysis = None
+      // TODO
+      // Some(do_analysis(editable, state.scope, state.cache, state.effects))
       let history = History(undo: rest, redo: [proj, ..history.redo])
       let status = Editing(Command)
       let state =
-        Snippet(..state, status: status, source: source, history: history)
+        Snippet(
+          ..state,
+          status: status,
+          projection: saved,
+          editable:,
+          history: history,
+          analysis:,
+          // evaluated: evaluate(editable, state.scope, state.cache),
+        // run: NotRunning,
+        )
       #(state, Nothing)
     }
   }
 }
 
 fn redo(state) {
-  let Snippet(source: #(proj, _, _), history: history, ..) = state
+  let Snippet(projection: proj, history: history, ..) = state
   case history.redo {
     [] -> action_failed(state, "redo")
     [saved, ..rest] -> {
-      let source =
-        new_source(
-          saved,
-          p.rebuild(saved),
-          state.scope,
-          state.effects,
-          state.cache,
-        )
+      let editable = p.rebuild(saved)
+      let analysis = None
+      // Some(do_analysis(editable, state.scope, state.cache, state.effects))
       let history = History(undo: [proj, ..history.undo], redo: rest)
       let status = Editing(Command)
       let state =
-        Snippet(..state, status: status, source: source, history: history)
+        Snippet(
+          ..state,
+          status: status,
+          projection: saved,
+          editable:,
+          history: history,
+          analysis:,
+          // evaluated: evaluate(editable, state.scope, state.cache),
+        // run: NotRunning,
+        )
       #(state, Nothing)
     }
   }
 }
 
 pub fn copy_escaped(state) {
-  let Snippet(source: #(proj, _, _), ..) = state
+  let Snippet(projection: proj, ..) = state
 
   case proj {
     #(p.Exp(expression), _) -> {
+      let assert Ok(text) =
+        e.to_annotated(expression, [])
+        |> dag_json.to_block
+        |> bit_array.to_string
       let text =
-        encode.to_json(e.to_expression(expression))
+        text
         |> string.replace("\\", "\\\\")
         |> string.replace("\"", "\\\"")
       #(state, WriteToClipboard(text))
@@ -961,86 +975,69 @@ pub fn copy_escaped(state) {
   }
 }
 
-fn execute(state) {
-  let Snippet(run: run, ..) = state
-  case run.status {
-    run.Done(value, env) -> #(state, Conclude(value, run.effects, env))
-    run.Failed(debug) -> {
-      #(state, Failed(RunFailed(debug)))
-    }
-    _ -> run_effects(state)
-  }
-}
-
-fn run_effects(state) {
-  let Snippet(run: run, ..) = state
-  let run.Run(status, effect_log) = run
-  case status {
-    run.Handling(_label, lift, env, k, blocking) -> {
-      case blocking(lift) {
-        Ok(promise) -> {
-          let run = run.Run(status, effect_log)
-          let state = Snippet(..state, run: run)
-          #(state, AwaitRunningEffect(promise))
-        }
-        Error(reason) -> {
-          let run = run.Run(run.Failed(#(reason, Nil, env, k)), effect_log)
-          let state = Snippet(..state, run: run)
-          #(state, Nothing)
-        }
-      }
-    }
-    _ -> #(state, Nothing)
-  }
+fn confirm(state) {
+  #(state, Confirm)
 }
 
 pub fn finish_editing(state) {
   Snippet(..state, status: Idle)
 }
 
-pub fn render_embedded(state: Snippet, failure) {
-  h.div([a.style(embed_area_styles)], bare_render(state, failure))
+pub fn release_to_option(release) {
+  let #(package, release, _cid) = release
+
+  [
+    h.span([a.style([#("font-weight", "700")])], [
+      element.text(package <> ":" <> int.to_string(release)),
+    ]),
+    h.span([a.style([#("flex-grow", "1")])], [element.text(" ")]),
+    h.span(
+      [
+        a.style([
+          #("padding-left", ".5rem"),
+          #("overflow", "hidden"),
+          #("text-overflow", "ellipsis"),
+          #("white-space", "nowrap"),
+        ]),
+      ],
+      [element.text("")],
+    ),
+  ]
 }
 
-pub fn bare_render(state, failure) {
-  let Snippet(
-    status: status,
-    source: source,
-    run: run,
-    using_mouse: using_mouse,
-    ..,
-  ) = state
-  let #(proj, _, analysis) = source
-  let errors = case analysis {
-    Some(analysis) -> analysis.type_errors(analysis)
-    None -> []
-  }
-
+fn bare_render(proj, errors, status, slot) {
   case status {
     Editing(mode) ->
       case mode {
         Command -> [
-          actual_render_projection(proj, True, using_mouse, errors),
-          case failure {
-            Some(failure) ->
-              footer_area(neo_orange_4, [element.text(fail_message(failure))])
-            None -> render_current(errors, run)
-          },
+          actual_render_projection(proj, True, errors),
+          ..slot
+          // case failure {
+        //   Some(failure) ->
+        //     footer_area(neo_orange_4, [element.text(fail_message(failure))])
+        //   None -> element.text("render_current(errors, run, evaluated)")
+        // },
         ]
         Pick(picker, _rebuild) -> [
-          actual_render_projection(proj, False, using_mouse, errors),
+          actual_render_projection(proj, False, errors),
           picker.render(picker)
             |> element.map(MessageFromPicker),
         ]
 
+        SelectRelease(autocomplete, _) -> [
+          actual_render_projection(proj, False, errors),
+          autocomplete.render(autocomplete, release_to_option)
+            |> element.map(SelectReleaseMessage),
+        ]
+
         EditText(value, _rebuild) -> [
-          actual_render_projection(proj, False, using_mouse, errors),
+          actual_render_projection(proj, False, errors),
           input.render_text(value)
             |> element.map(MessageFromInput),
         ]
 
         EditInteger(value, _rebuild) -> [
-          actual_render_projection(proj, False, using_mouse, errors),
+          actual_render_projection(proj, False, errors),
           input.render_number(value)
             |> element.map(MessageFromInput),
         ]
@@ -1054,31 +1051,11 @@ pub fn bare_render(state, failure) {
           a.attribute("tabindex", "0"),
           event.on_focus(UserFocusedOnCode),
         ],
-        render.statements(source.1, errors),
+        render.statements(p.rebuild(proj), errors),
       ),
-      render_current(errors, run),
+      ..slot
     ]
   }
-}
-
-// TODO remove
-pub fn render_current(errors, run: run.Run) {
-  case errors {
-    [] -> render_run(run.status)
-    _ -> render_errors(errors)
-  }
-}
-
-pub fn render_errors(errors) {
-  footer_area(
-    neo_orange_4,
-    list.map(errors, fn(error) {
-      let #(path, reason) = error
-      h.div([event.on_click(UserClickedPath(path))], [
-        debug.reason_to_html(reason),
-      ])
-    }),
-  )
 }
 
 pub fn render_pallet(state) {
@@ -1091,6 +1068,9 @@ pub fn render_pallet(state) {
         Pick(picker, _rebuild) -> [
           picker.render(picker)
           |> element.map(MessageFromPicker),
+        ]
+        SelectRelease(_, _) -> [
+          element.text("TODO are we rendering this pallet"),
         ]
 
         EditText(value, _rebuild) -> [
@@ -1108,17 +1088,20 @@ pub fn render_pallet(state) {
   }
 }
 
-pub fn render_just_projection(state, autofocus) {
-  let Snippet(status: status, source: source, using_mouse: using_mouse, ..) =
-    state
-  let #(proj, _, analysis) = source
-  let errors = case analysis {
+fn type_errors(snippet) {
+  let Snippet(analysis:, ..) = snippet
+  case analysis {
     Some(analysis) -> analysis.type_errors(analysis)
     None -> []
   }
+}
+
+pub fn render_just_projection(state, autofocus) {
+  let Snippet(status: status, projection: proj, editable:, ..) = state
+  let errors = type_errors(state)
   case status {
     Editing(_mode) -> {
-      actual_render_projection(proj, autofocus, using_mouse, errors)
+      actual_render_projection(proj, autofocus, errors)
     }
     Idle ->
       h.pre(
@@ -1128,12 +1111,12 @@ pub fn render_just_projection(state, autofocus) {
           a.attribute("tabindex", "0"),
           event.on_focus(UserFocusedOnCode),
         ],
-        render.statements(source.1, errors),
+        render.statements(editable, errors),
       )
   }
 }
 
-fn actual_render_projection(proj, autofocus, using_mouse, errors) {
+fn actual_render_projection(proj, autofocus, errors) {
   h.pre(
     [
       a.class("language-eyg"),
@@ -1168,14 +1151,38 @@ fn actual_render_projection(proj, autofocus, using_mouse, errors) {
           }),
           utils.on_hotkey(UserPressedCommandKey),
         ]
-        False -> []
+        False -> [
+          event.on("click", fn(event) {
+            let assert Ok(e) = pevent.cast_event(event)
+            let target = pevent.target(e)
+            let rev =
+              target
+              |> dynamicx.unsafe_coerce
+              |> dom_element.dataset_get("rev")
+            case rev {
+              Ok(rev) -> {
+                let assert Ok(rev) = case rev {
+                  "" -> Ok([])
+                  _ ->
+                    string.split(rev, ",")
+                    |> list.try_map(int.parse)
+                }
+                Ok(UserClickedCode(list.reverse(rev)))
+              }
+              Error(_) -> {
+                console.log(target)
+                Error([])
+              }
+            }
+          }),
+        ]
       }
     ],
-    [render_projection(proj, using_mouse, errors)],
+    [render_projection(proj, errors)],
   )
 }
 
-fn render_projection(proj, _using_mouse, errors) {
+fn render_projection(proj, errors) {
   let #(focus, zoom) = proj
   case focus, zoom {
     p.Exp(e), [] ->
@@ -1191,34 +1198,12 @@ fn render_projection(proj, _using_mouse, errors) {
   }
 }
 
-fn render_run(run) {
-  case run {
-    run.Done(value, _) ->
-      footer_area(neo_green_3, [
-        case value {
-          Some(value) -> output.render(value)
-          None -> element.none()
-        },
-      ])
-    run.Handling(label, _meta, _env, _stack, _blocking) ->
-      footer_area(neo_blue_3, [
-        h.span([event.on_click(UserClickRunEffects)], [
-          element.text("Will run "),
-          element.text(label),
-          element.text(" effect. click to continue."),
-        ]),
-      ])
-    run.Failed(#(reason, _, _, _)) ->
-      footer_area(neo_orange_4, [element.text(break.reason_to_string(reason))])
-  }
-}
-
 pub fn fail_message(reason) {
   case reason {
     NoKeyBinding(key) -> string.concat(["No action bound for key '", key, "'"])
     ActionFailed(action) ->
       string.concat(["Action ", action, " not possible at this position"])
-    RunFailed(#(reason, _, _, _)) -> break.reason_to_string(reason)
+    // RunFailed(#(reason, _, _, _)) -> simple_debug.reason_to_string(reason)
   }
 }
 
@@ -1264,4 +1249,163 @@ fn render_effect(eff) {
 pub fn render_poly(poly) {
   let #(type_, _) = binding.instantiate(poly, 0, dict.new())
   debug.mono(type_)
+}
+
+pub fn menu_content(status, projection, submenu) {
+  case status {
+    Idle -> #([menu.delete()], None)
+    Editing(Command) -> {
+      let subcontent = case submenu {
+        menu.Collection -> Some(#("wrap", menu.submenu_wrap(projection)))
+        menu.More -> Some(#("more", menu.submenu_more()))
+        menu.Closed -> None
+      }
+      #(menu.top_content(projection), subcontent)
+    }
+    Editing(_) -> #([], None)
+  }
+}
+
+pub fn render_embedded_with_top_menu(snippet, slot) {
+  let display_help = True
+  let Snippet(status: status, projection:, menu: menu, ..) = snippet
+  let #(top, subcontent) = menu_content(status, projection, menu)
+
+  h.pre(
+    [
+      a.class("language-eyg"),
+      a.style([
+        #("position", "relative"),
+        #("margin", "0"),
+        #("padding", "0"),
+        #("overflow", "initial"),
+        ..embed_area_styles
+      ]),
+      // This is needed to stop the component interfering with remark slides
+      event.on("keypress", fn(event) {
+        event.stop_propagation(event)
+        Error([])
+      }),
+    ],
+    bare_render(projection, type_errors(snippet), status, slot)
+      |> list.append(case status {
+        Idle -> []
+        _ -> [
+          case subcontent {
+            Some(#(_key, subitems)) ->
+              h.div(
+                [
+                  a.style([
+                    // #("padding-top", ".5rem"),
+                    // #("padding-bottom", ".5rem"),
+                    #("justify-content", "flex-end"),
+                    #("flex-direction", "column"),
+                    #("display", "flex"),
+                  ]),
+                ],
+                list.map(
+                  [
+                    #(outline.chevron_left(), "Back", menu.Toggle(menu.Closed)),
+                    ..subitems
+                  ],
+                  fn(entry) {
+                    let #(i, text, k) = entry
+                    vertical_menu.button(k, [
+                      vertical_menu.icon(i, text, display_help),
+                    ])
+                  },
+                ),
+              )
+              |> element.map(MessageFromMenu)
+            None ->
+              h.div(
+                [
+                  a.style([
+                    // #("padding-top", ".5rem"),
+                    // #("padding-bottom", ".5rem"),
+                    #("justify-content", "flex-end"),
+                    #("flex-direction", "column"),
+                    #("display", "flex"),
+                  ]),
+                ],
+                list.map(top, fn(entry) {
+                  let #(i, text, k) = entry
+                  vertical_menu.button(k, [
+                    vertical_menu.icon(i, text, display_help),
+                  ])
+                }),
+              )
+              |> element.map(MessageFromMenu)
+          },
+        ]
+      }),
+  )
+}
+
+pub fn render_embedded_with_menu(snippet, _failure) {
+  h.pre(
+    [
+      a.class("eyg-embed language-eyg"),
+      a.style([
+        #("position", "relative"),
+        #("margin", "0"),
+        #("padding", "0"),
+        #("overflow", "initial"),
+      ]),
+      // This is needed to stop the component interfering with remark slides
+      event.on("keypress", fn(event) {
+        event.stop_propagation(event)
+        Error([])
+      }),
+    ],
+    [
+      render_menu(snippet, False) |> element.map(MessageFromMenu),
+      // ..bare_render(snippet, failure)
+    ],
+  )
+}
+
+fn render_menu(snippet, display_help) {
+  let Snippet(status: status, projection:, menu: menu, ..) = snippet
+  let #(top, subcontent) = menu_content(status, projection, menu)
+  h.div(
+    [
+      a.class("eyg-menu-container"),
+      a.style([
+        #("position", "absolute"),
+        #("left", "0"),
+        #("top", "50%"),
+        #("transform", "translate(calc(-100% - 10px), -50%)"),
+        #("grid-template-columns", "max-content max-content"),
+        #("overflow-x", "hidden"),
+        #("overflow-y", "auto"),
+        #("display", "grid"),
+      ]),
+    ],
+    [
+      render_column(top, display_help),
+      case subcontent {
+        None -> element.none()
+        Some(#(_key, subitems)) -> render_column(subitems, display_help)
+      },
+    ],
+  )
+}
+
+fn render_column(items, display_help) {
+  h.div(
+    [
+      a.style([
+        #("padding-top", ".5rem"),
+        #("padding-bottom", ".5rem"),
+        #("justify-content", "flex-end"),
+        #("flex-direction", "column"),
+        #("display", "flex"),
+      ]),
+    ],
+    list.map(items, fn(entry) {
+      let #(i, text, k) = entry
+      vertical_menu.button(k, [vertical_menu.icon(i, text, display_help)])
+    }),
+  )
 }

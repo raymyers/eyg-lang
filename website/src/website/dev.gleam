@@ -7,11 +7,11 @@ import gleam/result
 import gleam/string
 import lustre/element
 import midas/node
-import midas/sdk/netlify
 import midas/task as t
 import mysig/build
 import mysig/dev
 import mysig/route.{Route}
+import netlify
 import plinth/node/process
 import simplifile
 import snag
@@ -21,6 +21,7 @@ import website/routes/home
 import website/routes/news
 import website/routes/news/archive
 import website/routes/news/edition
+import website/routes/roadmap
 
 pub fn main() {
   do_main(list.drop(array.to_list(process.argv()), 2))
@@ -90,6 +91,7 @@ fn routes() {
     ),
     #("editor", Route(index: route.Page(editor.page()), items: [])),
     #("news", news.route()),
+    #("roadmap", Route(index: route.Page(roadmap.page()), items: [])),
   ])
 }
 
@@ -119,9 +121,7 @@ fn email() {
 fn embed() {
   let task = {
     use bundle <- t.do(t.bundle("website/embed", "run"))
-    t.write("../../../me/2025-01-24/eyg-predictable-and-useful/embed.js", <<
-      bundle:utf8,
-    >>)
+    t.write("embed.js", <<bundle:utf8>>)
   }
   node.run(task, ".")
 }

@@ -1,37 +1,35 @@
-import gleam/result
-
-// this can define state and UI maybe UI should be separate
 import easel/expression/zipper
 import eyg/analysis/jm/tree
 import eyg/analysis/jm/type_ as t
-import eygir/expression as e
+import eyg/ir/tree as ir
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import lustre/effect as cmd
 
 pub type WorkSpace {
   WorkSpace(
     selection: List(Int),
-    source: e.Expression,
+    source: ir.Node(Nil),
     inferred: Option(tree.State),
     mode: Mode,
-    yanked: Option(e.Expression),
+    yanked: Option(ir.Node(Nil)),
     error: Option(String),
     history: #(
-      List(#(e.Expression, List(Int))),
-      List(#(e.Expression, List(Int))),
+      List(#(ir.Node(Nil), List(Int))),
+      List(#(ir.Node(Nil), List(Int))),
     ),
   )
 }
 
 pub type Mode {
-  Navigate(actions: zipper.Zipper)
-  WriteLabel(value: String, commit: fn(String) -> e.Expression)
-  WriteText(value: String, commit: fn(String) -> e.Expression)
-  WriteNumber(value: Int, commit: fn(Int) -> e.Expression)
-  WriteTerm(value: String, commit: fn(e.Expression) -> e.Expression)
+  Navigate(actions: zipper.Zipper(Nil))
+  WriteLabel(value: String, commit: fn(String) -> ir.Node(Nil))
+  WriteText(value: String, commit: fn(String) -> ir.Node(Nil))
+  WriteNumber(value: Int, commit: fn(Int) -> ir.Node(Nil))
+  WriteTerm(value: String, commit: fn(ir.Node(Nil)) -> ir.Node(Nil))
 }
 
 pub type Action {
@@ -39,7 +37,7 @@ pub type Action {
   Change(value: String)
   Commit
   SelectNode(path: List(Int))
-  ClickOption(chosen: e.Expression)
+  ClickOption(chosen: ir.Node(Nil))
 }
 
 pub fn init(source) {
@@ -131,7 +129,6 @@ pub fn keypress(key, state: WorkSpace) {
     Navigate(act), "f" -> Ok(abstract(act, state))
     Navigate(act), "g" -> select(act, state)
     Navigate(act), "h" -> handle(act, state)
-    Navigate(act), "H" -> shallow(act, state)
     // Navigate(act), "j" -> ("down probably not")
     // Navigate(act), "k" -> ("up probably not")
     // Navigate(act), "l" -> ("right probably not")
@@ -161,8 +158,8 @@ pub fn keypress(key, state: WorkSpace) {
     WriteTerm(new, commit), k if k == "Enter" -> {
       let assert [var, ..selects] = string.split(new, ".")
       let expression =
-        list.fold(selects, e.Variable(var), fn(acc, select) {
-          e.Apply(e.Select(select), acc)
+        list.fold(selects, ir.variable(var), fn(acc, select) {
+          ir.apply(ir.select(select), acc)
         })
       let source = commit(expression)
       update_source(state, source)
@@ -182,56 +179,61 @@ pub fn keypress(key, state: WorkSpace) {
   }
 }
 
-fn call_with(zipper: zipper.Zipper, state) {
-  let source = zipper.1(e.Apply(e.Vacant(""), zipper.0))
+fn call_with(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.1(ir.apply(ir.vacant(), zipper.0))
   update_source(state, source)
 }
 
 // e is essentially line above on a let statement.
 // nested lets can only be created from the value on the right.
 // moving something to a module might just have to be copy paste
-fn assign_to(zipper: zipper.Zipper, state) {
-  let commit = case zipper.0 {
-    e.Let(_, _, _) -> fn(text) { zipper.1(e.Let(text, e.Vacant(""), zipper.0)) }
+fn assign_to(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let commit = case source.0 {
+    ir.Let(_, _, _) -> fn(text) {
+      zipper.1(ir.let_(text, ir.vacant(), zipper.0))
+    }
     // normally I want to add something above
-    exp -> fn(text) { zipper.1(e.Let(text, e.Vacant(""), exp)) }
+    _ -> fn(text) { zipper.1(ir.let_(text, ir.vacant(), source)) }
   }
   WorkSpace(..state, mode: WriteLabel("", commit))
 }
 
-fn record(zipper: zipper.Zipper, state) {
-  case zipper.0 {
-    e.Vacant(_comment) ->
-      zipper.1(e.Empty)
+fn record(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  case source.0 {
+    ir.Vacant ->
+      zipper.1(ir.empty())
       |> update_source(state, _)
-    e.Empty as exp | e.Apply(e.Apply(e.Extend(_), _), _) as exp -> {
+    ir.Empty | ir.Apply(#(ir.Apply(#(ir.Extend(_), _), _), _), _) -> {
       let commit = fn(text) {
-        zipper.1(e.Apply(e.Apply(e.Extend(text), e.Vacant("")), exp))
+        zipper.1(ir.apply(ir.apply(ir.extend(text), ir.vacant()), source))
       }
       Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
     }
-    exp -> {
+    _ -> {
       let commit = fn(text) {
-        zipper.1(e.Apply(e.Apply(e.Extend(text), exp), e.Empty))
+        zipper.1(ir.apply(ir.apply(ir.extend(text), source), ir.empty()))
       }
       Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
     }
   }
 }
 
-fn tag(zipper: zipper.Zipper, state) {
-  let commit = case zipper.0 {
-    e.Vacant(_comment) -> fn(text) { zipper.1(e.Tag(text)) }
-    exp -> fn(text) { zipper.1(e.Apply(e.Tag(text), exp)) }
+fn tag(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let commit = case source.0 {
+    ir.Vacant -> fn(text) { zipper.1(ir.tag(text)) }
+    _ -> fn(text) { zipper.1(ir.apply(ir.tag(text), source)) }
   }
   WorkSpace(..state, mode: WriteLabel("", commit))
 }
 
-fn copy(zipper: zipper.Zipper, state) {
+fn copy(zipper: zipper.Zipper(Nil), state) {
   WorkSpace(..state, yanked: Some(zipper.0))
 }
 
-fn paste(zipper: zipper.Zipper, state: WorkSpace) {
+fn paste(zipper: zipper.Zipper(Nil), state: WorkSpace) {
   case state.yanked {
     Some(snippet) -> {
       let source = zipper.1(snippet)
@@ -241,7 +243,7 @@ fn paste(zipper: zipper.Zipper, state: WorkSpace) {
   }
 }
 
-fn unwrap(_zipper: zipper.Zipper, _state) {
+fn unwrap(_zipper: zipper.Zipper(Nil), _state) {
   // I'm not really missing this
   panic as "zipper needs to expose parent"
   // case act.parent {
@@ -253,54 +255,57 @@ fn unwrap(_zipper: zipper.Zipper, _state) {
   // }
 }
 
-fn insert(zipper: zipper.Zipper, state) {
+fn insert(zipper: zipper.Zipper(Nil), state) {
   let write = fn(text, build) {
     WriteLabel(text, fn(new) { zipper.1(build(new)) })
   }
-  use mode <- result.then(case zipper.0 {
-    e.Variable(value) -> Ok(write(value, e.Variable(_)))
-    e.Lambda(param, body) -> Ok(write(param, e.Lambda(_, body)))
-    e.Apply(_, _) -> Error("no insert option for apply")
-    e.Let(var, body, then) -> Ok(write(var, e.Let(_, body, then)))
+  let source = zipper.0
+  use mode <- result.then(case source.0 {
+    ir.Variable(value) -> Ok(write(value, ir.variable(_)))
+    ir.Lambda(param, body) -> Ok(write(param, ir.lambda(_, body)))
+    ir.Apply(_, _) -> Error("no insert option for apply")
+    ir.Let(var, body, then) -> Ok(write(var, ir.let_(_, body, then)))
 
-    e.Binary(_value) -> Error("no insert option for binary")
-    e.Str(value) -> Ok(WriteText(value, fn(new) { zipper.1(e.Str(new)) }))
-    e.Integer(value) ->
-      Ok(WriteNumber(value, fn(new) { zipper.1(e.Integer(new)) }))
-    e.Tail | e.Cons -> Error("there is no insert for lists")
-    e.Vacant(comment) -> Ok(write(comment, e.Vacant))
-    e.Empty -> Error("empty record no insert")
-    e.Extend(label) -> Ok(write(label, e.Extend))
-    e.Select(label) -> Ok(write(label, e.Select))
-    e.Overwrite(label) -> Ok(write(label, e.Overwrite))
-    e.Tag(label) -> Ok(write(label, e.Tag))
-    e.Case(label) -> Ok(write(label, e.Case))
-    e.NoCases -> Error("no cases")
-    e.Perform(label) -> Ok(write(label, e.Perform))
-    e.Handle(label) -> Ok(write(label, e.Handle))
-    e.Shallow(label) -> Ok(write(label, e.Shallow))
-    e.Builtin(_) -> Error("no insert option for builtin, use stdlib references")
-    e.Reference(_) ->
+    ir.Binary(_value) -> Error("no insert option for binary")
+    ir.String(value) ->
+      Ok(WriteText(value, fn(new) { zipper.1(ir.string(new)) }))
+    ir.Integer(value) ->
+      Ok(WriteNumber(value, fn(new) { zipper.1(ir.integer(new)) }))
+    ir.Tail | ir.Cons -> Error("there is no insert for lists")
+    ir.Vacant -> Error("vacant no insert")
+    ir.Empty -> Error("empty record no insert")
+    ir.Extend(label) -> Ok(write(label, ir.extend))
+    ir.Select(label) -> Ok(write(label, ir.select))
+    ir.Overwrite(label) -> Ok(write(label, ir.overwrite))
+    ir.Tag(label) -> Ok(write(label, ir.tag))
+    ir.Case(label) -> Ok(write(label, ir.case_))
+    ir.NoCases -> Error("no cases")
+    ir.Perform(label) -> Ok(write(label, ir.perform))
+    ir.Handle(label) -> Ok(write(label, ir.handle))
+    ir.Builtin(_) ->
+      Error("no insert option for builtin, use stdlib references")
+    ir.Reference(_) ->
       Error("no insert option for reference, use stdlib references")
-    e.NamedReference(_, _) ->
+    ir.Release(_, _, _) ->
       Error("no insert option for reference, use stdlib references")
   })
 
   Ok(WorkSpace(..state, mode: mode))
 }
 
-fn overwrite(zipper: zipper.Zipper, state) {
-  case zipper.0 {
-    e.Apply(e.Apply(e.Overwrite(_), _), _) as exp -> {
+fn overwrite(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  case source.0 {
+    ir.Apply(#(ir.Apply(#(ir.Overwrite(_), _), _), _), _) -> {
       let commit = fn(text) {
-        zipper.1(e.Apply(e.Apply(e.Overwrite(text), e.Vacant("")), exp))
+        zipper.1(ir.apply(ir.apply(ir.overwrite(text), ir.vacant()), source))
       }
       Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
     }
-    exp -> {
+    _ -> {
       let commit = fn(text) {
         // This is the same as above
-        zipper.1(e.Apply(e.Apply(e.Overwrite(text), e.Vacant("")), exp))
+        zipper.1(ir.apply(ir.apply(ir.overwrite(text), ir.vacant()), source))
       }
       Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
     }
@@ -322,67 +327,59 @@ fn decrease(_act, state: WorkSpace) {
   Ok(WorkSpace(..state, selection: selection, mode: Navigate(act)))
 }
 
-fn delete(zipper: zipper.Zipper, state) {
+fn delete(zipper: zipper.Zipper(Nil), state) {
   // an assignment vacant or not is always deleted.
   // when deleting with a vacant as a target there is no change
   // we can instead bump up the path
-  let source = case zipper.0 {
-    e.Let(_label, _, then) -> zipper.1(then)
-    _ -> zipper.1(e.Vacant(""))
+  let source = case zipper.0.0 {
+    ir.Let(_label, _, then) -> zipper.1(then)
+    _ -> zipper.1(ir.vacant())
   }
   update_source(state, source)
 }
 
-fn abstract(zipper: zipper.Zipper, state) {
-  let commit = case zipper.0 {
-    e.Let(label, value, then) -> fn(text) {
-      zipper.1(e.Let(label, e.Lambda(text, value), then))
+fn abstract(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let commit = case source.0 {
+    ir.Let(label, value, then) -> fn(text) {
+      zipper.1(ir.let_(label, ir.lambda(text, value), then))
     }
-    exp -> fn(text) { zipper.1(e.Lambda(text, exp)) }
+    _ -> fn(text) { zipper.1(ir.lambda(text, source)) }
   }
   WorkSpace(..state, mode: WriteLabel("", commit))
 }
 
-fn select(zipper: zipper.Zipper, state) {
-  case zipper.0 {
-    e.Let(_label, _value, _then) -> Error("can't get on let")
-    exp -> {
-      let commit = fn(text) { zipper.1(e.Apply(e.Select(text), exp)) }
+fn select(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  case source.0 {
+    ir.Let(_label, _value, _then) -> Error("can't get on let")
+    _ -> {
+      let commit = fn(text) { zipper.1(ir.apply(ir.select(text), source)) }
       Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
     }
   }
 }
 
-fn handle(zipper: zipper.Zipper, state) {
-  case zipper.0 {
-    e.Let(_label, _value, _then) -> Error("can't handle on let")
-    exp -> {
+fn handle(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  case source.0 {
+    ir.Let(_label, _value, _then) -> Error("can't handle on let")
+    _ -> {
       let commit = fn(text) {
-        zipper.1(e.Apply(e.Apply(e.Handle(text), e.Vacant("")), exp))
+        zipper.1(ir.apply(ir.apply(ir.handle(text), ir.vacant()), source))
       }
       Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
     }
   }
 }
 
-fn shallow(zipper: zipper.Zipper, state) {
-  case zipper.0 {
-    e.Let(_label, _value, _then) -> Error("can't shallow on let")
-    exp -> {
-      let commit = fn(text) {
-        zipper.1(e.Apply(e.Apply(e.Shallow(text), e.Vacant("")), exp))
-      }
-      Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
+fn perform(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let commit = case source.0 {
+    ir.Let(label, _value, then) -> fn(text) {
+      zipper.1(ir.let_(label, ir.perform(text), then))
     }
-  }
-}
-
-fn perform(zipper: zipper.Zipper, state) {
-  let commit = case zipper.0 {
-    e.Let(label, _value, then) -> fn(text) {
-      zipper.1(e.Let(label, e.Perform(text), then))
-    }
-    _exp -> fn(text) { zipper.1(e.Perform(text)) }
+    _ -> fn(text) { zipper.1(ir.perform(text)) }
   }
   WorkSpace(..state, mode: WriteLabel("", commit))
 }
@@ -430,68 +427,72 @@ fn redo(state: WorkSpace) {
   }
 }
 
-fn list(zipper: zipper.Zipper, state) {
-  let new = case zipper.0 {
-    e.Vacant(_comment) -> e.Tail
-    e.Tail | e.Apply(e.Apply(e.Cons, _), _) ->
-      e.Apply(e.Apply(e.Cons, e.Vacant("")), zipper.0)
-    _ -> e.Apply(e.Apply(e.Cons, zipper.0), e.Tail)
+fn list(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let new = case source.0 {
+    ir.Vacant -> ir.tail()
+    ir.Tail | ir.Apply(#(ir.Apply(#(ir.Cons, _), _), _), _) ->
+      ir.apply(ir.apply(ir.cons(), ir.vacant()), zipper.0)
+    _ -> ir.apply(ir.apply(ir.cons(), zipper.0), ir.tail())
   }
   let source = zipper.1(new)
   update_source(state, source)
 }
 
-fn call(zipper: zipper.Zipper, state) {
-  let source = zipper.1(e.Apply(zipper.0, e.Vacant("")))
+fn call(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.1(ir.apply(zipper.0, ir.vacant()))
   update_source(state, source)
 }
 
-fn variable(zipper: zipper.Zipper, state) {
-  let commit = case zipper.0 {
-    e.Let(label, _value, then) -> fn(term) {
-      zipper.1(e.Let(label, term, then))
+fn variable(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let commit = case source.0 {
+    ir.Let(label, _value, then) -> fn(term) {
+      zipper.1(ir.let_(label, term, then))
     }
     _exp -> fn(term) { zipper.1(term) }
   }
   WorkSpace(..state, mode: WriteTerm("", commit))
 }
 
-fn binary(zipper: zipper.Zipper, state) {
-  let commit = case zipper.0 {
-    e.Let(label, _value, then) -> fn(text) {
-      zipper.1(e.Let(label, e.Str(text), then))
+fn binary(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let commit = case source.0 {
+    ir.Let(label, _value, then) -> fn(text) {
+      zipper.1(ir.let_(label, ir.string(text), then))
     }
-    _exp -> fn(text) { zipper.1(e.Str(text)) }
+    _exp -> fn(text) { zipper.1(ir.string(text)) }
   }
   WorkSpace(..state, mode: WriteText("", commit))
 }
 
-fn number(zipper: zipper.Zipper, state) {
-  let #(v, commit) = case zipper.0 {
-    e.Let(label, _value, then) -> #(0, fn(value) {
-      zipper.1(e.Let(label, e.Integer(value), then))
+fn number(zipper: zipper.Zipper(Nil), state) {
+  let source = zipper.0
+  let #(v, commit) = case source.0 {
+    ir.Let(label, _value, then) -> #(0, fn(value) {
+      zipper.1(ir.let_(label, ir.integer(value), then))
     })
-    e.Integer(value) -> #(value, fn(value) { zipper.1(e.Integer(value)) })
-    _exp -> #(0, fn(value) { zipper.1(e.Integer(value)) })
+    ir.Integer(value) -> #(value, fn(value) { zipper.1(ir.integer(value)) })
+    _exp -> #(0, fn(value) { zipper.1(ir.integer(value)) })
   }
   WorkSpace(..state, mode: WriteNumber(v, commit))
 }
 
-fn match(zipper: zipper.Zipper, state) {
+fn match(zipper: zipper.Zipper(Nil), state) {
   let commit = case zipper.0 {
     // e.Let(label, value, then) -> fn(text) {
-    //   zipper.1(e.Let(label, e.Str(text), then))
+    //   zipper.1(e.Let(label, e.String(text), then))
     // }
     // Match on original value should maybe be the arg? but I like promoting first class everything
     exp -> fn(text) {
-      zipper.1(e.Apply(e.Apply(e.Case(text), e.Vacant("")), exp))
+      zipper.1(ir.apply(ir.apply(ir.case_(text), ir.vacant()), exp))
     }
   }
   Ok(WorkSpace(..state, mode: WriteLabel("", commit)))
 }
 
-fn nocases(zipper: zipper.Zipper, state) {
-  update_source(state, zipper.1(e.NoCases))
+fn nocases(zipper: zipper.Zipper(Nil), state) {
+  update_source(state, zipper.1(ir.nocases()))
 }
 
 fn infer(state: WorkSpace) {

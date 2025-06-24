@@ -1,7 +1,8 @@
 import eyg/analysis/typ as t
-import eyg/runtime/cast
-import eyg/runtime/interpreter/state
-import eyg/runtime/value as v
+import eyg/interpreter/builtin
+import eyg/interpreter/cast
+import eyg/interpreter/state
+import eyg/interpreter/value as v
 import gleam/result
 
 pub fn pop() {
@@ -13,17 +14,7 @@ pub fn pop() {
     ))
   let type_ =
     t.Fun(t.LinkedList(t.Unbound(0)), t.Open(1), t.result(parts, t.unit))
-  #(type_, state.Arity1(do_pop))
-}
-
-fn do_pop(term, meta, env, k) {
-  use elements <- result.then(cast.as_list(term))
-  let return = case elements {
-    [] -> v.error(v.unit)
-    [head, ..tail] ->
-      v.ok(v.Record([#("head", head), #("tail", v.LinkedList(tail))]))
-  }
-  Ok(#(state.V(return), env, k))
+  #(type_, builtin.list_pop)
 }
 
 pub fn fold() {
@@ -45,38 +36,7 @@ pub fn fold() {
         ),
       ),
     )
-  #(type_, state.Arity3(fold_impl))
-}
-
-pub fn fold_impl(list, initial, func, meta, env, k) {
-  use elements <- result.then(cast.as_list(list))
-  do_fold(elements, initial, func, meta, env, k)
-}
-
-pub fn do_fold(elements, state, f, meta, env, k) {
-  case elements {
-    [] -> Ok(#(state.V(state), env, k))
-    [element, ..rest] -> {
-      state.call(
-        f,
-        element,
-        meta,
-        env,
-        state.Stack(
-          state.CallWith(state, env),
-          meta,
-          state.Stack(
-            state.Apply(
-              v.Partial(v.Builtin("list_fold"), [v.LinkedList(rest)]),
-              env,
-            ),
-            meta,
-            state.Stack(state.CallWith(f, env), meta, k),
-          ),
-        ),
-      )
-    }
-  }
+  #(type_, builtin.list_fold)
 }
 
 pub fn uncons() {
@@ -88,7 +48,7 @@ fn do_uncons(list, empty, nonempty, meta, env, k) {
   use elements <- result.then(cast.as_list(list))
 
   case elements {
-    [] -> state.call(empty, v.unit, meta, env, k)
+    [] -> state.call(empty, v.unit(), meta, env, k)
     [head, ..tail] -> {
       let k = state.Stack(state.CallWith(v.LinkedList(tail), env), meta, k)
       state.call(nonempty, head, meta, env, k)

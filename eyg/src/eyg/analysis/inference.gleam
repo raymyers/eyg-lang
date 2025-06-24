@@ -3,7 +3,7 @@ import eyg/analysis/scheme.{type Scheme, Scheme}
 import eyg/analysis/substitutions as sub
 import eyg/analysis/typ as t
 import eyg/analysis/unification.{fresh, generalise, instantiate}
-import eygir/expression as e
+import eyg/ir/tree as ir
 import gleam/dict.{type Dict}
 import gleam/dictx
 import gleam/io
@@ -113,8 +113,9 @@ pub fn infer(env, exp, typ, eff) {
 }
 
 fn do_infer(env, exp, typ, eff, ref, path) {
+  let #(exp, _) = exp
   case exp {
-    e.Lambda(arg, body) -> {
+    ir.Lambda(arg, body) -> {
       let t = t.Unbound(fresh(ref))
       let u = t.Unbound(fresh(ref))
       let r = t.Open(fresh(ref))
@@ -126,7 +127,7 @@ fn do_infer(env, exp, typ, eff, ref, path) {
         do_infer(env, body, apply(s1, u), apply_effects(s1, r), ref, [0, ..path])
       compose(s2, s1)
     }
-    e.Apply(func, arg) -> {
+    ir.Apply(func, arg) -> {
       let t = t.Unbound(fresh(ref))
       // just point path to typ at top of do_infer but need to check map for errors separatly
       // unify with self needed to add to type dictionary, not problem with inference jm
@@ -144,7 +145,7 @@ fn do_infer(env, exp, typ, eff, ref, path) {
         )
       compose(s2, s1)
     }
-    e.Variable(x) ->
+    ir.Variable(x) ->
       case dict.get(env, x) {
         Ok(scheme) -> {
           let t = instantiate(scheme, ref)
@@ -160,7 +161,7 @@ fn do_infer(env, exp, typ, eff, ref, path) {
             dict.new(),
           )
       }
-    e.Let(x, value, then) -> {
+    ir.Let(x, value, then) -> {
       let t = t.Unbound(fresh(ref))
       let s1 = do_infer(env, value, t, eff, ref, [0, ..path])
       let scheme = generalise(env_apply(s1, env), apply(s1, t))
@@ -175,12 +176,12 @@ fn do_infer(env, exp, typ, eff, ref, path) {
       |> compose(unify(typ, typ, ref, path))
     }
     // Primitive
-    e.Binary(_) -> unify(typ, t.Binary, ref, path)
-    e.Str(_) -> unify(typ, t.Str, ref, path)
-    e.Integer(_) -> unify(typ, t.Integer, ref, path)
-    e.Tail -> unify(typ, t.tail(ref), ref, path)
-    e.Cons -> unify(typ, t.cons(ref), ref, path)
-    e.Vacant(_comment) ->
+    ir.Binary(_) -> unify(typ, t.Binary, ref, path)
+    ir.String(_) -> unify(typ, t.Str, ref, path)
+    ir.Integer(_) -> unify(typ, t.Integer, ref, path)
+    ir.Tail -> unify(typ, t.tail(ref), ref, path)
+    ir.Cons -> unify(typ, t.cons(ref), ref, path)
+    ir.Vacant ->
       Infered(
         sub.none(),
         dictx.singleton(list.reverse(path), Ok(typ)),
@@ -188,24 +189,22 @@ fn do_infer(env, exp, typ, eff, ref, path) {
       )
 
     // Record
-    e.Empty -> unify(typ, t.empty(), ref, path)
-    e.Extend(label) -> unify(typ, t.extend(label, ref), ref, path)
-    e.Overwrite(label) -> unify(typ, t.overwrite(label, ref), ref, path)
-    e.Select(label) -> unify(typ, t.select(label, ref), ref, path)
+    ir.Empty -> unify(typ, t.empty(), ref, path)
+    ir.Extend(label) -> unify(typ, t.extend(label, ref), ref, path)
+    ir.Overwrite(label) -> unify(typ, t.overwrite(label, ref), ref, path)
+    ir.Select(label) -> unify(typ, t.select(label, ref), ref, path)
 
     // Union
-    e.Tag(label) -> unify(typ, t.tag(label, ref), ref, path)
-    e.Case(label) -> unify(typ, t.case_(label, ref), ref, path)
-    e.NoCases -> unify(typ, t.nocases(ref), ref, path)
+    ir.Tag(label) -> unify(typ, t.tag(label, ref), ref, path)
+    ir.Case(label) -> unify(typ, t.case_(label, ref), ref, path)
+    ir.NoCases -> unify(typ, t.nocases(ref), ref, path)
 
     // Effect
-    e.Perform(label) -> unify(typ, t.perform(label, ref), ref, path)
+    ir.Perform(label) -> unify(typ, t.perform(label, ref), ref, path)
 
-    e.Handle(label) -> unify(typ, t.handle(label, ref), ref, path)
-    // TODO proper typing
-    e.Shallow(label) -> unify(typ, t.handle(label, ref), ref, path)
+    ir.Handle(label) -> unify(typ, t.handle(label, ref), ref, path)
 
-    e.Builtin(identifier) ->
+    ir.Builtin(identifier) ->
       case dict.get(stdlib.lib().0, identifier) {
         Ok(scheme) -> unify(typ, instantiate(scheme, ref), ref, path)
         Error(Nil) ->
@@ -223,8 +222,8 @@ fn do_infer(env, exp, typ, eff, ref, path) {
             dict.new(),
           )
       }
-    e.Reference(_) -> panic as "not supported in this inference"
-    e.NamedReference(_, _) -> panic as "not supported in this inference"
+    ir.Reference(_) -> panic as "not supported in this inference"
+    ir.Release(_, _, _) -> panic as "not supported in this inference"
   }
   |> compose(Infered(
     sub.none(),

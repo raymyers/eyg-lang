@@ -2,18 +2,16 @@
 // import eyg/analysis/type_/isomorphic
 // import eyg/document/section
 // import eyg/package
-// import eyg/runtime/break
-// import eyg/runtime/cast
-// import eyg/runtime/interpreter/runner as r
-// import eyg/runtime/interpreter/state.{type Env, type Stack} as istate
-// import eyg/runtime/value as v
-// import eyg/sync/browser
-// import eyg/sync/fragment
-// import eyg/sync/packages
-// import eyg/sync/sync
-// import eygir/annotated.{type Node}
+// import eyg/interpreter/break
+// import eyg/interpreter/cast
+// import eyg/interpreter/expression as r
+// import eyg/interpreter/state.{type Env, type Stack} as istate
+// import eyg/interpreter/value as v
+// import website/sync/browser
+// import website/sync/fragment
+// import website/sync/packages
+// import website/sync/sync
 // import eygir/encode
-// import eygir/expression
 // import gleam/dict
 // import gleam/http/request.{type Request}
 // import gleam/io
@@ -25,9 +23,9 @@
 // import gleam/uri
 // import harness/fetch
 // import harness/http
-// import harness/impl/browser/geolocation
-// import harness/impl/browser/now
-// import harness/impl/browser/visit
+// import website/harness/browser/geolocation
+// import website/harness/browser/now
+// import website/harness/browser/visit
 // import intro/content
 // import lustre/effect
 // import midas/browser as m_browser
@@ -131,7 +129,7 @@
 
 //       // TODO buffer from assigns
 //       let assert Ok(proj) =
-//         projection.focus_in_block(snippet, editable.Vacant(""), [0], [])
+//         projection.focus_in_block(snippet, editable.Vacant, [0], [])
 //       let mode = buffer.Command(None)
 //       let buffer = #(proj, mode)
 
@@ -213,7 +211,7 @@
 //     //   io.println(
 //     //     editable.to_expression(editable.Block(
 //     //       assigns,
-//     //       editable.Vacant(""),
+//     //       editable.Vacant,
 //     //       True,
 //     //     ))
 //     //     |> encode.to_json,
@@ -499,7 +497,7 @@
 //       let assert Ok(func) = dict.get(values, reference)
 //       let #(run, effect) =
 //         handle_next(
-//           r.call(func, [#(v.unit, [])], fragment.empty_env(values), dict.new()),
+//           r.call(func, [#(v.unit(), [])], fragment.empty_env(values), dict.new()),
 //           [],
 //         )
 //       let state = State(..state, running: Some(#(reference, run)))
@@ -553,7 +551,7 @@
 // fn reply_value(effect) -> Value {
 //   case effect {
 //     Geolocation(result) -> geolocation.result_to_eyg(result)
-//     Asked(_question, answer) -> v.Str(answer)
+//     Asked(_question, answer) -> v.String(answer)
 //     Waited(_duration) -> v.unit
 //     Awaited(value) -> value
 //     Log(_) -> panic as "log can be dealt with synchronously"
@@ -577,7 +575,7 @@
 //               case cast.as_string(lift) {
 //                 Ok(message) -> {
 //                   let effects = [Log(message), ..effects]
-//                   r.loop(istate.step(istate.V(v.unit), env, k))
+//                   r.loop(istate.step(istate.V(v.unit()), env, k))
 //                   |> do_handle_next(effects)
 //                 }
 //                 Error(reason) -> Runner(Abort(#(reason, meta, env, k)), effects)
@@ -588,7 +586,7 @@
 //                   Runner(Suspended(Timer(duration), env, k), effects)
 //                 // r.loop(istate.step(
 //                 //   istate.V(v.Promise(
-//                 //     promise.wait(duration) |> promise.map(fn(_) { v.unit }),
+//                 //     promise.wait(duration) |> promise.map(fn(_) { v.unit() }),
 //                 //   )),
 //                 //   env,
 //                 //   k,
@@ -613,7 +611,7 @@
 //             "Now" ->
 //               case now.impl(lift) {
 //                 Ok(reply) -> {
-//                   let effects = [Log("Now: " <> v.debug(reply)), ..effects]
+//                   let effects = [Log("Now: " <> old_value.debug(reply)), ..effects]
 //                   r.loop(istate.step(istate.V(reply), env, k))
 //                   |> do_handle_next(effects)
 //                 }
@@ -622,7 +620,7 @@
 //             "Open" ->
 //               case visit.impl(lift) {
 //                 Ok(reply) -> {
-//                   let effects = [Log("Open: " <> v.debug(reply)), ..effects]
+//                   let effects = [Log("Open: " <> old_value.debug(reply)), ..effects]
 //                   r.loop(istate.step(istate.V(reply), env, k))
 //                   |> do_handle_next(effects)
 //                 }

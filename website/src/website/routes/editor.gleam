@@ -1,16 +1,13 @@
 import eyg/analysis/type_/binding/debug
 import eyg/analysis/type_/binding/error
-import eyg/shell/examples
-import eyg/sync/browser
-import eyg/sync/sync
-import eygir/expression
+import eyg/ir/tree as ir
 import gleam/int
+import gleam/io
+import gleam/javascript/promise
 import gleam/javascript/promisex
 import gleam/list
-import gleam/listx
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleroglero/outline
-import harness/impl/browser as harness
 import lustre
 import lustre/attribute as a
 import lustre/effect
@@ -21,17 +18,23 @@ import morph/analysis
 import morph/editable as e
 import morph/input
 import morph/picker
-import morph/projection as p
 import mysig/asset
 import mysig/html
 import plinth/browser/document
 import plinth/browser/element as pelement
 import plinth/browser/window
-import plinth/javascript/console
+import website/components/autocomplete
+import website/components/examples
 import website/components/output
 import website/components/readonly
+import website/components/runner
+import website/components/shell
+import website/components/simple_debug
 import website/components/snippet
+import website/components/vertical_menu
+import website/harness/browser as harness
 import website/routes/common
+import website/sync/client
 
 pub fn app(module, func) {
   use script <- asset.do(asset.bundle(module, func))
@@ -54,7 +57,6 @@ fn layout(body) {
         html.stylesheet(asset.src(layout)),
         html.stylesheet(asset.src(neo)),
         common.prism_style(),
-        html.plausible("eyg.run"),
         h.style([], "html { height: 100%; }\nbody { min-height: 100%; }\n"),
       ],
       common.page_meta(
@@ -62,6 +64,7 @@ fn layout(body) {
         "EYG",
         "EYG is a programming language for predictable, useful and most of all confident development.",
       ),
+      common.diagnostics(),
     ]),
     body,
   )
@@ -79,89 +82,35 @@ pub fn client() {
   Nil
 }
 
-pub type ShellEntry {
-  Executed(
-    Option(snippet.Value),
-    List(#(String, #(snippet.Value, snippet.Value))),
-    readonly.Readonly,
-  )
-}
-
-pub type ShellFailure {
-  SnippetFailure(snippet.Failure)
-  NoMoreHistory
-}
-
-pub type Shell {
-  Shell(
-    // config: spotless.Config,
-    // situation: Situation,
-    // cache: sync.Sync,
-    failure: Option(ShellFailure),
-    previous: List(ShellEntry),
-    // display_help: Bool,
-    // scope is on snippet
-    // scope: snippet.Scope,
-    source: snippet.Snippet,
-  )
-}
-
-pub type Submenu {
-  Closed
-  Collection
-  More
-}
-
 pub type State {
   State(
-    cache: sync.Sync,
+    sync: client.Client,
     source: snippet.Snippet,
-    shell: Shell,
-    submenu: Submenu,
+    shell: shell.Shell,
     display_help: Bool,
   )
 }
 
 pub fn init(_) {
-  let cache = sync.init(browser.get_origin())
-  let source = e.from_expression(expression.Vacant(""))
-  // snippet has no effects, they run in the shell
-  let snippet = snippet.init(source, [], [], cache)
-  let shell =
-    Shell(None, [], {
-      let source = e.from_expression(expression.Vacant(""))
-      // TODO update hardness to spotless
-      snippet.init(source, [], harness.effects(), cache)
-    })
-  let state = State(cache, snippet, shell, Closed, False)
-  #(state, effect.from(browser.do_load(SyncMessage)))
-}
-
-pub type MenuMessage {
-  ChangeSubmenu(Submenu)
-  ActionClicked(String)
+  let #(client, sync_task) = client.default()
+  let source = e.from_annotated(ir.vacant())
+  let shell = shell.init(harness.effects(), client.cache)
+  let snippet = snippet.init(source)
+  let state = State(client, snippet, shell, False)
+  #(state, client.lustre_run(sync_task, SyncMessage))
 }
 
 pub type Message {
   ToggleHelp
   ToggleFullscreen
-  MenuMessage(MenuMessage)
   SnippetMessage(snippet.Message)
-  UserClickedPrevious(e.Expression)
-  ShellMessage(snippet.Message)
-  PreviouseMessage(readonly.Message, Int)
-  SyncMessage(sync.Message)
+  ShellMessage(shell.Message)
+  SyncMessage(client.Message)
 }
 
 fn dispatch_to_snippet(promise) {
   effect.from(fn(d) {
     promisex.aside(promise, fn(message) { d(SnippetMessage(message)) })
-  })
-}
-
-fn dispatch_to_previous(promise, i) {
-  effect.from(fn(d) {
-    promisex.aside(promise, fn(message) { d(PreviouseMessage(message, i)) })
   })
 }
 
@@ -171,24 +120,8 @@ fn dispatch_to_shell(promise) {
   })
 }
 
-fn dispatch_nothing(_promise) {
-  effect.none()
-}
-
-fn close_many_previous(shell_entries) {
-  list.map(shell_entries, fn(e) {
-    let Executed(a, b, r) = e
-    let r = readonly.Readonly(..r, status: readonly.Idle)
-    Executed(a, b, r)
-  })
-}
-
-fn close_all_previous(state: State) {
-  let shell = state.shell
-  let previous = close_many_previous(shell.previous)
-
-  let shell = Shell(..shell, previous: previous)
-  State(..state, shell: shell)
+fn dispatch_nothing(func) {
+  effect.from(fn(_dispatch) { func() })
 }
 
 pub fn update(state: State, message) {
@@ -212,34 +145,25 @@ pub fn update(state: State, message) {
         Nil
       }),
     )
-    MenuMessage(ChangeSubmenu(submenu)) -> {
-      let submenu = case submenu == state.submenu {
-        False -> submenu
-        True -> Closed
-      }
-      #(State(..state, submenu: submenu), effect.none())
-    }
-    MenuMessage(ActionClicked(key)) ->
-      update(state, ShellMessage(snippet.UserPressedCommandKey(key)))
+
     SnippetMessage(message) -> {
       let #(snippet, eff) = snippet.update(state.source, message)
       let State(display_help: display_help, ..) = state
       let #(display_help, snippet_effect) = case eff {
         snippet.Nothing -> #(display_help, effect.none())
-        snippet.Failed(failure) -> {
-          todo as "put on some state"
-        }
-        snippet.AwaitRunningEffect(p) -> #(
+        snippet.NewCode -> #(
           display_help,
-          dispatch_to_snippet(snippet.await_running_effect(p)),
+          dispatch_nothing(snippet.focus_on_buffer),
         )
-        snippet.FocusOnCode -> #(
+        snippet.Confirm -> #(display_help, effect.none())
+        snippet.Failed(_failure) -> #(display_help, effect.none())
+        snippet.ReturnToCode -> #(
           display_help,
-          dispatch_nothing(snippet.focus_on_buffer()),
+          dispatch_nothing(snippet.focus_on_buffer),
         )
         snippet.FocusOnInput -> #(
           display_help,
-          dispatch_nothing(snippet.focus_on_input()),
+          dispatch_nothing(snippet.focus_on_input),
         )
         snippet.ToggleHelp -> #(!display_help, effect.none())
         snippet.MoveAbove -> #(display_help, effect.none())
@@ -252,131 +176,70 @@ pub fn update(state: State, message) {
           display_help,
           dispatch_to_snippet(snippet.write_to_clipboard(text)),
         )
-        snippet.Conclude(_, _, _) -> {
-          #(display_help, effect.none())
-        }
       }
-      let #(cache, tasks) = sync.fetch_all_missing(state.cache)
-      let sync_effect = effect.from(browser.do_sync(tasks, SyncMessage))
+      // let #(cache, tasks) = sync.fetch_all_missing(state.cache)
+      // let sync_effect = effect.from(browser.do_sync(tasks, SyncMessage))
+      io.debug("We need the sync effect")
       let state =
         State(
           ..state,
           source: snippet,
-          cache: cache,
+          // cache: cache,
           display_help: display_help,
         )
-      #(state, effect.batch([snippet_effect, sync_effect]))
-    }
-    UserClickedPrevious(exp) -> {
-      let shell = state.shell
-      let scope = shell.source.scope
-      let current = snippet.active(exp, scope, harness.effects(), state.cache)
-      let shell = Shell(..shell, source: current)
-      let state = State(..state, shell: shell)
-      #(state, effect.none())
+      #(state, effect.batch([snippet_effect]))
     }
     ShellMessage(message) -> {
-      let state = close_all_previous(state)
-      let state = State(..state, submenu: Closed)
-      let shell = state.shell
-      case snippet.user_message(message) {
-        True -> Shell(..shell, failure: None)
-        False -> shell
+      let #(shell, shell_effect) = shell.update(state.shell, message)
+      let references =
+        snippet.references(state.source)
+        |> list.append(snippet.references(shell.source))
+      let #(sync, sync_task) = client.fetch_fragments(state.sync, references)
+      let state = State(..state, sync:, shell:)
+      let shell_effect = case shell_effect {
+        shell.Nothing -> effect.none()
+        shell.RunExternalHandler(ref, thunk) ->
+          dispatch_to_shell(
+            promise.map(thunk(), fn(reply) {
+              shell.RunnerMessage(runner.HandlerCompleted(ref, reply))
+            }),
+          )
+        shell.WriteToClipboard(text) ->
+          dispatch_to_shell(shell.write_to_clipboard(text))
+        shell.ReadFromClipboard ->
+          dispatch_to_shell(shell.read_from_clipboard())
+        shell.FocusOnCode -> dispatch_nothing(snippet.focus_on_buffer)
+        shell.FocusOnInput -> dispatch_nothing(snippet.focus_on_input)
       }
-      let #(source, eff) = snippet.update(shell.source, message)
-      let #(shell, snippet_effect) = case eff {
-        snippet.Nothing -> #(Shell(..shell, source: source), effect.none())
-        snippet.Failed(failure) -> #(
-          Shell(..shell, failure: Some(SnippetFailure(failure))),
-          effect.none(),
-        )
-
-        snippet.AwaitRunningEffect(p) -> #(
-          Shell(..shell, source: source),
-          dispatch_to_shell(snippet.await_running_effect(p)),
-        )
-        snippet.FocusOnCode -> #(
-          Shell(..shell, source: source),
-          dispatch_nothing(snippet.focus_on_buffer()),
-        )
-        snippet.FocusOnInput -> #(
-          Shell(..shell, source: source),
-          dispatch_nothing(snippet.focus_on_input()),
-        )
-        snippet.ToggleHelp -> #(Shell(..shell, source: source), effect.none())
-        snippet.MoveAbove -> {
-          case shell.previous {
-            [] -> #(Shell(..shell, failure: Some(NoMoreHistory)), effect.none())
-            [Executed(_value, _effects, readonly), ..] -> {
-              let scope = shell.source.scope
-              let current =
-                snippet.active(
-                  readonly.source,
-                  scope,
-                  harness.effects(),
-                  state.cache,
-                )
-              #(Shell(..shell, source: current), effect.none())
-            }
-          }
-        }
-        snippet.MoveBelow -> #(Shell(..shell, source: source), effect.none())
-        snippet.ReadFromClipboard -> #(
-          Shell(..shell, source: source),
-          dispatch_to_shell(snippet.read_from_clipboard()),
-        )
-        snippet.WriteToClipboard(text) -> #(
-          Shell(..shell, source: source),
-          dispatch_to_shell(snippet.write_to_clipboard(text)),
-        )
-        snippet.Conclude(value, effects, scope) -> {
-          let previous = [
-            Executed(value, effects, readonly.new(snippet.source(shell.source))),
-            ..shell.previous
-          ]
-          let source =
-            snippet.active(e.Vacant(""), scope, harness.effects(), state.cache)
-          let shell = Shell(..shell, source: source, previous: previous)
-          #(shell, effect.none())
-        }
-      }
-      let #(cache, tasks) = sync.fetch_all_missing(state.cache)
-      let sync_effect = effect.from(browser.do_sync(tasks, SyncMessage))
-      let state = State(..state, shell: shell, cache: cache)
-      #(state, effect.batch([snippet_effect, sync_effect]))
-    }
-    PreviouseMessage(m, i) -> {
-      let shell = state.shell
-      let assert Ok(#(pre, executed, post)) =
-        listx.split_around(shell.previous, i)
-      let pre = close_many_previous(pre)
-      let post = close_many_previous(post)
-      let Executed(a, b, r) = executed
-      let #(r, action) = readonly.update(r, m)
-      let previous = listx.gather_around(pre, Executed(a, b, r), post)
-      let effect = case action {
-        readonly.Nothing -> effect.none()
-        readonly.Fail(message) -> {
-          console.warn(message)
-          effect.none()
-        }
-        readonly.MoveAbove -> effect.none()
-        readonly.MoveBelow -> effect.none()
-        readonly.WriteToClipboard(text) ->
-          dispatch_to_previous(readonly.write_to_clipboard(text), i)
-      }
-      let shell = Shell(..shell, previous: previous)
-      #(State(..state, shell: shell), effect)
+      #(
+        state,
+        effect.batch([shell_effect, client.lustre_run(sync_task, SyncMessage)]),
+      )
     }
     SyncMessage(message) -> {
-      let cache = sync.task_finish(state.cache, message)
-      let #(cache, tasks) = sync.fetch_all_missing(cache)
-      let snippet = snippet.set_references(state.source, cache)
-      let shell_source = snippet.set_references(state.shell.source, cache)
-      let shell = Shell(..state.shell, source: shell_source)
+      let State(sync:, shell:, ..) = state
+      let #(sync, effect) = client.update(sync, message)
+      let #(shell, shell_effect) =
+        shell.update(shell, shell.CacheUpdate(sync.cache))
+      let shell_effect = case shell_effect {
+        shell.Nothing -> effect.none()
+        shell.RunExternalHandler(ref, thunk) ->
+          dispatch_to_shell(
+            promise.map(thunk(), fn(reply) {
+              shell.RunnerMessage(runner.HandlerCompleted(ref, reply))
+            }),
+          )
+        shell.WriteToClipboard(text) ->
+          dispatch_to_shell(shell.write_to_clipboard(text))
+        shell.ReadFromClipboard ->
+          dispatch_to_shell(shell.read_from_clipboard())
+        shell.FocusOnCode -> dispatch_nothing(snippet.focus_on_buffer)
+        shell.FocusOnInput -> dispatch_nothing(snippet.focus_on_input)
+      }
+      let state = State(..state, sync:, shell:)
       #(
-        State(..state, source: snippet, shell: shell, cache: cache),
-        effect.from(browser.do_sync(tasks, SyncMessage)),
+        state,
+        effect.batch([client.lustre_run(effect, SyncMessage), shell_effect]),
       )
     }
   }
@@ -402,40 +265,6 @@ fn not_a_modal(content, dismiss: a) {
       content,
     ),
   ])
-}
-
-pub fn icon(image, text, display_help) {
-  h.span(
-    [
-      a.style([
-        #("align-items", "center"),
-        #("border-radius", ".25rem"),
-        #("display", "flex"),
-      ]),
-    ],
-    [
-      h.span(
-        [
-          a.style([
-            #("font-size", "1.25rem"),
-            #("line-height", "1.75rem"),
-            #("text-align", "center"),
-            #("width", "1.5rem"),
-            #("height", "1.75rem"),
-            #("display", "inline-block"),
-          ]),
-        ],
-        [image],
-      ),
-      case display_help {
-        True ->
-          h.span([a.class("ml-2 border-l border-opacity-25 pl-2")], [
-            element.text(text),
-          ])
-        False -> element.none()
-      },
-    ],
-  )
 }
 
 // https://stackoverflow.com/questions/17555682/height-100-or-min-height-100-for-html-and-body-elements
@@ -519,6 +348,11 @@ fn render_pallet(state: snippet.Snippet) {
           ]
           |> not_a_modal(picker.Dismissed)
           |> element.map(snippet.MessageFromPicker)
+        snippet.SelectRelease(state, _) ->
+          autocomplete.render(state, snippet.release_to_option)
+          |> list.wrap
+          |> not_a_modal(autocomplete.UserPressedEscape)
+          |> element.map(snippet.SelectReleaseMessage)
 
         snippet.EditText(value, _rebuild) ->
           render_text(value)
@@ -581,517 +415,213 @@ pub fn render(state: State) {
   let show = state.display_help
   container(
     render_menu_from_state(state)
-      |> list.map(fn(e) { element.map(e, MenuMessage) }),
+      |> list.map(fn(e) {
+        element.map(e, snippet.MessageFromMenu)
+        |> element.map(shell.CurrentMessage)
+        |> element.map(ShellMessage)
+      }),
     [
-      render_pallet(state.shell.source) |> element.map(ShellMessage),
+      render_pallet(state.shell.source)
+        |> element.map(shell.CurrentMessage)
+        |> element.map(ShellMessage),
       h.div([a.class("absolute top-0 w-full bg-white")], [
         help_menu_button(state),
         fullscreen_menu_button(state),
       ]),
-      h.div(
-        [
-          a.class("expand vstack flex-grow pt-10"),
-          a.style([#("min-height", "0")]),
-        ],
-        case list.length(state.shell.previous) {
-          x if x < 4 -> [
-            h.div([a.class("px-2 text-gray-700 cover")], [
-              h.h2([a.class("texl-lg font-bold")], [element.text("The shell")]),
-              // h.p([], [element.text("Run and test your code here. ")]),
-            // h.button([a.class("underline"), event.on_click(ToggleHelp)], [
-            //   case state.display_help {
-            //     True -> element.text("Hide help.")
-            //     False -> element.text("Show help.")
-            //   },
-            // ]),
-            ]),
-            h.div([a.class("px-2 text-gray-700 cover")], [
-              h.p([], [element.text("examples:")]),
-              h.ul(
-                [a.class("list-inside list-disc")],
-                list.map(examples.examples(), fn(e) {
-                  let #(source, message) = e
-                  h.li([], [
-                    h.button([event.on_click(UserClickedPrevious(source))], [
-                      element.text(message),
-                    ]),
-                  ])
-                }),
-              ),
-            ]),
-          ]
-          _ -> []
-        },
-      ),
-      h.div([a.class("expand cover font-mono bg-gray-100 overflow-auto")], {
-        let count = list.length(state.shell.previous) - 1
-        list.index_map(list.reverse(state.shell.previous), fn(p, i) {
-          let i = count - i
-          case p {
-            Executed(value, effects, readonly) ->
-              h.div([a.class("mx-2 border-t border-gray-600 border-dashed")], [
-                h.div([a.class("relative pr-8")], [
-                  h.div([a.class("flex-grow whitespace-nowrap overflow-auto")], [
-                    readonly.render(readonly)
-                    |> element.map(PreviouseMessage(_, i)),
-                  ]),
-                  h.button(
-                    [
-                      a.class("absolute top-0 right-0 w-6"),
-                      event.on_click(UserClickedPrevious(readonly.source)),
-                    ],
-                    [outline.arrow_path()],
-                  ),
-                ]),
-                h.div([a.class("text-blue-700")], [
-                  h.span([a.class("font-bold")], [element.text("effects ")]),
-                  ..list.map(effects, fn(eff) {
-                    h.span([], [element.text(eff.0), element.text(" ")])
-                    // h.div([a.class("flex gap-1")], [
-                    //   output.render(eff.1.0),
-                    //   output.render(eff.1.1),
-                    // ])
-                  })
-                ]),
-                case value {
-                  Some(value) ->
-                    h.div([a.class(" max-h-60 overflow-auto")], [
-                      h.span([a.class("font-bold")], [element.text("> ")]),
-                      output.render(value),
-                    ])
-                  None -> element.none()
-                },
-              ])
-          }
-        })
-      }),
-      // snippet.render_current([], state.shell.source.run)
-      //   |> element.map(ShellMessage),
-
-      render_errors(state.shell.failure, state.shell.source),
-      h.div(
-        [
-          a.class("cover border-t border-black font-mono bg-white grid"),
-          a.style([
-            #("min-height", "5rem"),
-            #("grid-template-columns", "minmax(0px, 1fr) max-content"),
-          ]),
-        ],
-        [
-          h.div(
-            [a.style([#("max-height", "65vh"), #("overflow-y", "scroll")])],
-            [snippet.render_just_projection(state.shell.source, True)],
-          ),
-          h.button(
-            [
-              a.class(
-                "inline-block w-8 md:w-12 bg-green-200 text-center text-xl",
-              ),
-              event.on_click(snippet.UserPressedCommandKey("Enter")),
-            ],
-            [outline.play_circle()],
-          ),
-        ],
-      )
+      h.div([a.class("h-full")], [
+        render_shell(state.shell)
         |> element.map(ShellMessage),
+        // h.div([], [element.text("hello")]),
+      ]),
     ],
     show,
   )
 }
 
-fn cmd(x) {
-  ActionClicked(x)
-}
-
-fn assign() {
-  #(outline.equals(), "assign", cmd("e"))
-}
-
-fn assign_before() {
-  #(outline.document_arrow_up(), "assign above", cmd("E"))
-}
-
-fn use_variable() {
-  #(element.text("var"), "use variable", cmd("v"))
-}
-
-fn insert_function() {
-  #(outline.variable(), "insert function", cmd("f"))
-}
-
-fn insert_number() {
-  #(element.text("14"), "insert number", cmd("n"))
-}
-
-fn insert_text() {
-  #(outline.italic(), "insert text", cmd("s"))
-}
-
-fn new_list() {
-  #(element.text("[]"), "new list", cmd("l"))
-}
-
-fn new_record() {
-  #(element.text("{}"), "new record", cmd("r"))
-}
-
-fn expand() {
-  #(outline.arrows_pointing_out(), "expand", cmd("a"))
-}
-
-fn more() {
-  #(outline.ellipsis_horizontal_circle(), "more", ChangeSubmenu(More))
-}
-
-fn edit() {
-  #(outline.pencil_square(), "edit", cmd("i"))
-}
-
-fn spread_list() {
-  #(element.text("..]"), "spread list", cmd("."))
-}
-
-fn overwrite_field() {
-  #(element.text("..}"), "overwrite field", cmd("o"))
-}
-
-fn select_field() {
-  #(element.text(".x"), "select field", cmd("g"))
-}
-
-fn call_function() {
-  #(element.text("(_)"), "call function", cmd("c"))
-}
-
-fn call_with() {
-  #(element.text("_()"), "call as argument", cmd("w"))
-}
-
-fn tag_value() {
-  #(outline.tag(), "tag value", cmd("t"))
-}
-
-fn match() {
-  #(outline.arrows_right_left(), "match", cmd("m"))
-}
-
-fn branch_after() {
-  #(outline.document_arrow_down(), "branch after", cmd("m"))
-}
-
-fn item_before() {
-  #(outline.arrow_turn_left_down(), "item before", cmd(","))
-}
-
-fn item_after() {
-  #(outline.arrow_turn_right_down(), "item after", cmd("EXTEND AFTER"))
-}
-
-fn toggle_spread() {
-  #(element.text(".."), "toggle spread", cmd("TOGGLE SPREAD"))
-}
-
-fn toggle_otherwise() {
-  #(element.text("_/"), "toggle otherwise", cmd("TOGGLE OTHERWISE"))
-}
-
-fn collection() {
-  #(outline.arrow_down_on_square_stack(), "wrap", ChangeSubmenu(Collection))
-}
-
-fn undo() {
-  #(outline.arrow_uturn_left(), "undo", cmd("z"))
-}
-
-fn redo() {
-  #(outline.arrow_uturn_right(), "redo", cmd("Z"))
-}
-
-fn delete() {
-  #(outline.trash(), "delete", cmd("d"))
-}
-
-fn copy() {
-  #(outline.clipboard(), "copy", cmd("y"))
-}
-
-fn paste() {
-  #(outline.clipboard_document(), "paste", cmd("Y"))
-}
-
-pub type Action(e) {
-  Action(icon: element.Element(e), text: String, action: Message)
-}
-
-fn top_content(projection) {
-  let #(focus, zoom) = projection
-  case focus {
-    // create
-    p.Exp(exp) ->
-      case exp {
-        e.Variable(_) | e.Reference(_) | e.NamedReference(_, _) -> [
-          edit(),
-          select_field(),
-          call_function(),
-          call_with(),
+fn render_shell(shell: shell.Shell) {
+  h.div([a.class("h-full flex flex-col")], [
+    h.div(
+      [
+        a.class("expand vstack flex-grow pt-10"),
+        a.style([#("min-height", "0")]),
+      ],
+      case list.length(shell.previous) {
+        x if x < 4 -> [
+          h.div([a.class("px-2 text-gray-700 cover")], [
+            h.h2([a.class("texl-lg font-bold")], [element.text("The shell")]),
+          ]),
+          h.div([a.class("px-2 text-gray-700 cover")], [
+            h.p([], [element.text("examples:")]),
+            h.ul(
+              [a.class("list-inside list-disc")],
+              list.map(examples.examples(), fn(e) {
+                let #(source, message) = e
+                h.li([], [
+                  h.button([event.on_click(shell.ParentSetSource(source))], [
+                    element.text(message),
+                  ]),
+                ])
+              }),
+            ),
+          ]),
         ]
-        e.Call(_, _) -> [select_field(), call_function(), call_with()]
-        e.Function(_, _) -> [insert_function(), call_with()]
-        e.Block(_, _, _) -> []
-        e.Vacant(_) -> [use_variable(), insert_number(), insert_text()]
-        e.Integer(_)
-        | e.Binary(_)
-        | e.String(_)
-        | e.Perform(_)
-        | e.Deep(_)
-        | e.Shallow(_) -> [edit(), call_with()]
-        e.Builtin(_) -> [edit(), call_function(), call_with()]
-        e.List(_, _) | e.Record(_, _) -> [toggle_spread(), call_with()]
-        e.Select(_, _) -> [select_field(), call_function(), call_with()]
-        e.Tag(_) -> [edit(), call_with()]
-        // match open match
-        e.Case(_, _, _) -> [toggle_otherwise(), call_with()]
-      }
-      |> list.append([assign()], _)
-      |> list.append(case zoom {
-        [p.ListItem(_, _, _), ..] | [p.CallArg(_, _, _), ..] -> [
-          item_before(),
-          item_after(),
-        ]
-        [p.BlockTail(_), ..] | [] -> [assign_before()]
         _ -> []
-      })
-      |> list.append([collection(), more(), undo(), expand(), delete()])
-
-    p.Assign(pattern, _, _, _, _) ->
-      list.flatten([
-        [edit()],
-        case pattern {
-          p.AssignPattern(e.Bind(_)) -> [new_record()]
-          p.AssignBind(_, _, _, _) | p.AssignField(_, _, _, _) -> [
-            item_before(),
-            item_after(),
-          ]
-          _ -> [assign_before()]
-        },
-        [undo(), expand(), delete()],
-      ])
-    p.Select(_, _) -> [edit(), undo(), expand(), delete()]
-    p.FnParam(pattern, _, _, _) -> {
-      let common = [undo(), expand(), delete()]
-      case pattern {
-        p.AssignPattern(e.Bind(_)) -> [
-          edit(),
-          item_before(),
-          item_after(),
-          new_record(),
-          ..common
-        ]
-        p.AssignPattern(e.Destructure(_)) -> [
-          item_before(),
-          item_after(),
-          ..common
-        ]
-
-        p.AssignBind(_, _, _, _) | p.AssignField(_, _, _, _) -> [
-          edit(),
-          item_before(),
-          item_after(),
-          ..common
-        ]
-        p.AssignStatement(_) -> [edit(), ..common]
-      }
-    }
-    p.Label(_, _, _, _, _) -> [
-      edit(),
-      item_before(),
-      item_after(),
-      undo(),
-      expand(),
-      delete(),
-    ]
-    p.Match(_, _, _, _, _, _) -> [
-      edit(),
-      branch_after(),
-      undo(),
-      expand(),
-      delete(),
-    ]
-  }
-}
-
-pub fn submenu_more() {
-  [
-    // expand(),
-    redo(),
-    copy(),
-    paste(),
-    #(outline.at_symbol(), "reference", cmd("@")),
-    #(outline.bolt_slash(), "handle effect", cmd("h")),
-    #(outline.bolt(), "perform effect", cmd("p")),
-    #(
-      h.span([a.style([#("font-size", "0.8rem")])], [element.text("1101")]),
-      "binary",
-      cmd("b"),
+      },
     ),
-    #(outline.cog(), "builtins", cmd("j")),
-  ]
-}
-
-pub fn submenu_wrap(projection) {
-  let #(focus, _zoom) = projection
-  case focus {
-    // Show all destructure options in extra
-    p.Exp(e.Variable(_)) | p.Exp(e.Call(_, _)) -> [
-      spread_list(),
-      overwrite_field(),
-      match(),
-    ]
-    _ -> []
-  }
-  |> list.append([new_list(), new_record(), tag_value(), insert_function()])
-}
-
-pub fn menu_content(status, projection, submenu) {
-  case status {
-    snippet.Idle -> #([delete()], None)
-    snippet.Editing(snippet.Command) -> {
-      let subcontent = case submenu {
-        Collection -> Some(#("wrap", submenu_wrap(projection)))
-        More -> Some(#("more", submenu_more()))
-        Closed -> None
-      }
-      #(top_content(projection), subcontent)
-    }
-    snippet.Editing(_) -> #([], None)
-  }
+    h.div([a.class("expand cover font-mono bg-gray-100 overflow-auto")], {
+      let count = list.length(shell.previous) - 1
+      list.index_map(list.reverse(shell.previous), fn(p, i) {
+        let i = count - i
+        case p {
+          shell.Executed(value, effects, readonly) ->
+            h.div([a.class("mx-2 border-t border-gray-600 border-dashed")], [
+              h.div([a.class("relative pr-8")], [
+                h.div([a.class("flex-grow whitespace-nowrap overflow-auto")], [
+                  readonly.render(readonly)
+                  |> element.map(shell.PreviousMessage(i, _)),
+                ]),
+                h.button(
+                  [
+                    a.class("absolute top-0 right-0 w-6"),
+                    event.on_click(shell.UserClickedPrevious(1)),
+                  ],
+                  [outline.arrow_path()],
+                ),
+              ]),
+              case effects {
+                [] -> element.none()
+                _ ->
+                  h.div([a.class("text-blue-700")], [
+                    h.span([a.class("font-bold")], [element.text("effects ")]),
+                    ..list.map(effects, fn(eff) {
+                      let #(label, _) = eff
+                      h.span([], [element.text(label), element.text(" ")])
+                      // h.div([a.class("flex gap-1")], [
+                      //   output.render(eff.1.0),
+                      //   output.render(eff.1.1),
+                      // ])
+                    })
+                  ])
+              },
+              case value {
+                Some(value) ->
+                  h.div([a.class(" max-h-60 overflow-auto")], [
+                    // would need to be flex to show inline
+                    // h.span([a.class("font-bold")], [element.text("> ")]),
+                    output.render(value),
+                  ])
+                None -> element.none()
+              },
+            ])
+        }
+      })
+    }),
+    render_errors(shell.failure, shell.source),
+    h.div(
+      [
+        a.class("cover border-t border-black font-mono bg-white grid"),
+        a.style([
+          #("min-height", "5rem"),
+          #("grid-template-columns", "minmax(0px, 1fr) max-content"),
+        ]),
+      ],
+      [
+        h.div([a.style([#("max-height", "65vh"), #("overflow-y", "scroll")])], [
+          snippet.render_just_projection(shell.source, True),
+        ]),
+        case shell.runner {
+          runner.Runner(continue: False, ..) ->
+            h.button(
+              [
+                a.class(
+                  "inline-block w-8 md:w-12 bg-green-200 text-center text-xl",
+                ),
+                event.on_click(snippet.UserPressedCommandKey("Enter")),
+              ],
+              [outline.play_circle()],
+            )
+          runner.Runner(awaiting: Some(_), ..) ->
+            h.span(
+              [
+                a.class(
+                  "inline-block w-8 md:w-12 bg-blue-200 text-center text-xl",
+                ),
+              ],
+              [outline.arrow_path()],
+            )
+          runner.Runner(return: Error(#(reason, _, _, _)), ..) ->
+            h.span(
+              [
+                a.class(
+                  "inline-block w-8 md:w-12 bg-red-200 text-center text-xl",
+                ),
+                a.title(simple_debug.reason_to_string(reason)),
+              ],
+              [outline.exclamation_circle()],
+            )
+          _ ->
+            h.button(
+              [
+                a.class(
+                  "inline-block w-8 md:w-12 bg-green-200 text-center text-xl",
+                ),
+                event.on_click(snippet.UserPressedCommandKey("Enter")),
+              ],
+              [outline.play_circle()],
+            )
+        },
+      ],
+    )
+      |> element.map(shell.CurrentMessage),
+  ])
 }
 
 pub fn render_menu(status, projection, submenu, display_help) {
-  let #(projection, _, _) = projection
-
-  let #(top, subcontent) = menu_content(status, projection, submenu)
+  let #(top, subcontent) = snippet.menu_content(status, projection, submenu)
   case subcontent {
-    None -> one_col_menu(display_help, top)
-    Some(#(key, more)) -> two_col_menu(display_help, top, key, more)
+    None -> vertical_menu.one_col_menu(display_help, top)
+    Some(#(key, more)) ->
+      vertical_menu.two_col_menu(display_help, top, key, more)
   }
 }
 
 // The submenu is probably not part of the editor... yet
 fn render_menu_from_state(state: State) {
   let State(shell: shell, ..) = state
-  let snippet.Snippet(status: status, source: source, ..) = shell.source
-  render_menu(status, source, state.submenu, state.display_help)
+  let snippet.Snippet(status: status, projection: projection, menu: menu, ..) =
+    shell.source
+  render_menu(status, projection, menu, state.display_help)
 }
 
 fn help_menu_button(state: State) {
   h.button(
     [a.class("hover:bg-gray-200 px-2 py-1"), event.on_click(ToggleHelp)],
-    [icon(outline.question_mark_circle(), "hide help", state.display_help)],
+    [
+      vertical_menu.icon(
+        outline.question_mark_circle(),
+        "hide help",
+        state.display_help,
+      ),
+    ],
   )
 }
 
 fn fullscreen_menu_button(state: State) {
   h.button(
     [a.class("hover:bg-gray-200 px-2 py-1"), event.on_click(ToggleFullscreen)],
-    [icon(outline.tv(), "fullscreen", state.display_help)],
+    [vertical_menu.icon(outline.tv(), "fullscreen", state.display_help)],
   )
-}
-
-fn one_col_menu(display_help, options) {
-  [
-    // help_menu_button(state),
-    // same as grid below
-    h.div(
-      [
-        a.class("grid overflow-y-auto"),
-        a.style([#("grid-template-columns", "max-content max-content")]),
-      ],
-      [
-        h.div(
-          [a.class("flex flex-col justify-end text-gray-200 py-2")],
-          list.map(options, fn(entry) {
-            let #(i, text, k) = entry
-            button(k, [icon(i, text, display_help)])
-          }),
-        ),
-      ],
-    ),
-  ]
-}
-
-pub fn button(action, content) {
-  h.button(
-    [
-      a.class("morph button"),
-      a.style([
-        // #("background", "none"),
-        #("outline", "none"),
-        #("border", "none"),
-        #("padding-left", ".5rem"),
-        #("padding-right", ".5rem"),
-        #("padding-top", ".25rem"),
-        #("padding-bottom", ".25rem"),
-        #("cursor", "pointer"),
-        // TODO hover color
-      ]),
-      event.on_click(action),
-    ],
-    content,
-  )
-}
-
-fn two_col_menu(display_help, top, active, sub) {
-  [
-    h.div(
-      [
-        a.class("grid overflow-y-auto overflow-x-hidden"),
-        a.style([#("grid-template-columns", "max-content max-content")]),
-      ],
-      [
-        h.div(
-          [a.class("flex flex-col justify-end text-gray-200 py-2")],
-          list.map(top, fn(entry) {
-            let #(i, text, k) = entry
-            h.button(
-              [
-                a.class("hover:bg-yellow-600 px-2 py-1 rounded-l-lg"),
-                a.classes([#("bg-yellow-600", text == active)]),
-                event.on_click(k),
-              ],
-              [icon(i, text, False)],
-            )
-          }),
-        ),
-        h.div(
-          [
-            a.class(
-              "flex flex-col justify-end text-gray-200 bg-yellow-600 rounded-lg py-2",
-            ),
-          ],
-          list.map(sub, fn(entry) {
-            let #(i, text, k) = entry
-            h.button(
-              [a.class("hover:bg-yellow-500 px-2 py-1"), event.on_click(k)],
-              [icon(i, text, display_help)],
-            )
-          }),
-        ),
-      ],
-    ),
-  ]
 }
 
 fn render_errors(failure, snippet: snippet.Snippet) {
-  let #(_proj, _, analysis) = snippet.source
-  let errors = case analysis {
+  let errors = case snippet.analysis {
     Some(analysis) -> analysis.type_errors(analysis)
     None -> []
   }
 
   case failure, errors {
     None, [] -> element.none()
-    Some(SnippetFailure(failure)), _ ->
+    Some(shell.SnippetFailure(failure)), _ ->
       h.div(
         [
           a.class("cover bg-red-300 px-2"),
@@ -1099,7 +629,7 @@ fn render_errors(failure, snippet: snippet.Snippet) {
         ],
         [element.text(snippet.fail_message(failure))],
       )
-    Some(NoMoreHistory), _ ->
+    Some(shell.NoMoreHistory), _ ->
       h.div(
         [
           a.class("cover bg-red-300 px-2"),
@@ -1117,10 +647,15 @@ fn render_errors(failure, snippet: snippet.Snippet) {
           let #(path, reason) = error
           case path, reason {
             // Vacant node at root or end of block are ignored.
-            [], error.Todo(_) | [_], error.Todo(_) -> element.none()
+            [], error.Todo | [_], error.Todo -> element.none()
             _, _ ->
               h.div(
-                [event.on_click(ShellMessage(snippet.UserClickedPath(path)))],
+                [
+                  event.on_click(
+                    snippet.UserClickedPath(path)
+                    |> shell.CurrentMessage,
+                  ),
+                ],
                 [element.text(debug.reason(reason))],
               )
           }

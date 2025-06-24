@@ -3,7 +3,7 @@ import eyg/analysis/type_/binding
 import eyg/analysis/type_/isomorphic as t
 import eyg/compile/ir
 import eyg/compile/js
-import eygir/annotated as a
+import eyg/ir/tree
 
 pub fn to_js(program, refs) {
   program
@@ -12,41 +12,46 @@ pub fn to_js(program, refs) {
   |> ir.k()
   |> ir.unnest
   |> monadic()
-  |> a.drop_annotation()
+  |> tree.clear_annotation()
   |> js.render()
 }
 
 fn infer_effects(program, refs) {
   let #(exp, bindings) =
     program
-    |> a.drop_annotation()
     |> j.infer(t.Empty, refs, 0, j.new_state())
 
-  a.map_annotation(exp, fn(types) {
+  tree.map_annotation(exp, fn(types) {
     let #(_, _, effect, _) = types
     binding.resolve(effect, bindings)
   })
 }
 
-fn monadic(node) {
+fn monadic(node: tree.Node(t.Type(Int))) -> tree.Node(t.Type(Int)) {
   let #(exp, meta) = node
   case exp {
-    a.Let(x, #(value, eff), then) ->
+    tree.Let(x, #(value, eff), then) ->
       case eff {
-        t.Empty -> #(a.Let(x, monadic(#(value, t.Empty)), monadic(then)), meta)
+        t.Empty -> #(
+          tree.Let(x, monadic(#(value, t.Empty)), monadic(then)),
+          meta,
+        )
         _ -> #(
-          a.Apply(
+          tree.Apply(
             #(
-              a.Apply(#(a.Builtin("bind"), t.Empty), monadic(#(value, eff))),
+              tree.Apply(
+                #(tree.Builtin("bind"), t.Empty),
+                monadic(#(value, eff)),
+              ),
               t.Empty,
             ),
-            #(a.Lambda(x, monadic(then)), t.Empty),
+            #(tree.Lambda(x, monadic(then)), t.Empty),
           ),
           t.Empty,
         )
       }
-    a.Apply(func, arg) -> #(a.Apply(monadic(func), monadic(arg)), meta)
-    a.Lambda(x, body) -> #(a.Lambda(x, monadic(body)), meta)
+    tree.Apply(func, arg) -> #(tree.Apply(monadic(func), monadic(arg)), meta)
+    tree.Lambda(x, body) -> #(tree.Lambda(x, monadic(body)), meta)
     _ -> #(exp, meta)
   }
 }

@@ -1,16 +1,13 @@
-import eyg/runtime/cast
-import eyg/runtime/interpreter/runner as r
-import eyg/runtime/value as v
-import eygir/annotated as e
-import eygir/decode
-import gleam/dict
+import eyg/interpreter/cast
+import eyg/interpreter/expression as r
+import eyg/interpreter/value as v
+import eyg/ir/dag_json
+import gleam/bit_array
 import gleam/dynamicx
 import gleam/javascript/array
-import gleam/javascript/map
 import gleam/list
 import gleam/result
 import gleam/string
-import harness/stdlib
 import javascript/mutable_reference as ref
 import plinth/browser/document
 import plinth/browser/element
@@ -24,20 +21,20 @@ fn handle_click(event, states) {
   ))
   use container <- result.then(element.closest(target, "[r\\:container]"))
   use key <- result.then(element.get_attribute(target, "on:click"))
-  use #(action, env) <- result.then(map.get(states, container))
+  use #(action, env) <- result.then(todo as "map.get(states, container)")
   // TODO get attribute and multiple sources
-  let answer = r.call(action, [#(v.Str(key), Nil)], env, dict.new())
+  let answer = r.call(action, [#(v.String(key), Nil)])
   // console.log(answer)
   let assert Ok(term) = answer
-  // console.log(v.debug(term))
+  // console.log(old_value.debug(term))
   case term {
     v.Tagged("Ok", return) -> {
-      // console.log(v.debug(return))
+      // console.log(old_value.debug(return))
       let assert Ok(content) = cast.field("content", cast.as_string, return)
       let assert Ok(action) = cast.field("action", cast.any, return)
       element.set_inner_html(container, content)
       // Need native map because js objects are deep equal true
-      Ok(map.set(states, container, #(action, env)))
+      Ok(todo as "map.set(states, container, #(action, env))")
     }
     _ -> {
       console.log("bad stuff")
@@ -54,18 +51,22 @@ pub fn run() {
     list.filter_map(scripts, fn(script) {
       use container <- result.then(element.closest(script, "[r\\:container]"))
       use source <- result.then(
-        decode.from_json(string.replace(element.inner_text(script), "\\/", "/"))
+        dag_json.from_block(
+          bit_array.from_string(string.replace(
+            element.inner_text(script),
+            "\\/",
+            "/",
+          )),
+        )
         |> result.map_error(fn(_) { Nil }),
       )
-      let env = stdlib.env()
-      let source = e.add_annotation(source, Nil)
-      let assert Ok(action) = r.execute(source, env, dict.new())
+      let assert Ok(action) = r.execute(source, [])
       // TODO remove env, it doesn't matter call to call
-      Ok(#(container, #(action, env)))
+      Ok(#(container, #(action, todo as "env not needed")))
     })
-    |> list.fold(map.new(), fn(map, item) {
+    |> list.fold(todo as "map.new()", fn(map, item) {
       let #(key, value) = item
-      map.set(map, key, value)
+      todo as "map.set(map, key, value)"
     })
   states
   |> console.log
@@ -96,16 +97,16 @@ pub fn run() {
   //           Ok(target) ->
   //             case element.closest(target, "[r\\:container]") {
   //               Ok(container) -> {
-  //                 let k = Some(state.Stack(r.CallWith(v.Str("0"), [], env), None))
+  //                 let k = Some(state.Stack(r.CallWith(v.String("0"), [], env), None))
   //                 let c = ref.get(ref)
   //                 let #(answer, _) = r.loop_till(state.V(c), rev, env, k)
   //                 // console.log(answer)
   //                 let assert Ok(term) = answer
-  //                 // console.log(v.debug(term))
+  //                 // console.log(old_value.debug(term))
   //                 case term {
   //                   v.Tagged("Ok", return) -> {
-  //                     // console.log(v.debug(return))
-  //                     let assert Ok(v.Str(content)) =
+  //                     // console.log(old_value.debug(return))
+  //                     let assert Ok(v.String(content)) =
   //                       r.field(return, "content")
   //                     let assert Ok(action) = r.field(return, "action")
   //                     ref.set(ref, Ok(action))
@@ -154,13 +155,13 @@ pub fn run() {
   //                 // env needs builtins
   //                 let env = stdlib.env()
   //                 let rev = []
-  //                 let k = Some(state.Stack(r.CallWith(v.Str("0"), [], env), None))
+  //                 let k = Some(state.Stack(r.CallWith(v.String("0"), [], env), None))
   //                 let answer = r.execute(source, env, k)
   //                 // console.log(answer)
   //                 let assert Ok(term) = answer
-  //                 // console.log(v.debug(term))
+  //                 // console.log(old_value.debug(term))
   //                 case term {
-  //                   v.Tagged("Ok", v.Str(content)) ->
+  //                   v.Tagged("Ok", v.String(content)) ->
   //                     element.set_inner_html(container, content)
   //                   _ -> {
   //                     console.log("bad stuff")

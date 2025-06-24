@@ -1,4 +1,7 @@
-import eygir/encode
+import eyg/ir/dag_json
+import gleam/bit_array
+
+// TODO remove
 import gleam/dynamicx
 import gleam/int
 import gleam/javascript/promise
@@ -149,7 +152,10 @@ fn copy(state) {
 
   case projection {
     #(p.Exp(expression), _) -> {
-      let text = encode.to_json(e.to_expression(expression))
+      let assert Ok(text) =
+        e.to_annotated(expression, [])
+        |> dag_json.to_block()
+        |> bit_array.to_string()
       #(state, WriteToClipboard(text))
     }
     _ -> #(state, Fail("can only copy expressions"))
@@ -166,7 +172,7 @@ pub fn render(state) {
     Selecting -> {
       let #(_focus, zoom) = projection
 
-      //   actual_render_projection(proj, autofocus, using_mouse)
+      //   actual_render_projection(proj, autofocus)
       let frame =
         render.projection_frame(projection, render.ReadonlyStatements, errors)
       let projection_rendered =

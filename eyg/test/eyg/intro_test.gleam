@@ -1,9 +1,8 @@
 // import eyg/analysis/type_/binding/error
 // import eyg/analysis/type_/isomorphic as t
-// import eyg/runtime/value as v
-// import eyg/sync/references.{Store}
+// import eyg/interpreter/value as v
+// import website/sync/references.{Store}
 // import eygir/annotated
-// import eygir/expression as e
 // import gleam/dict
 // import gleam/string
 // import gleeunit/should
@@ -27,7 +26,7 @@
 //   should.equal(type_x, t.Integer)
 
 //   let value_y = should.be_ok(dict.get(values, ref_y))
-//   should.equal(value_y, v.unit)
+//   should.equal(value_y, v.unit())
 //   let type_y = should.be_ok(dict.get(types, ref_y))
 //   should.equal(type_y, t.unit)
 // }

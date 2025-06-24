@@ -1,9 +1,8 @@
 import eyg/analysis/inference/levels_j/contextual as infer
 import eyg/analysis/type_/binding/debug
 import eyg/analysis/type_/isomorphic as t
-import eygir/annotated
-import eygir/annotated as e
-import eygir/decode
+import eyg/ir/dag_json
+import eyg/ir/tree as ir
 import gleam/dict
 import gleam/io
 import gleam/javascript/array
@@ -22,8 +21,8 @@ pub fn main() {
 // exit can't be used onfunction returns of as a promise
 // need to await or work off promises
 pub fn do_main(args) {
-  let assert Ok(json) = simplifile.read("saved/saved.json")
-  let assert Ok(source) = decode.from_json(json)
+  let assert Ok(json) = simplifile.read_bits("saved/saved.json")
+  let assert Ok(source) = dag_json.from_block(json)
 
   // heroku copy all files use gleam run
   // in browser but proxy in netlify
@@ -34,11 +33,11 @@ pub fn do_main(args) {
   // recipe is an app, service worker makes js necessay, query string params are also only interesting if rendered with JS
 
   case args {
-    ["exec", ..] -> shell.run(e.add_annotation(source, Nil))
+    ["exec", ..] -> shell.run(source)
     ["infer"] -> {
       let #(exp, _bindings) =
         infer.infer(source, t.Empty, dict.new(), 0, infer.new_state())
-      let acc = annotated.strip_annotation(exp).1
+      let acc = ir.get_annotation(exp)
       let errors =
         list.filter_map(acc, fn(row) {
           let #(result, _, _, _) = row

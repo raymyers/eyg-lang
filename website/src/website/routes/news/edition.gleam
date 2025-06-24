@@ -24,7 +24,7 @@ fn main(sections) {
   h.div([a.style([#("padding", "1.5rem 1.5rem 0rem 1.5rem")])], sections)
 }
 
-fn header(issue_url, number, pea_src) {
+pub fn header(issue_url, number, pea_src) {
   h.div([a.style([#("padding", ".5rem 1.5rem"), #("background", mint_green)])], [
     h.table(
       [
@@ -38,6 +38,7 @@ fn header(issue_url, number, pea_src) {
           h.tr([], [
             h.td([a.style([#("vertical-align", "text-bottom")])], [
               h.img([
+                a.class("inline-block"),
                 a.alt("Penelopea, EYG's mascot"),
                 a.src(pea_src),
                 a.width(80),
@@ -127,10 +128,36 @@ fn footer(edition_url) {
   ])
 }
 
+pub fn preview(post, index, pea_src) {
+  let Edition(_date, title, raw) = post
+  let document = jot.parse(raw)
+  let jot.Document(content, _references, _footnotes) = document
+  let sections =
+    list.map(
+      [jot.Heading(dict.new(), 1, [jot.Text(title)]), ..list.take(content, 1)],
+      block,
+    )
+  let edition_url = "https://eyg.run/news/editions/" <> int.to_string(index)
+  h.div(
+    [
+      a.style([
+        // #("font-family", "Helvetica, Arial, sans-serif"),
+
+        #(
+          "font-family",
+          "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'",
+        ),
+        #("line-height", "1.5"),
+      ]),
+    ],
+    [header(edition_url, index, pea_src), main(sections)],
+  )
+}
+
 pub fn render(post, index, pea_src) {
   let Edition(_date, title, raw) = post
   let document = jot.parse(raw)
-  let jot.Document(content, _references) = document
+  let jot.Document(content, _references, _footnotes) = document
   let sections =
     list.map([jot.Heading(dict.new(), 1, [jot.Text(title)]), ..content], block)
   let edition_url = "https://eyg.run/news/editions/" <> int.to_string(index)
@@ -185,7 +212,7 @@ fn h3(children) {
   )
 }
 
-fn block(container) {
+pub fn block(container) {
   case container {
     jot.Paragraph(_attributes, content) -> p(inline(content))
     jot.Heading(_attributes, 1, content) -> h1(inline(content))
@@ -231,10 +258,11 @@ fn block(container) {
           ),
         ],
       )
+    jot.RawBlock(_content) -> panic as "not supported"
   }
 }
 
-fn inline(content) {
+pub fn inline(content) {
   list.map(content, fn(item) {
     case item {
       jot.Linebreak -> h.br([])
@@ -277,6 +305,7 @@ fn inline(content) {
           ],
           [e.text(content)],
         )
+      jot.Footnote(_) -> todo
     }
   })
 }

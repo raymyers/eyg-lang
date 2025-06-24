@@ -6,6 +6,7 @@ const APPLY = "a"
 const LET = "l"
 const VACANT = "z"
 
+const Binary = "x"
 const INT = "i"
 const STRING = "s"
 
@@ -46,6 +47,18 @@ class State {
     this.value = false, this.control = expression
   }
 
+  getVariable(env, label) {
+    let value = env.get(label)
+    if (value === undefined) this.break = { UndefinedVariable: label }
+    return value
+  }
+
+  builtin(identifier) {
+    let value = builtins[identifier]
+    if (value === undefined) this.break = { UndefinedBuiltin: identifier }
+    return value
+  }
+
   push(kont) {
     this.stack = this.stack.push(kont)
   }
@@ -58,7 +71,7 @@ class State {
     let expression = this.control
     switch (expression[0]) {
       case VAR:
-        this.setValue(getVariable(this.env, expression.l))
+        this.setValue(this.getVariable(this.env, expression.l))
         break;
       case LAMBDA:
         this.setValue(new Closure(expression, this.env))
@@ -72,7 +85,10 @@ class State {
         this.setExpression(expression.v)
         break;
       case VACANT:
-        this.break = new Error("not implemented");
+        this.break = { NotImplemented: "" };
+      case Binary:
+        this.setValue(expression.v)
+        break;
       case INT:
         this.setValue(expression.v)
         break;
@@ -111,7 +127,7 @@ class State {
         this.setValue(partial(expression, handle(expression.l)))
         break;
       case BUILTIN:
-        this.setValue(partial(expression, builtin(expression.l)))
+        this.setValue(partial(expression, this.builtin(expression.l)))
         break;
       default:
         this.break = new Error("unrecognised expression")
@@ -130,16 +146,18 @@ class State {
         this.setExpression(kont.then)
         break;
       case Arg:
-        this.push(new Apply(value))
+        this.push(new Apply(value, kont.env))
         this.env = kont.env
         this.setExpression(kont.arg)
         break;
       case Apply:
         let { func } = kont
+        this.env = kont.env
         this.call(func, value)
         break;
       case Call:
         let { arg } = kont
+        this.env = kont.env
         this.call(value, arg)
         break;
       case Delimit:
@@ -233,14 +251,14 @@ class Arg {
 }
 
 class Apply {
-  constructor(func) {
-    this.func = func
+  constructor(func, env) {
+    this.func = func, this.env = env
   }
 }
 
 class Call {
-  constructor(arg) {
-    this.arg = arg
+  constructor(arg, env) {
+    this.arg = arg, this.env = env
   }
 }
 
@@ -262,13 +280,6 @@ export function eval_(src) {
   state.loop()
   return state
 }
-
-function getVariable(env, label) {
-  let value = env.get(label)
-  if (value === undefined) this.break = new Error("missing variable: " + label)
-  return value
-}
-
 
 function cons(item, tail) {
   this.setValue(tail.push(item))
@@ -348,13 +359,117 @@ function handle(label) {
   }
 }
 
-const builtins = {
-  int_add(a, b) { this.setValue(a + b) },
-  int_subtract(a, b) { this.setValue(a - b) }
+const True = new Tagged("True", empty)
+const False = new Tagged("False", empty)
+
+function Ok(value) {
+  return new Tagged("Ok", value)
 }
 
-function builtin(identifier) {
-  let value = builtins[identifier]
-  if (value === undefined) this.break = new Error("unknown builtin: " + identifier)
-  return value
+function Error(value) {
+  return new Tagged("Error", value)
+}
+
+
+const builtins = {
+  equal(a, b) {
+    let isEqual = a.equals ? a.equals(b) : a == b;
+    this.setValue(isEqual ? True : False)
+  },
+  fix(builder) {
+    this.push(new Call(new Partial({
+      0: BUILTIN, l: "fixed"
+    },
+      Stack([builder]), fixed), this.env))
+    this.setValue(builder)
+  },
+  int_compare(a, b) {
+    let value
+    if (a < b) {
+      value = new Tagged("Lt", empty)
+    } else if (a > b) {
+      value = new Tagged("Gt", empty)
+    } else {
+      value = new Tagged("Eq", empty)
+    }
+    this.setValue(value)
+  },
+  int_add(a, b) { this.setValue(a + b) },
+  int_subtract(a, b) { this.setValue(a - b) },
+  int_multiply(a, b) { this.setValue(a * b) },
+  int_divide(a, b) {
+    let value = b == 0 ? Error(empty) : Ok(Math.floor(a / b))
+    this.setValue(value)
+  },
+  int_absolute(a) { this.setValue(Math.abs(a)) },
+  int_parse(a) {
+    let n = Math.floor(Number(a))
+    let value = isNaN(n) ?
+      Error(empty) :
+      a == n.toString() ?
+        Ok(n) : Error(empty)
+    this.setValue(value)
+  },
+  int_to_string(a) { this.setValue(a.toString()) },
+  string_append(a, b) { this.setValue(a + b) },
+  string_split(a, b) {
+    let [head, ...tail] = a.split(b)
+    this.setValue(Map({ head, tail: Stack(tail) }))
+  },
+  string_split_once(a, b) {
+    let i = a.indexOf(b)
+    let value = i < 0 ? Error(empty) : Ok(Map({ pre: a.slice(0, i), post: a.slice(i + b.length) }))
+    this.setValue(value)
+  },
+  string_replace(a, b, c) { this.setValue(a.replaceAll(b, c)) },
+  string_uppercase(a) { this.setValue(a.toUpperCase()) },
+  string_lowercase(a) { this.setValue(a.toLowerCase()) },
+  string_ends_with(a, b) { this.setValue(a.endsWith(b) ? True : False) },
+  string_starts_with(a, b) { this.setValue(a.startsWith(b) ? True : False) },
+
+  string_length(a) { this.setValue(a.length) },
+  string_to_binary(a) {
+    let encoder = new TextEncoder()
+    this.setValue(encoder.encode(a))
+  },
+  string_from_binary(a) {
+    let decoder = new TextDecoder("utf-8", { fatal: true })
+    let value
+    try {
+      value = Ok(decoder.decode(a))
+    } catch (error) {
+      value = Error(empty)
+    }
+    this.setValue(value)
+  },
+  list_pop(a) {
+    let item = a.first()
+    this.setValue(item ? Ok(Map({ head: item, tail: a.shift() })) : Error(empty))
+  },
+  list_fold: list_fold
+}
+
+function fixed(builder, arg) {
+  this.push(new Call(arg, this.env))
+  this.push(new Call(new Partial({
+    0: BUILTIN, l: "fixed"
+  },
+    Stack([builder]), fixed), this.env))
+  this.setValue(builder)
+}
+
+function list_fold(list, state, func) {
+  let item = list.first()
+  if (item == undefined) {
+    this.setValue(state)
+  } else {
+    this.push(new Call(func, this.env))
+    this.push(new Apply(new Partial({
+      0: BUILTIN, l: "list_fold"
+    },
+      Stack([list.shift()]), list_fold), this.env))
+    this.push(new Call(state, this.env))
+    this.push(new Call(item, this.env))
+    this.setValue(func)
+  }
 }
