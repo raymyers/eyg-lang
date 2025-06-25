@@ -39,6 +39,10 @@ pub fn manual_yaml_tests_test() {
     TestCase("FunctionCallNoArgs", "foo({})", "(call foo {})"),
     TestCase("NestedGrouping", "((1 + 2) * 3)", "(group (* (group (+ 1.0 2.0)) 3.0))"),
     TestCase("MixedTypes", "\"hello\" == \"world\"", "(== hello world)"),
+    TestCase("Records", "{name: \"Alice\", age: 30}", "(record (field name Alice) (field age 30.0))"),
+    TestCase("RecordAccess", "alice.name", "(access alice name)"),
+    TestCase("List", "[1, 2, 3]", "(list 1.0 2.0 3.0)"),
+    TestCase("ListSpread", "[0, ..items]", "(list 0.0 (spread items))"),
   ]
   
   run_test_cases(test_cases)
@@ -70,6 +74,8 @@ fn run_single_test(test_case: TestCase) -> Nil {
     Error(errors) -> {
       io.println("✗ " <> test_case.name <> " failed with parse errors:")
       list.each(errors, fn(err) { io.println("  " <> err.message) })
+      
+
 
       should.fail()
     }

@@ -79,6 +79,8 @@ fn token_matches(token1: Token, token2: Token) -> Bool {
     token.RightParen, token.RightParen -> True
     token.LeftBrace, token.LeftBrace -> True
     token.RightBrace, token.RightBrace -> True
+    token.LeftBracket, token.LeftBracket -> True
+    token.RightBracket, token.RightBracket -> True
     token.Comma, token.Comma -> True
     token.Plus, token.Plus -> True
     token.Minus, token.Minus -> True
@@ -93,6 +95,9 @@ fn token_matches(token1: Token, token2: Token) -> Bool {
     token.Bang, token.Bang -> True
     token.And, token.And -> True
     token.Or, token.Or -> True
+    token.Colon, token.Colon -> True
+    token.Dot, token.Dot -> True
+    token.DotDot, token.DotDot -> True
     _, _ -> False
   }
 }
@@ -241,8 +246,9 @@ fn parse_call(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
 }
 
 fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Parser) {
-  let #(matched, parser1) = match_tokens(parser, [token.LeftParen])
-  case matched {
+  // Check for function call
+  let #(matched_paren, parser1) = match_tokens(parser, [token.LeftParen])
+  case matched_paren {
     True -> {
       let #(args_result, parser2) = parse_arguments(parser1)
       case args_result {
@@ -269,7 +275,23 @@ fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Pa
         Error(err) -> #(Error(err), parser2)
       }
     }
-    False -> #(Ok(expr), parser)
+    False -> {
+      // Check for record access
+      let #(matched_dot, parser_dot) = match_tokens(parser, [token.Dot])
+      case matched_dot {
+        True -> {
+          case peek(parser_dot) {
+            token.Identifier(field_name) -> {
+              let parser_field = advance(parser_dot)
+              let access_expr = ast.Access(expr, field_name, 1)
+              parse_call_rest(parser_field, access_expr)
+            }
+            _ -> #(Error(ParseError("Expected field name after '.'", 1)), parser_dot)
+          }
+        }
+        False -> #(Ok(expr), parser)
+      }
+    }
   }
 }
 
@@ -370,13 +392,128 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
     
     token.LeftBrace -> {
       let parser1 = advance(parser)
-      let #(matched, parser2) = match_tokens(parser1, [token.RightBrace])
-      case matched {
-        True -> #(Ok(ast.EmptyRecord(1)), parser2)
-        False -> #(Error(ParseError("Record parsing not yet implemented", 1)), parser1)
-      }
+      parse_record(parser1)
+    }
+    
+    token.LeftBracket -> {
+      let parser1 = advance(parser)
+      parse_list(parser1)
     }
     
     _ -> #(Error(ParseError("Unexpected token", 1)), parser)
+  }
+}
+
+// Parse record: {} or {field: value, field2: value2}
+fn parse_record(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  // Check if it's an empty record
+  let #(matched_empty, parser1) = match_tokens(parser, [token.RightBrace])
+  case matched_empty {
+    True -> #(Ok(ast.EmptyRecord(1)), parser1)
+    False -> {
+      // Parse record fields
+      let #(fields_result, parser2) = parse_record_fields(parser, [])
+      case fields_result {
+        Ok(fields) -> {
+          let #(matched_close, parser3) = match_tokens(parser2, [token.RightBrace])
+          case matched_close {
+            True -> #(Ok(ast.Record(fields, 1)), parser3)
+            False -> #(Error(ParseError("Expected '}' after record fields", 1)), parser2)
+          }
+        }
+        Error(err) -> #(Error(err), parser2)
+      }
+    }
+  }
+}
+
+// Parse record fields: field: value, field2: value2
+fn parse_record_fields(parser: Parser, fields: List(ast.RecordField)) -> #(Result(List(ast.RecordField), ParseError), Parser) {
+  case peek(parser) {
+    token.Identifier(field_name) -> {
+      let parser1 = advance(parser)
+      let #(matched_colon, parser2) = match_tokens(parser1, [token.Colon])
+      case matched_colon {
+        True -> {
+          let #(value_result, parser3) = parse_expression(parser2)
+          case value_result {
+            Ok(value) -> {
+              let field = ast.RecordField(field_name, value)
+              let new_fields = [field, ..fields]
+              
+              // Check if there's a comma for more fields
+              let #(matched_comma, parser4) = match_tokens(parser3, [token.Comma])
+              case matched_comma {
+                True -> parse_record_fields(parser4, new_fields)
+                False -> #(Ok(list.reverse(new_fields)), parser3)
+              }
+            }
+            Error(err) -> #(Error(err), parser3)
+          }
+        }
+        False -> #(Error(ParseError("Expected ':' after field name", 1)), parser1)
+      }
+    }
+    _ -> #(Error(ParseError("Expected field name in record", 1)), parser)
+  }
+}
+
+// Parse list: [] or [1, 2, 3] or [0, ..items]
+fn parse_list(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  // Check if it's an empty list
+  let #(matched_empty, parser1) = match_tokens(parser, [token.RightBracket])
+  case matched_empty {
+    True -> #(Ok(ast.List([], 1)), parser1)
+    False -> {
+      // Parse list elements
+      let #(elements_result, parser2) = parse_list_elements(parser, [])
+      case elements_result {
+        Ok(elements) -> {
+          let #(matched_close, parser3) = match_tokens(parser2, [token.RightBracket])
+          case matched_close {
+            True -> #(Ok(ast.List(elements, 1)), parser3)
+            False -> #(Error(ParseError("Expected ']' after list elements", 1)), parser2)
+          }
+        }
+        Error(err) -> #(Error(err), parser2)
+      }
+    }
+  }
+}
+
+// Parse list elements: 1, 2, 3 or 0, ..items
+fn parse_list_elements(parser: Parser, elements: List(Expr)) -> #(Result(List(Expr), ParseError), Parser) {
+  // Check for spread operator
+  let #(matched_spread, parser_spread) = match_tokens(parser, [token.DotDot])
+  case matched_spread {
+    True -> {
+      // Parse the spread expression
+      let #(expr_result, parser_expr) = parse_expression(parser_spread)
+      case expr_result {
+        Ok(expr) -> {
+          let spread_expr = ast.Spread(expr, 1)
+          let new_elements = [spread_expr, ..elements]
+          #(Ok(list.reverse(new_elements)), parser_expr)
+        }
+        Error(err) -> #(Error(err), parser_expr)
+      }
+    }
+    False -> {
+      // Parse regular expression
+      let #(expr_result, parser_expr) = parse_expression(parser)
+      case expr_result {
+        Ok(expr) -> {
+          let new_elements = [expr, ..elements]
+          
+          // Check if there's a comma for more elements
+          let #(matched_comma, parser_comma) = match_tokens(parser_expr, [token.Comma])
+          case matched_comma {
+            True -> parse_list_elements(parser_comma, new_elements)
+            False -> #(Ok(list.reverse(new_elements)), parser_expr)
+          }
+        }
+        Error(err) -> #(Error(err), parser_expr)
+      }
+    }
   }
 }
