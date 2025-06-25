@@ -24,7 +24,7 @@ pub type Expr {
   Grouping(expression: Expr, line: Int)
   Literal(value: Value, line: Int)
   Unary(operator: Token, right: Expr, line: Int)
-  Variable(name: Token, line: Int)
+  Variable(name: String, line: Int)
   
   // Control flow
   IfStatement(condition: Expr, then_branch: Expr, else_branch: Expr, line: Int)
@@ -70,30 +70,30 @@ pub type MatchCase {
 pub fn expr_to_string(expr: Expr) -> String {
   case expr {
     Binary(left, operator, right, _) -> {
-      let op_str = case operator.type_ {
-        token.PLUS -> "+"
-        token.MINUS -> "-"
-        token.STAR -> "*"
-        token.SLASH -> "/"
-        token.EQUAL_EQUAL -> "=="
-        token.BANG_EQUAL -> "!="
-        token.LESS -> "<"
-        token.LESS_EQUAL -> "<="
-        token.GREATER -> ">"
-        token.GREATER_EQUAL -> ">="
-        token.AND -> "and"
-        token.OR -> "or"
-        _ -> operator.lexeme
+      let op_str = case operator {
+        token.Plus -> "+"
+        token.Minus -> "-"
+        token.Star -> "*"
+        token.Slash -> "/"
+        token.EqualEqual -> "=="
+        token.BangEqual -> "!="
+        token.Less -> "<"
+        token.LessEqual -> "<="
+        token.Greater -> ">"
+        token.GreaterEqual -> ">="
+        token.And -> "and"
+        token.Or -> "or"
+        _ -> "unknown_op"
       }
       "(" <> op_str <> " " <> expr_to_string(left) <> " " <> expr_to_string(right) <> ")"
     }
     
     Unary(operator, right, _) -> {
-      let op_str = case operator.type_ {
-        token.MINUS -> "-"
-        token.BANG -> "!"
-        token.NOT -> "not"
-        _ -> operator.lexeme
+      let op_str = case operator {
+        token.Minus -> "-"
+        token.Bang -> "!"
+        token.Not -> "not"
+        _ -> "unknown_unary_op"
       }
       "(" <> op_str <> " " <> expr_to_string(right) <> ")"
     }
@@ -103,7 +103,7 @@ pub fn expr_to_string(expr: Expr) -> String {
     
     Literal(value, _) -> value_to_string(value)
     
-    Variable(name, _) -> name.lexeme
+    Variable(name, _) -> name
     
     Call(callee, arguments, _) -> {
       let args_str = arguments
