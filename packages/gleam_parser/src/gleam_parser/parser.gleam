@@ -98,13 +98,56 @@ fn token_matches(token1: Token, token2: Token) -> Bool {
     token.Colon, token.Colon -> True
     token.Dot, token.Dot -> True
     token.DotDot, token.DotDot -> True
+    token.Perform, token.Perform -> True
+    token.Equal, token.Equal -> True
+    token.Semicolon, token.Semicolon -> True
     _, _ -> False
   }
 }
 
 // Parse expression with precedence
 fn parse_expression(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
-  parse_equality(parser)
+  parse_assignment(parser)
+}
+
+// Parse assignment expressions (let bindings)
+fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  let #(expr_result, parser1) = parse_equality(parser)
+  case expr_result {
+    Ok(expr) -> {
+      // Check if this is a variable that could be assigned to
+      case expr {
+        ast.Variable(name, _) -> {
+          let #(matched_equal, parser2) = match_tokens(parser1, [token.Equal])
+          case matched_equal {
+            True -> {
+              let #(value_result, parser3) = parse_assignment(parser2)
+              case value_result {
+                Ok(value) -> {
+                  // Check for semicolon and body
+                  let #(matched_semi, parser4) = match_tokens(parser3, [token.Semicolon])
+                  case matched_semi {
+                    True -> {
+                      let #(body_result, parser5) = parse_assignment(parser4)
+                      case body_result {
+                        Ok(body) -> #(Ok(ast.Var(expr, value, body, 1)), parser5)
+                        Error(err) -> #(Error(err), parser5)
+                      }
+                    }
+                    False -> #(Error(ParseError("Expected ';' after assignment", 1)), parser3)
+                  }
+                }
+                Error(err) -> #(Error(err), parser3)
+              }
+            }
+            False -> #(Ok(expr), parser1)
+          }
+        }
+        _ -> #(Ok(expr), parser1)
+      }
+    }
+    Error(err) -> #(Error(err), parser1)
+  }
 }
 
 // Parse equality expressions (== !=)
@@ -398,6 +441,32 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
     token.LeftBracket -> {
       let parser1 = advance(parser)
       parse_list(parser1)
+    }
+    
+    token.Perform -> {
+      let parser1 = advance(parser)
+      let #(effect_result, parser2) = parse_expression(parser1)
+      case effect_result {
+        Ok(effect_expr) -> {
+          // Extract effect name and arguments from the parsed expression
+          case effect_expr {
+            ast.Union(constructor, value, _) -> {
+              // Convert single value to list of arguments
+              #(Ok(ast.Perform(constructor, [value], 1)), parser2)
+            }
+            ast.Call(ast.Variable(name, _), args, _) -> {
+              // Direct function call as effect
+              #(Ok(ast.Perform(name, args, 1)), parser2)
+            }
+            ast.Variable(name, _) -> {
+              // Effect with no arguments
+              #(Ok(ast.Perform(name, [], 1)), parser2)
+            }
+            _ -> #(Error(ParseError("Invalid effect expression", 1)), parser2)
+          }
+        }
+        Error(err) -> #(Error(err), parser2)
+      }
     }
     
     _ -> #(Error(ParseError("Unexpected token", 1)), parser)

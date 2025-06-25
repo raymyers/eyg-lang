@@ -43,6 +43,8 @@ pub fn manual_yaml_tests_test() {
     TestCase("RecordAccess", "alice.name", "(access alice name)"),
     TestCase("List", "[1, 2, 3]", "(list 1.0 2.0 3.0)"),
     TestCase("ListSpread", "[0, ..items]", "(list 0.0 (spread items))"),
+    TestCase("Effects", "perform Log(\"hello\")", "(perform Log hello)"),
+    TestCase("LetBinding", "x = 5; x + 10", "(let x 5.0 (+ x 10.0))"),
   ]
   
   run_test_cases(test_cases)
