@@ -250,8 +250,18 @@ fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Pa
           let #(matched_close, parser3) = match_tokens(parser2, [token.RightParen])
           case matched_close {
             True -> {
-              let call = ast.Call(expr, args, 1)
-              parse_call_rest(parser3, call)
+              // Check if this should be a union constructor or function call
+              let result_expr = case expr, args {
+                ast.Variable(name, _), [single_arg] -> {
+                  // If identifier starts with capital letter and has one argument, treat as union
+                  case is_capitalized(name) {
+                    True -> ast.Union(name, single_arg, 1)
+                    False -> ast.Call(expr, args, 1)
+                  }
+                }
+                _, _ -> ast.Call(expr, args, 1)
+              }
+              parse_call_rest(parser3, result_expr)
             }
             False -> #(Error(ParseError("Expected ')' after arguments", 1)), parser2)
           }
@@ -260,6 +270,23 @@ fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Pa
       }
     }
     False -> #(Ok(expr), parser)
+  }
+}
+
+// Check if a string starts with a capital letter
+fn is_capitalized(name: String) -> Bool {
+  case string.first(name) {
+    Ok(first_char) -> {
+      let code = string.to_utf_codepoints(first_char)
+      case code {
+        [codepoint] -> {
+          let value = string.utf_codepoint_to_int(codepoint)
+          value >= 65 && value <= 90  // A-Z
+        }
+        _ -> False
+      }
+    }
+    Error(_) -> False
   }
 }
 
@@ -316,7 +343,14 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
     
     token.Identifier(name) -> {
       let parser1 = advance(parser)
-      #(Ok(ast.Variable(name, 1)), parser1)
+      // Check if this is a builtin identifier (starts with !)
+      case string.starts_with(name, "!") {
+        True -> {
+          let builtin_name = string.slice(name, 1, string.length(name) - 1)
+          #(Ok(ast.Builtin(builtin_name, 1)), parser1)
+        }
+        False -> #(Ok(ast.Variable(name, 1)), parser1)
+      }
     }
     
     token.LeftParen -> {

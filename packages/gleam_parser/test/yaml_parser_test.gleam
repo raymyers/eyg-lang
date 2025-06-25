@@ -19,6 +19,7 @@ pub type TestCase {
 pub fn manual_yaml_tests_test() {
   let test_cases = [
     TestCase("Number", "42", "42.0"),
+    TestCase("String", "\"hello\"", "hello"),
     TestCase("Addition", "2 + 3", "(+ 2.0 3.0)"),
     TestCase("Multiplication", "4 * 6", "(* 4.0 6.0)"),
     TestCase("ComplexExpression", "2 + 3 * 4", "(+ 2.0 (* 3.0 4.0))"),
@@ -30,6 +31,14 @@ pub fn manual_yaml_tests_test() {
     TestCase("Comparison", "3 < 5", "(< 3.0 5.0)"),
     TestCase("Equality", "1 == 1", "(== 1.0 1.0)"),
     TestCase("Inequality", "1 != 2", "(!= 1.0 2.0)"),
+    TestCase("UnaryMinus", "-42", "(- 42.0)"),
+    TestCase("EmptyRecord", "{}", "{}"),
+    TestCase("Boolean", "True({})", "(union True {})"),
+    TestCase("BuiltinCall", "!int_add(1, 2)", "(call (builtin int_add) 1.0 2.0)"),
+    TestCase("LogicalNot", "!True({})", "(! (union True {}))"),
+    TestCase("FunctionCallNoArgs", "foo({})", "(call foo {})"),
+    TestCase("NestedGrouping", "((1 + 2) * 3)", "(group (* (group (+ 1.0 2.0)) 3.0))"),
+    TestCase("MixedTypes", "\"hello\" == \"world\"", "(== hello world)"),
   ]
   
   run_test_cases(test_cases)
@@ -53,6 +62,7 @@ fn run_single_test(test_case: TestCase) -> Nil {
           io.println("  Input: " <> test_case.input)
           io.println("  Expected: " <> test_case.expected)
           io.println("  Actual: " <> result)
+
           should.fail()
         }
       }
@@ -60,17 +70,7 @@ fn run_single_test(test_case: TestCase) -> Nil {
     Error(errors) -> {
       io.println("✗ " <> test_case.name <> " failed with parse errors:")
       list.each(errors, fn(err) { io.println("  " <> err.message) })
-      // Let's debug the lexer output for this case
-      case test_case.name {
-        "FunctionCallMultipleArgs" -> {
-          let lex_result = lexer.lex(test_case.input)
-          io.println("  Lexer tokens:")
-          list.each(lex_result.tokens, fn(token_pair) {
-            io.println("    " <> token.to_string(token_pair.0))
-          })
-        }
-        _ -> Nil
-      }
+
       should.fail()
     }
   }
