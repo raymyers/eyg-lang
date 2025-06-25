@@ -1,0 +1,116 @@
+tokenizer_tests:
+  - name: "Parens"
+    input: "(())"
+    expected: |
+      LEFT_PAREN ( null
+      LEFT_PAREN ( null
+      RIGHT_PAREN ) null
+      RIGHT_PAREN ) null
+      EOF  null
+
+  - name: "Braces"
+    input: "{{}}"
+    expected: |
+      LEFT_BRACE { null
+      LEFT_BRACE { null
+      RIGHT_BRACE } null
+      RIGHT_BRACE } null
+      EOF  null
+
+  - name: "Brackets"
+    input: "[[]]"
+    expected: |
+      LEFT_BRACKET [ null
+      LEFT_BRACKET [ null
+      RIGHT_BRACKET ] null
+      RIGHT_BRACKET ] null
+      EOF  null
+
+  - name: "Ops"
+    input: "({*.,+-;|})"
+    expected: |
+      LEFT_PAREN ( null
+      LEFT_BRACE { null
+      STAR * null
+      DOT . null
+      COMMA , null
+      PLUS + null
+      MINUS - null
+      SEMICOLON ; null
+      PIPE | null
+      RIGHT_BRACE } null
+      RIGHT_PAREN ) null
+      EOF  null
+
+  - name: "EygOps"
+    input: "!@:->||.."
+    expected: |
+      BANG ! null
+      AT @ null
+      COLON : null
+      ARROW -> null
+      PIPE_PIPE || null
+      DOT_DOT .. null
+      EOF  null
+
+  - name: "HashComment"
+    input: "()# comment"
+    expected: |
+      LEFT_PAREN ( null
+      RIGHT_PAREN ) null
+      EOF  null
+
+  - name: "TabsSpaces"
+    input: "( ){\t}"
+    expected: |
+      LEFT_PAREN ( null
+      RIGHT_PAREN ) null
+      LEFT_BRACE { null
+      RIGHT_BRACE } null
+      EOF  null
+
+  - name: "MultiLine"
+    input: "(\n)"
+    expected: |
+      LEFT_PAREN ( null
+      RIGHT_PAREN ) null
+      EOF  null
+
+  - name: "StringLit"
+    input: '( "Hello World" )'
+    expected: |
+      LEFT_PAREN ( null
+      STRING "Hello World" Hello World
+      RIGHT_PAREN ) null
+      EOF  null
+
+  - name: "NumberLit"
+    input: "42 3.14 0.5 1757.7378"
+    expected: |
+      NUMBER 42 42.0
+      NUMBER 3.14 3.14
+      NUMBER 0.5 0.5
+      NUMBER 1757.7378 1757.7378
+      EOF  null
+
+  - name: "Identifier"
+    input: "foo_bar a b _"
+    expected: |
+      IDENTIFIER foo_bar null
+      IDENTIFIER a null
+      IDENTIFIER b null
+      UNDERSCORE _ null
+      EOF  null
+
+  - name: "EygKeywords"
+    input: "match perform handle True False Ok Error Cat"
+    expected: |
+      MATCH match null
+      PERFORM perform null
+      HANDLE handle null
+      IDENTIFIER True null
+      IDENTIFIER False null
+      IDENTIFIER Ok null
+      IDENTIFIER Error null
+      IDENTIFIER Cat null
+      EOF  null
