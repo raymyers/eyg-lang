@@ -6,31 +6,23 @@ import gleam/string
 import gleam/int
 
 pub fn main() {
-  io.println("Testing EYG lexer...")
+  io.println("Testing canonical lexer in eyg-lang...")
   
-  // Test basic tokenization
-  let result1 = lexer.lex("let x = 42")
-  io.println("Test 1 - 'let x = 42':")
-  list.each(result1, fn(token) {
-    let #(tok, pos) = token
-    io.println("  " <> string.inspect(tok) <> " at " <> int.to_string(pos))
+  let result = lexer.lex("(42 + 3.14)")
+  
+  io.println("Tokens:")
+  list.each(result.tokens, fn(token_pair) {
+    let #(token, pos) = token_pair
+    io.println("  " <> t.to_string(token) <> " at " <> int.to_string(pos))
   })
   
-  // Test grouping
-  let result2 = lexer.lex("()")
-  io.println("\nTest 2 - '()':")
-  list.each(result2, fn(token) {
-    let #(tok, pos) = token
-    io.println("  " <> string.inspect(tok) <> " at " <> int.to_string(pos))
-  })
-  
-  // Test string
-  let result3 = lexer.lex("\"hello\"")
-  io.println("\nTest 3 - '\"hello\"':")
-  list.each(result3, fn(token) {
-    let #(tok, pos) = token
-    io.println("  " <> string.inspect(tok) <> " at " <> int.to_string(pos))
-  })
-  
-  io.println("\nLexer tests completed successfully!")
+  case result.errors {
+    [] -> io.println("✅ No errors")
+    errors -> {
+      io.println("❌ Errors:")
+      list.each(errors, fn(error) {
+        io.println("  " <> error)
+      })
+    }
+  }
 }

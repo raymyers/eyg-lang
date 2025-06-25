@@ -1,6 +1,7 @@
 import eyg/parse/token as t
 import gleam/string
 import gleam/list
+import gleam/result
 import gleam/float
 
 pub type LexResult {
@@ -126,18 +127,13 @@ fn do_lex(source: String, at: Int, tokens: List(#(t.Token, Int)), errors: List(S
       case is_digit(char) {
         True -> {
           let #(number, new_at) = read_number(source, at, "")
-          // Parse as float - if it's an integer, add .0 for parsing
-          let number_to_parse = case string.contains(number, ".") {
-            True -> number
-            False -> number <> ".0"
-          }
-          case float.parse(number_to_parse) {
+          // Parse as float to get the literal value
+          case float.parse(number) {
             Ok(float_val) -> {
-              let formatted = float.to_string(float_val)
-              // Store both lexeme and literal in a tuple-like format
-              do_lex(source, new_at, [#(t.Number(number <> "|" <> formatted), at), ..tokens], errors)
+              let formatted = format_number(float_val)
+              do_lex(source, new_at, [#(t.Number(formatted), at), ..tokens], errors)
             }
-            Error(_) -> do_lex(source, new_at, [#(t.Number(number <> "|" <> number), at), ..tokens], ["Invalid number: " <> number, ..errors])
+            Error(_) -> do_lex(source, new_at, [#(t.Number(number), at), ..tokens], ["Invalid number: " <> number, ..errors])
           }
         }
         False -> {
@@ -223,7 +219,15 @@ fn get_keyword_token(identifier: String) -> t.Token {
   }
 }
 
-
+fn format_number(float_val: Float) -> String {
+  // Format with minimum 1 decimal place but only as many as needed
+  let formatted = float.to_string(float_val)
+  // If no decimal point, add .0
+  case string.contains(formatted, ".") {
+    True -> formatted
+    False -> formatted <> ".0"
+  }
+}
 
 fn is_digit(char: String) -> Bool {
   case char {
