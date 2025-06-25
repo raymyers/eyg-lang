@@ -45,6 +45,11 @@ pub fn manual_yaml_tests_test() {
     TestCase("ListSpread", "[0, ..items]", "(list 0.0 (spread items))"),
     TestCase("Effects", "perform Log(\"hello\")", "(perform Log hello)"),
     TestCase("LetBinding", "x = 5; x + 10", "(let x 5.0 (+ x 10.0))"),
+    TestCase("Lambda", "|x, y| { !int_add(x, y) }", "(lambda (args x y) (call (builtin int_add) x y))"),
+    TestCase("Block", "{ perform Log(\"a\"); perform Log(\"b\") }", "(block (perform Log a) (perform Log b))"),
+    TestCase("ChainedCalls", "foo({})(bar)", "(call (call foo {}) bar)"),
+    TestCase("Thunk", "|| {}", "(thunk {})"),
+    TestCase("Handle", "handle Alert(|value, resume| { resume({}) }, |_| { {} })", "(handle Alert (lambda (args value resume) (call resume {})) (lambda (args _) {}))"),
   ]
   
   run_test_cases(test_cases)

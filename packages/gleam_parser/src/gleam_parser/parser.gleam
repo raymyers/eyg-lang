@@ -101,6 +101,9 @@ fn token_matches(token1: Token, token2: Token) -> Bool {
     token.Perform, token.Perform -> True
     token.Equal, token.Equal -> True
     token.Semicolon, token.Semicolon -> True
+    token.Pipe, token.Pipe -> True
+    token.PipePipe, token.PipePipe -> True
+    token.Handle, token.Handle -> True
     _, _ -> False
   }
 }
@@ -435,7 +438,25 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
     
     token.LeftBrace -> {
       let parser1 = advance(parser)
-      parse_record(parser1)
+      // Check if this is a record or a block
+      // If the next token is an identifier followed by colon, it's a record
+      // Otherwise, it's a block
+      case peek(parser1) {
+        token.RightBrace -> {
+          // Empty record
+          let parser2 = advance(parser1)
+          #(Ok(ast.EmptyRecord(1)), parser2)
+        }
+        token.Identifier(_) -> {
+          // Look ahead to see if there's a colon (record) or not (block)
+          let next_parser = advance(parser1)
+          case peek(next_parser) {
+            token.Colon -> parse_record(parser1)
+            _ -> parse_block(parser1)
+          }
+        }
+        _ -> parse_block(parser1)
+      }
     }
     
     token.LeftBracket -> {
@@ -469,7 +490,53 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       }
     }
     
-    _ -> #(Error(ParseError("Unexpected token", 1)), parser)
+    token.Pipe -> {
+      let parser1 = advance(parser)
+      // This is a lambda: |params| { body }
+      parse_lambda(parser1)
+    }
+    
+    token.PipePipe -> {
+      // This is a thunk: || { body }
+      let parser1 = advance(parser)
+      let #(matched_brace, parser2) = match_tokens(parser1, [token.LeftBrace])
+      case matched_brace {
+        True -> {
+          // Check if this is an empty thunk
+          case peek(parser2) {
+            token.RightBrace -> {
+              let parser3 = advance(parser2)
+              #(Ok(ast.Thunk(ast.EmptyRecord(1), 1)), parser3)
+            }
+            _ -> {
+              let #(body_result, parser3) = parse_expression(parser2)
+              case body_result {
+                Ok(body) -> {
+                  let #(matched_close, parser4) = match_tokens(parser3, [token.RightBrace])
+                  case matched_close {
+                    True -> #(Ok(ast.Thunk(body, 1)), parser4)
+                    False -> #(Error(ParseError("Expected '}' after thunk body", 1)), parser3)
+                  }
+                }
+                Error(err) -> #(Error(err), parser3)
+              }
+            }
+          }
+        }
+        False -> #(Error(ParseError("Expected '{' after thunk '||'", 1)), parser1)
+      }
+    }
+    
+    token.Handle -> {
+      // Parse handle: handle Effect(handler, fallback)
+      let parser1 = advance(parser)
+      parse_handle(parser1)
+    }
+    
+    _ -> {
+      let current_token = peek(parser)
+      #(Error(ParseError("Unexpected token: " <> string.inspect(current_token), 1)), parser)
+    }
   }
 }
 
@@ -584,5 +651,162 @@ fn parse_list_elements(parser: Parser, elements: List(Expr)) -> #(Result(List(Ex
         Error(err) -> #(Error(err), parser_expr)
       }
     }
+  }
+}
+
+// Parse lambda: |x, y| { body }
+fn parse_lambda(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  // Parse parameter list
+  let #(params_result, parser1) = parse_lambda_params(parser, [])
+  case params_result {
+    Ok(params) -> {
+      let #(matched_pipe, parser2) = match_tokens(parser1, [token.Pipe])
+      case matched_pipe {
+        True -> {
+          let #(matched_brace, parser3) = match_tokens(parser2, [token.LeftBrace])
+          case matched_brace {
+            True -> {
+              let #(body_result, parser4) = parse_expression(parser3)
+              case body_result {
+                Ok(body) -> {
+                  let #(matched_close, parser5) = match_tokens(parser4, [token.RightBrace])
+                  case matched_close {
+                    True -> #(Ok(ast.Lambda(params, body, 1)), parser5)
+                    False -> #(Error(ParseError("Expected '}' after lambda body", 1)), parser4)
+                  }
+                }
+                Error(err) -> #(Error(err), parser4)
+              }
+            }
+            False -> #(Error(ParseError("Expected '{' after lambda parameters", 1)), parser2)
+          }
+        }
+        False -> #(Error(ParseError("Expected '|' after lambda parameters", 1)), parser1)
+      }
+    }
+    Error(err) -> #(Error(err), parser1)
+  }
+}
+
+// Parse lambda parameters: x, y
+fn parse_lambda_params(parser: Parser, params: List(String)) -> #(Result(List(String), ParseError), Parser) {
+  case peek(parser) {
+    token.Identifier(param_name) -> {
+      let parser1 = advance(parser)
+      let new_params = list.append(params, [param_name])
+      
+      // Check what comes next
+      case peek(parser1) {
+        token.Comma -> {
+          let parser2 = advance(parser1)
+          parse_lambda_params(parser2, new_params)
+        }
+        token.Pipe -> {
+          // End of parameters
+          #(Ok(new_params), parser1)
+        }
+        _ -> #(Error(ParseError("Expected ',' or '|' after lambda parameter", 1)), parser1)
+      }
+    }
+    token.Pipe -> {
+      // No parameters, just return empty list
+      #(Ok(params), parser)
+    }
+    token.Underscore -> {
+      // Underscore parameter
+      let parser1 = advance(parser)
+      let new_params = list.append(params, ["_"])
+      
+      // Check what comes next
+      case peek(parser1) {
+        token.Comma -> {
+          let parser2 = advance(parser1)
+          parse_lambda_params(parser2, new_params)
+        }
+        token.Pipe -> {
+          // End of parameters
+          #(Ok(new_params), parser1)
+        }
+        _ -> #(Error(ParseError("Expected ',' or '|' after lambda parameter", 1)), parser1)
+      }
+    }
+    _ -> #(Error(ParseError("Expected parameter name in lambda", 1)), parser)
+  }
+}
+
+// Parse block: { stmt1; stmt2; ... }
+fn parse_block(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  parse_block_statements(parser, [])
+}
+
+// Parse block statements
+fn parse_block_statements(parser: Parser, statements: List(Expr)) -> #(Result(Expr, ParseError), Parser) {
+  case peek(parser) {
+    token.RightBrace -> {
+      let parser1 = advance(parser)
+      #(Ok(ast.Block(list.reverse(statements), 1)), parser1)
+    }
+    _ -> {
+      let #(stmt_result, parser1) = parse_expression(parser)
+      case stmt_result {
+        Ok(stmt) -> {
+          let new_statements = [stmt, ..statements]
+          // Check for optional semicolon or newline
+          case peek(parser1) {
+            token.Semicolon -> {
+              let parser2 = advance(parser1)
+              parse_block_statements(parser2, new_statements)
+            }
+            _ -> parse_block_statements(parser1, new_statements)
+          }
+        }
+        Error(err) -> #(Error(err), parser1)
+      }
+    }
+  }
+}
+
+// Parse handle: handle Effect(handler, fallback)
+fn parse_handle(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  // Expect effect name (identifier)
+  case peek(parser) {
+    token.Identifier(effect_name) -> {
+      let parser1 = advance(parser)
+      // Expect opening parenthesis
+      let #(matched_paren, parser2) = match_tokens(parser1, [token.LeftParen])
+      case matched_paren {
+        True -> {
+          // Parse handler lambda
+          let #(handler_result, parser3) = parse_expression(parser2)
+          case handler_result {
+            Ok(handler) -> {
+              // Expect comma
+              let #(matched_comma, parser4) = match_tokens(parser3, [token.Comma])
+              case matched_comma {
+                True -> {
+                  // Parse fallback lambda
+                  let #(fallback_result, parser5) = parse_expression(parser4)
+                  case fallback_result {
+                    Ok(fallback) -> {
+                      // Expect closing parenthesis
+                      let #(matched_close, parser6) = match_tokens(parser5, [token.RightParen])
+                      case matched_close {
+                        True -> #(Ok(ast.Handle(effect_name, handler, fallback, 1)), parser6)
+                        False -> #(Error(ParseError("Expected ')' after handle fallback", 1)), parser5)
+                      }
+                    }
+                    Error(err) -> #(Error(err), parser5)
+                  }
+                }
+                False -> #(Error(ParseError("Expected ',' after handle handler", 1)), parser3)
+              }
+            }
+            Error(err) -> #(Error(err), parser3)
+          }
+        }
+        False -> #(Error(ParseError("Expected '(' after handle effect name", 1)), parser1)
+      }
+    }
+    _ -> #(Error(ParseError("Expected effect name after 'handle'", 1)), parser)
   }
 }
