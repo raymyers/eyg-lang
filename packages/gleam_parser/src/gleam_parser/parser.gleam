@@ -4,7 +4,6 @@ import gleam_parser/lexer
 import gleam/list
 import gleam/string
 import gleam/float
-import gleam/int
 
 pub type ParseError {
   ParseError(message: String, line: Int)
@@ -80,6 +79,7 @@ fn token_matches(token1: Token, token2: Token) -> Bool {
     token.RightParen, token.RightParen -> True
     token.LeftBrace, token.LeftBrace -> True
     token.RightBrace, token.RightBrace -> True
+    token.Comma, token.Comma -> True
     token.Plus, token.Plus -> True
     token.Minus, token.Minus -> True
     token.Star, token.Star -> True
