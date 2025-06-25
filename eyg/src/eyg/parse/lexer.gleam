@@ -1,7 +1,6 @@
 import eyg/parse/token as t
 import gleam/list
 import gleam/string
-import gleam/stringx
 
 pub fn lex(raw) {
   loop(raw, 0, [])
@@ -65,8 +64,8 @@ fn pop(raw, start) {
     "9" <> rest -> integer("9", rest, done)
     "0" <> rest -> integer("0", rest, done)
     _ -> {
-      let next_byte = stringx.byte_slice_range(raw, 0, 1)
-      let rest = stringx.byte_slice_from(raw, 1)
+      let next_byte = string.slice(raw, 0, 1)
+      let rest = string.slice(raw, 1, string.length(raw) - 1)
       case next_byte {
         "_"
         | "a"
@@ -149,20 +148,24 @@ fn string(buffer, length, rest, done) {
         "r" <> rest -> string(buffer <> "\r", length + 2, rest, done)
         "n" <> rest -> string(buffer <> "\n", length + 2, rest, done)
         "" -> done(t.UnterminatedString(buffer <> "\\"), length, "")
-        _ -> todo as "invalid escape"
+        _ -> {
+          let next_byte = string.slice(rest, 0, 1)
+          let rest = string.slice(rest, 1, string.length(rest) - 1)
+          string(buffer <> "\\" <> next_byte, length + 2, rest, done)
+        }
       }
     "" -> done(t.UnterminatedString(buffer), length, "")
     _ -> {
-      let next_byte = stringx.byte_slice_range(rest, 0, 1)
-      let rest = stringx.byte_slice_from(rest, 1)
+      let next_byte = string.slice(rest, 0, 1)
+      let rest = string.slice(rest, 1, string.length(rest) - 1)
       string(buffer <> next_byte, length + 1, rest, done)
     }
   }
 }
 
 fn name(buffer, raw, done) {
-  let next_byte = stringx.byte_slice_range(raw, 0, 1)
-  let rest = stringx.byte_slice_from(raw, 1)
+  let next_byte = string.slice(raw, 0, 1)
+  let rest = string.slice(raw, 1, string.length(raw) - 1)
   case
     is_lower_grapheme(next_byte)
     || is_digit_grapheme(next_byte)
@@ -174,8 +177,8 @@ fn name(buffer, raw, done) {
 }
 
 fn uppername(buffer, raw, done) {
-  let next_byte = stringx.byte_slice_range(raw, 0, 1)
-  let rest = stringx.byte_slice_from(raw, 1)
+  let next_byte = string.slice(raw, 0, 1)
+  let rest = string.slice(raw, 1, string.length(raw) - 1)
 
   case
     is_upper_grapheme(next_byte)

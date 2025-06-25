@@ -1,0 +1,290 @@
+# EYG Language Parser Configuration
+# Based on the recursive descent parser in eyg/parse/parser.gleam
+
+parser:
+  name: "eyg-parser"
+  version: "1.0.0"
+  type: "recursive_descent"
+  
+  # Grammar rules for the EYG language
+  grammar:
+    # Top-level rules
+    - rule: "program"
+      production: "expression EOF"
+      
+    - rule: "block"
+      production: "statement*"
+      
+    # Expressions (main parsing entry point)
+    - rule: "expression"
+      productions:
+        - "let_expression"
+        - "lambda_expression"
+        - "match_expression"
+        - "perform_expression"
+        - "handle_expression"
+        - "application_expression"
+        - "primary_expression"
+        
+    # Let expressions
+    - rule: "let_expression"
+      production: "LET pattern EQUAL expression expression?"
+      ast_node: "Let"
+      
+    # Lambda expressions
+    - rule: "lambda_expression"
+      production: "LEFTPAREN pattern_list RIGHTPAREN RIGHTARROW LEFTBRACE expression RIGHTBRACE"
+      ast_node: "Lambda"
+      
+    # Pattern matching
+    - rule: "match_expression"
+      productions:
+        - "MATCH LEFTBRACE clause_list RIGHTBRACE"
+        - "MATCH expression LEFTBRACE clause_list RIGHTBRACE"
+      ast_node: "Match"
+      
+    # Effect operations
+    - rule: "perform_expression"
+      production: "PERFORM UPPERNAME"
+      ast_node: "Perform"
+      
+    - rule: "handle_expression"
+      production: "HANDLE UPPERNAME"
+      ast_node: "Handle"
+      
+    # Function application
+    - rule: "application_expression"
+      production: "primary_expression argument_list"
+      ast_node: "Apply"
+      left_associative: true
+      
+    # Primary expressions
+    - rule: "primary_expression"
+      productions:
+        - "variable"
+        - "integer"
+        - "string"
+        - "list"
+        - "record"
+        - "tag"
+        - "builtin"
+        - "reference"
+        - "grouped_expression"
+        
+    # Literals and identifiers
+    - rule: "variable"
+      production: "NAME"
+      ast_node: "Variable"
+      
+    - rule: "integer"
+      productions:
+        - "INTEGER"
+        - "MINUS INTEGER"
+      ast_node: "Integer"
+      
+    - rule: "string"
+      production: "STRING"
+      ast_node: "String"
+      
+    - rule: "tag"
+      production: "UPPERNAME"
+      ast_node: "Tag"
+      
+    - rule: "builtin"
+      production: "BANG NAME"
+      ast_node: "Builtin"
+      
+    - rule: "reference"
+      production: "HASH NAME"
+      ast_node: "Reference"
+      
+    # Collections
+    - rule: "list"
+      production: "LEFTSQUARE list_elements? RIGHTSQUARE"
+      ast_node: "List"
+      
+    - rule: "list_elements"
+      productions:
+        - "expression"
+        - "expression COMMA list_elements"
+        - "expression COMMA DOTDOT expression"  # Spread syntax
+        
+    - rule: "record"
+      production: "LEFTBRACE record_fields? RIGHTBRACE"
+      ast_node: "Record"
+      
+    - rule: "record_fields"
+      productions:
+        - "record_field"
+        - "record_field COMMA record_fields"
+        - "DOTDOT expression"  # Record update syntax
+        
+    - rule: "record_field"
+      productions:
+        - "NAME COLON expression"
+        - "NAME"  # Shorthand for name: name
+        
+    # Patterns
+    - rule: "pattern"
+      productions:
+        - "assign_pattern"
+        - "destructure_pattern"
+        
+    - rule: "assign_pattern"
+      production: "NAME"
+      ast_node: "Assign"
+      
+    - rule: "destructure_pattern"
+      production: "LEFTBRACE match_list RIGHTBRACE"
+      ast_node: "Destructure"
+      
+    - rule: "match_list"
+      productions:
+        - "match_item"
+        - "match_item COMMA match_list"
+        
+    - rule: "match_item"
+      productions:
+        - "NAME COLON NAME"  # field: variable
+        - "NAME"            # field (shorthand)
+        
+    - rule: "pattern_list"
+      productions:
+        - "pattern"
+        - "pattern COMMA pattern_list"
+        
+    # Match clauses
+    - rule: "clause_list"
+      productions:
+        - "clause"
+        - "clause clause_list"
+        - "default_clause"
+        
+    - rule: "clause"
+      production: "UPPERNAME expression"
+      ast_node: "Case"
+      
+    - rule: "default_clause"
+      production: "BAR expression"
+      ast_node: "Default"
+      
+    # Function arguments
+    - rule: "argument_list"
+      production: "LEFTPAREN argument_items? RIGHTPAREN"
+      
+    - rule: "argument_items"
+      productions:
+        - "expression"
+        - "expression COMMA argument_items"
+        
+    # Grouped expressions
+    - rule: "grouped_expression"
+      production: "LEFTPAREN expression RIGHTPAREN"
+      
+    # Statements (for block parsing)
+    - rule: "statement"
+      productions:
+        - "let_statement"
+        - "expression_statement"
+        
+    - rule: "let_statement"
+      production: "LET pattern EQUAL expression"
+      ast_node: "LetStatement"
+      
+    - rule: "expression_statement"
+      production: "expression"
+      
+  # Operator precedence (higher number = higher precedence)
+  precedence:
+    - operators: ["DOT"]
+      precedence: 100
+      associativity: "left"
+      
+    - operators: ["application"]  # Function application
+      precedence: 90
+      associativity: "left"
+      
+    - operators: ["MINUS"]  # Unary minus
+      precedence: 80
+      associativity: "right"
+      
+  # AST node types
+  ast_nodes:
+    - name: "Variable"
+      fields: ["name"]
+      
+    - name: "Integer"
+      fields: ["value"]
+      
+    - name: "String"
+      fields: ["value"]
+      
+    - name: "Tag"
+      fields: ["label"]
+      
+    - name: "Let"
+      fields: ["pattern", "value", "body"]
+      
+    - name: "Lambda"
+      fields: ["parameter", "body"]
+      
+    - name: "Apply"
+      fields: ["function", "argument"]
+      
+    - name: "Match"
+      fields: ["subject", "clauses"]
+      
+    - name: "Case"
+      fields: ["tag", "body"]
+      
+    - name: "Perform"
+      fields: ["effect"]
+      
+    - name: "Handle"
+      fields: ["effect"]
+      
+    - name: "Builtin"
+      fields: ["name"]
+      
+    - name: "Reference"
+      fields: ["name"]
+      
+    - name: "Select"
+      fields: ["field"]
+      
+    - name: "Extend"
+      fields: ["field"]
+      
+    - name: "Overwrite"
+      fields: ["field"]
+      
+    - name: "Cons"
+      fields: []
+      
+    - name: "Tail"
+      fields: []
+      
+    - name: "Empty"
+      fields: []
+      
+    - name: "Vacant"
+      fields: []
+      
+    - name: "NoCases"
+      fields: []
+      
+  # Error recovery strategies
+  error_recovery:
+    - strategy: "panic_mode"
+      sync_tokens: ["SEMICOLON", "RIGHTBRACE", "EOF"]
+      
+    - strategy: "phrase_level"
+      insertions: ["RIGHTPAREN", "RIGHTBRACE", "RIGHTSQUARE"]
+      deletions: ["unexpected_tokens"]
+      
+  # Parser configuration
+  config:
+    - skip_whitespace: true
+    - track_positions: true
+    - build_ast: true
+    - error_reporting: "detailed"

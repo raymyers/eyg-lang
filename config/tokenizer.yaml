@@ -1,0 +1,152 @@
+# EYG Language Tokenizer Configuration
+# Based on the existing lexer implementation in eyg/parse/lexer.gleam
+
+tokenizer:
+  name: "eyg-tokenizer"
+  version: "1.0.0"
+  
+  # Token types supported by the EYG language
+  tokens:
+    # Whitespace
+    - name: "Whitespace"
+      pattern: "[ \t\n\r]+"
+      skip: false  # Keep whitespace for formatting
+      
+    # Grouping tokens
+    - name: "LeftParen"
+      pattern: "\\("
+      literal: "("
+      
+    - name: "RightParen"
+      pattern: "\\)"
+      literal: ")"
+      
+    - name: "LeftBrace"
+      pattern: "\\{"
+      literal: "{"
+      
+    - name: "RightBrace"
+      pattern: "\\}"
+      literal: "}"
+      
+    - name: "LeftSquare"
+      pattern: "\\["
+      literal: "["
+      
+    - name: "RightSquare"
+      pattern: "\\]"
+      literal: "]"
+      
+    # Punctuation
+    - name: "Equal"
+      pattern: "="
+      literal: "="
+      
+    - name: "RightArrow"
+      pattern: "->"
+      literal: "->"
+      
+    - name: "Comma"
+      pattern: ","
+      literal: ","
+      
+    - name: "Dot"
+      pattern: "\\."
+      literal: "."
+      
+    - name: "Colon"
+      pattern: ":"
+      literal: ":"
+      
+    - name: "Bang"
+      pattern: "!"
+      literal: "!"
+      
+    - name: "Hash"
+      pattern: "#"
+      literal: "#"
+      
+    - name: "Minus"
+      pattern: "-"
+      literal: "-"
+      
+    - name: "DotDot"
+      pattern: "\\.\\."
+      literal: ".."
+      
+    - name: "Bar"
+      pattern: "\\|"
+      literal: "|"
+      
+    # Keywords (must be checked before names)
+    - name: "Let"
+      pattern: "let\\b"
+      literal: "let"
+      keyword: true
+      
+    - name: "Match"
+      pattern: "match\\b"
+      literal: "match"
+      keyword: true
+      
+    - name: "Perform"
+      pattern: "perform\\b"
+      literal: "perform"
+      keyword: true
+      
+    - name: "Deep"
+      pattern: "deep\\b"
+      literal: "deep"
+      keyword: true
+      
+    - name: "Handle"
+      pattern: "handle\\b"
+      literal: "handle"
+      keyword: true
+      
+    # Literals
+    - name: "String"
+      pattern: "\"([^\"\\\\]|\\\\.)*\""
+      capture_group: 1  # Capture content without quotes
+      
+    - name: "Integer"
+      pattern: "[0-9]+"
+      
+    # Identifiers
+    - name: "Name"
+      pattern: "[a-z_][a-zA-Z0-9_]*"
+      
+    - name: "Uppername"
+      pattern: "[A-Z][a-zA-Z0-9_]*"
+      
+    # Error tokens
+    - name: "UnexpectedGrapheme"
+      pattern: "."  # Catch-all for unexpected characters
+      error: true
+      
+    - name: "UnterminatedString"
+      pattern: "\"([^\"\\\\]|\\\\.)*$"  # String that doesn't close
+      error: true
+
+  # Tokenization rules
+  rules:
+    - ignore_case: false
+    - longest_match: true
+    - keywords_before_identifiers: true
+    
+  # Character classes
+  character_classes:
+    lower: "[a-z]"
+    upper: "[A-Z]"
+    digit: "[0-9]"
+    alpha: "[a-zA-Z]"
+    alnum: "[a-zA-Z0-9]"
+    whitespace: "[ \t\n\r]"
+    
+  # Escape sequences for strings
+  escape_sequences:
+    "\\\"": "\""
+    "\\\\": "\\"
+    "\\t": "\t"
+    "\\r": "\r"
+    "\\n": "\n"
