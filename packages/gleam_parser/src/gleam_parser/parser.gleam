@@ -124,7 +124,7 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
   let #(expr_result, parser1) = parse_equality(parser)
   case expr_result {
     Ok(expr) -> {
-      // Check if this is a variable that could be assigned to
+      // Check if this is a pattern that could be assigned to
       case expr {
         ast.Variable(_name, _) -> {
           let #(matched_equal, parser2) = match_tokens(parser1, [token.Equal])
@@ -165,6 +165,60 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
                             Error(_) -> {
                               // If body parsing fails, just return the value
                               #(Ok(value), parser3)
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                Error(err) -> #(Error(err), parser3)
+              }
+            }
+            False -> #(Ok(expr), parser1)
+          }
+        }
+        ast.Record(fields, _) -> {
+          // Convert record to destructuring pattern
+          let destructure_pattern = ast.Destructure(fields, 1)
+          let #(matched_equal, parser2) = match_tokens(parser1, [token.Equal])
+          case matched_equal {
+            True -> {
+              let #(value_result, parser3) = parse_assignment(parser2)
+              case value_result {
+                Ok(value) -> {
+                  // Check for semicolon and body
+                  let #(matched_semi, parser4) =
+                    match_tokens(parser3, [token.Semicolon])
+                  case matched_semi {
+                    True -> {
+                      let #(body_result, parser5) = parse_assignment(parser4)
+                      case body_result {
+                        Ok(body) -> #(
+                          Ok(ast.Var(destructure_pattern, value, body, 1)),
+                          parser5,
+                        )
+                        Error(err) -> #(Error(err), parser5)
+                      }
+                    }
+                    False -> {
+                      // Try to parse the body without semicolon (implicit separation)
+                      case peek(parser3) {
+                        token.Eof -> {
+                          // End of input, use empty record as body
+                          #(Ok(ast.Var(destructure_pattern, value, ast.EmptyRecord(1), 1)), parser3)
+                        }
+                        _ -> {
+                          let #(body_result, parser4) =
+                            parse_assignment(parser3)
+                          case body_result {
+                            Ok(body) -> #(
+                              Ok(ast.Var(destructure_pattern, value, body, 1)),
+                              parser4,
+                            )
+                            Error(_) -> {
+                              // If body parsing fails, use empty record as body
+                              #(Ok(ast.Var(destructure_pattern, value, ast.EmptyRecord(1), 1)), parser3)
                             }
                           }
                         }
