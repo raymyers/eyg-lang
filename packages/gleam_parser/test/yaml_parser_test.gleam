@@ -50,6 +50,8 @@ pub fn manual_yaml_tests_test() {
     TestCase("ChainedCalls", "foo({})(bar)", "(call (call foo {}) bar)"),
     TestCase("Thunk", "|| {}", "(thunk {})"),
     TestCase("Handle", "handle Alert(|value, resume| { resume({}) }, |_| { {} })", "(handle Alert (lambda (args value resume) (call resume {})) (lambda (args _) {}))"),
+    TestCase("NamedRef", "@std:1", "(named_ref std 1)"),
+    TestCase("Match", "match value { Ok(x) -> x, Error(_) -> 0 }", "(match value (case (pattern Ok x) x) (case (pattern Error _) 0.0))"),
   ]
   
   run_test_cases(test_cases)

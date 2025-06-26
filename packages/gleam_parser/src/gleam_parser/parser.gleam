@@ -4,6 +4,7 @@ import gleam_parser/lexer
 import gleam/list
 import gleam/string
 import gleam/float
+import gleam/int
 
 pub type ParseError {
   ParseError(message: String, line: Int)
@@ -104,6 +105,10 @@ fn token_matches(token1: Token, token2: Token) -> Bool {
     token.Pipe, token.Pipe -> True
     token.PipePipe, token.PipePipe -> True
     token.Handle, token.Handle -> True
+    token.Arrow, token.Arrow -> True
+    token.At, token.At -> True
+    token.Match, token.Match -> True
+    token.Underscore, token.Underscore -> True
     _, _ -> False
   }
 }
@@ -533,6 +538,18 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       parse_handle(parser1)
     }
     
+    token.At -> {
+      // Parse named reference: @module:index
+      let parser1 = advance(parser)
+      parse_named_ref(parser1)
+    }
+    
+    token.Match -> {
+      // Parse match expression: match value { pattern -> expr, ... }
+      let parser1 = advance(parser)
+      parse_match(parser1)
+    }
+    
     _ -> {
       let current_token = peek(parser)
       #(Error(ParseError("Unexpected token: " <> string.inspect(current_token), 1)), parser)
@@ -808,5 +825,180 @@ fn parse_handle(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       }
     }
     _ -> #(Error(ParseError("Expected effect name after 'handle'", 1)), parser)
+  }
+}
+
+// Parse named reference: @module:index
+fn parse_named_ref(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  case peek(parser) {
+    token.Identifier(module_name) -> {
+      let parser1 = advance(parser)
+      let #(matched_colon, parser2) = match_tokens(parser1, [token.Colon])
+      case matched_colon {
+        True -> {
+          case peek(parser2) {
+            token.Number(number_str) -> {
+              let parser3 = advance(parser2)
+              // Extract the number part from "literal|value" format
+              let parts = string.split(number_str, "|")
+              case parts {
+                [literal_str, _] -> {
+                  // Use the literal part (the original text) for integer parsing
+                  case int.parse(literal_str) {
+                    Ok(index) -> #(Ok(ast.NamedRef(module_name, index, 1)), parser3)
+                    Error(_) -> #(Error(ParseError("Invalid number in named reference", 1)), parser2)
+                  }
+                }
+                _ -> {
+                  case int.parse(number_str) {
+                    Ok(index) -> #(Ok(ast.NamedRef(module_name, index, 1)), parser3)
+                    Error(_) -> #(Error(ParseError("Invalid number in named reference", 1)), parser2)
+                  }
+                }
+              }
+            }
+            _ -> #(Error(ParseError("Expected number after ':' in named reference", 1)), parser2)
+          }
+        }
+        False -> #(Error(ParseError("Expected ':' after module name in named reference", 1)), parser1)
+      }
+    }
+    _ -> #(Error(ParseError("Expected module name after '@'", 1)), parser)
+  }
+}
+
+// Parse match expression: match value { pattern -> expr, ... }
+fn parse_match(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  // Parse the value to match on
+  let #(value_result, parser1) = parse_expression(parser)
+  case value_result {
+    Ok(value) -> {
+      let #(matched_brace, parser2) = match_tokens(parser1, [token.LeftBrace])
+      case matched_brace {
+        True -> {
+          let #(cases_result, parser3) = parse_match_cases(parser2, [])
+          case cases_result {
+            Ok(cases) -> {
+              let #(matched_close, parser4) = match_tokens(parser3, [token.RightBrace])
+              case matched_close {
+                True -> #(Ok(ast.Match(value, cases, 1)), parser4)
+                False -> #(Error(ParseError("Expected '}' after match cases", 1)), parser3)
+              }
+            }
+            Error(err) -> #(Error(err), parser3)
+          }
+        }
+        False -> #(Error(ParseError("Expected '{' after match value", 1)), parser1)
+      }
+    }
+    Error(err) -> #(Error(err), parser1)
+  }
+}
+
+// Parse match cases: pattern -> expr, pattern -> expr, ...
+fn parse_match_cases(parser: Parser, cases: List(ast.MatchCase)) -> #(Result(List(ast.MatchCase), ParseError), Parser) {
+  case peek(parser) {
+    token.RightBrace -> #(Ok(list.reverse(cases)), parser)
+    _ -> {
+      let #(case_result, parser1) = parse_match_case(parser)
+      case case_result {
+        Ok(match_case) -> {
+          // Check if there's a comma (optional for last case)
+          case peek(parser1) {
+            token.Comma -> {
+              let parser2 = advance(parser1)
+              parse_match_cases(parser2, [match_case, ..cases])
+            }
+            _ -> parse_match_cases(parser1, [match_case, ..cases])
+          }
+        }
+        Error(err) -> #(Error(err), parser1)
+      }
+    }
+  }
+}
+
+// Parse a single match case: pattern -> expr
+fn parse_match_case(parser: Parser) -> #(Result(ast.MatchCase, ParseError), Parser) {
+  let #(pattern_result, parser1) = parse_pattern(parser)
+  case pattern_result {
+    Ok(pattern) -> {
+      let #(matched_arrow, parser2) = match_tokens(parser1, [token.Arrow])
+      case matched_arrow {
+        True -> {
+          let #(expr_result, parser3) = parse_expression(parser2)
+          case expr_result {
+            Ok(expr) -> #(Ok(ast.MatchCase(pattern, expr)), parser3)
+            Error(err) -> #(Error(err), parser3)
+          }
+        }
+        False -> #(Error(ParseError("Expected '->' after pattern", 1)), parser1)
+      }
+    }
+    Error(err) -> #(Error(err), parser1)
+  }
+}
+
+// Parse a pattern: Ok(x), Error(_), literal, etc.
+fn parse_pattern(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
+  case peek(parser) {
+    token.Identifier(name) -> {
+      let parser1 = advance(parser)
+      // Check if this is a constructor pattern like Ok(x)
+      case peek(parser1) {
+        token.LeftParen -> {
+          let parser2 = advance(parser1)
+          let #(arg_result, parser3) = parse_pattern(parser2)
+          case arg_result {
+            Ok(arg) -> {
+              let #(matched_paren, parser4) = match_tokens(parser3, [token.RightParen])
+              case matched_paren {
+                True -> {
+                  // Create a constructor pattern
+                  #(Ok(ast.ConstructorPattern(name, arg, 1)), parser4)
+                }
+                False -> #(Error(ParseError("Expected ')' after pattern argument", 1)), parser3)
+              }
+            }
+            Error(err) -> #(Error(err), parser3)
+          }
+        }
+        _ -> {
+          // Simple variable pattern
+          #(Ok(ast.Variable(name, 1)), parser1)
+        }
+      }
+    }
+    token.Underscore -> {
+      let parser1 = advance(parser)
+      #(Ok(ast.Wildcard(1)), parser1)
+    }
+    token.Number(number_str) -> {
+      let parser1 = advance(parser)
+      // Extract the float value from "literal|value" format
+      let parts = string.split(number_str, "|")
+      case parts {
+        [_, value_str] -> {
+          case float.parse(value_str) {
+            Ok(value) -> #(Ok(ast.Literal(ast.NumberValue(value), 1)), parser1)
+            Error(_) -> #(Error(ParseError("Invalid number in pattern", 1)), parser)
+          }
+        }
+        _ -> {
+          case float.parse(number_str) {
+            Ok(value) -> #(Ok(ast.Literal(ast.NumberValue(value), 1)), parser1)
+            Error(_) -> #(Error(ParseError("Invalid number in pattern", 1)), parser)
+          }
+        }
+      }
+    }
+    token.String(string_value) -> {
+      let parser1 = advance(parser)
+      #(Ok(ast.Literal(ast.StringValue(string_value), 1)), parser1)
+    }
+    _ -> {
+      let current_token = peek(parser)
+      #(Error(ParseError("Unexpected token in pattern: " <> string.inspect(current_token), 1)), parser)
+    }
   }
 }

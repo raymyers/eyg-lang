@@ -43,6 +43,7 @@ pub type Expr {
   
   // Pattern matching and unions
   Union(constructor: String, value: Expr, line: Int)
+  ConstructorPattern(constructor: String, value: Expr, line: Int)
   Match(value: Expr, cases: List(MatchCase), line: Int)
   
   // Effects
@@ -120,6 +121,9 @@ pub fn expr_to_string(expr: Expr) -> String {
     Union(constructor, value, _) -> 
       "(union " <> constructor <> " " <> expr_to_string(value) <> ")"
     
+    ConstructorPattern(constructor, value, _) ->
+      constructor <> " " <> expr_to_string(value)
+    
     EmptyRecord(_) -> "{}"
     
     Record(fields, _) -> {
@@ -152,7 +156,7 @@ pub fn expr_to_string(expr: Expr) -> String {
     Match(value, cases, _) -> {
       let cases_str = cases
         |> list.map(fn(case_) {
-          "(case " <> expr_to_string(case_.pattern) <> " " <> expr_to_string(case_.body) <> ")"
+          "(case (pattern " <> expr_to_string(case_.pattern) <> ") " <> expr_to_string(case_.body) <> ")"
         })
         |> string.join(" ")
       "(match " <> expr_to_string(value) <> " " <> cases_str <> ")"
