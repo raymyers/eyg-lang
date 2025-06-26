@@ -3,7 +3,7 @@ pub type Token {
   String(lexeme: String, literal: String)
   Number(lexeme: String, literal: String)
   Identifier(String)
-  
+
   // Single-character tokens
   LeftParen
   RightParen
@@ -18,7 +18,7 @@ pub type Token {
   Semicolon
   Star
   Slash
-  
+
   // One or two character tokens
   Bang
   BangEqual
@@ -28,18 +28,25 @@ pub type Token {
   GreaterEqual
   Less
   LessEqual
-  
+
   // Multi-character tokens
-  Arrow        // ->
-  DotDot       // ..
-  PipePipe     // ||
-  
+  Arrow
+  // ->
+  DotDot
+  // ..
+  PipePipe
+
+  // ||
   // EYG-specific tokens
-  At           // @
-  Colon        // :
-  Pipe         // |
-  Hash         // #
-  
+  At
+  // @
+  Colon
+  // :
+  Pipe
+  // |
+  Hash
+
+  // #
   // Keywords
   And
   Else
@@ -50,8 +57,9 @@ pub type Token {
   Perform
   Handle
   Not
-  Underscore   // _
-  
+  Underscore
+
+  // _
   // Special tokens
   Eof
   UnterminatedString(String)
@@ -60,8 +68,10 @@ pub type Token {
 
 pub fn to_string(token: Token) -> String {
   case token {
-    String(lexeme, literal) -> "String(\"" <> lexeme <> "\", \"" <> literal <> "\")"
-    Number(lexeme, literal) -> "Number(\"" <> lexeme <> "\", \"" <> literal <> "\")"
+    String(lexeme, literal) ->
+      "String(\"" <> lexeme <> "\", \"" <> literal <> "\")"
+    Number(lexeme, literal) ->
+      "Number(\"" <> lexeme <> "\", \"" <> literal <> "\")"
     Identifier(value) -> "Identifier(" <> value <> ")"
     LeftParen -> "LeftParen"
     RightParen -> "RightParen"
@@ -108,7 +118,11 @@ pub fn to_string(token: Token) -> String {
 }
 
 // Convert to canonical test format: "TOKEN_TYPE lexeme literal"
-pub fn to_canonical_string(token: Token, lexeme: String, literal: String) -> String {
+pub fn to_canonical_string(
+  token: Token,
+  lexeme: String,
+  literal: String,
+) -> String {
   let token_type = case token {
     String(_, _) -> "STRING"
     Number(_, _) -> "NUMBER"
@@ -155,11 +169,11 @@ pub fn to_canonical_string(token: Token, lexeme: String, literal: String) -> Str
     UnterminatedString(_) -> "UNTERMINATED_STRING"
     UnexpectedGrapheme(_) -> "UNEXPECTED_GRAPHEME"
   }
-  
+
   let literal_part = case literal {
     "" -> "null"
     _ -> literal
   }
-  
+
   token_type <> " " <> lexeme <> " " <> literal_part
 }

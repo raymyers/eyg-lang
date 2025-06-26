@@ -1,10 +1,10 @@
+import gleam/io
+import gleam/list
+import gleam/string
+import gleam_parser/file_utils
+import gleam_parser/json_test_parser
 import gleam_parser/lexer
 import gleam_parser/token as t
-import gleam_parser/json_test_parser
-import gleam_parser/file_utils
-import gleam/string
-import gleam/list
-import gleam/io
 
 import gleeunit
 import gleeunit/should
@@ -55,8 +55,6 @@ fn run_json_tests(tests: List(json_test_parser.TestCase)) -> Nil {
   })
 }
 
-
-
 fn tokens_to_string(tokens: List(#(t.Token, Int))) -> String {
   tokens
   |> list.map(fn(token_pair) {
@@ -104,7 +102,8 @@ fn tokens_to_string(tokens: List(#(t.Token, Int))) -> String {
       t.Not -> t.to_canonical_string(token, "not", "")
       t.Underscore -> t.to_canonical_string(token, "_", "")
       t.Eof -> t.to_canonical_string(token, "", "")
-      t.UnterminatedString(value) -> t.to_canonical_string(token, "\"" <> value, value)
+      t.UnterminatedString(value) ->
+        t.to_canonical_string(token, "\"" <> value, value)
       t.UnexpectedGrapheme(value) -> t.to_canonical_string(token, value, "")
     }
   })

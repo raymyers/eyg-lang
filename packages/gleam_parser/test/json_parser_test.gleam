@@ -1,10 +1,10 @@
-import gleam_parser/parser
-import gleam_parser/ast
-import gleam_parser/json_test_parser
-import gleam_parser/file_utils
 import gleam/io
 import gleam/list
 import gleam/string
+import gleam_parser/ast
+import gleam_parser/file_utils
+import gleam_parser/json_test_parser
+import gleam_parser/parser
 import gleeunit
 import gleeunit/should
 
@@ -54,7 +54,9 @@ fn run_json_tests(tests: List(json_test_parser.TestCase)) -> Nil {
         }
       }
       Error(err) -> {
-        io.println("✗ " <> test_case.name <> " failed to parse: " <> string.inspect(err))
+        io.println(
+          "✗ " <> test_case.name <> " failed to parse: " <> string.inspect(err),
+        )
         should.fail()
       }
     }
@@ -68,10 +70,26 @@ pub fn manual_json_tests_test() {
     json_test_parser.TestCase("String", "\"hello\"", "hello"),
     json_test_parser.TestCase("Addition", "2 + 3", "(+ 2.0 3.0)"),
     json_test_parser.TestCase("Multiplication", "4 * 6", "(* 4.0 6.0)"),
-    json_test_parser.TestCase("ComplexExpression", "2 + 3 * 4", "(+ 2.0 (* 3.0 4.0))"),
-    json_test_parser.TestCase("GroupedExpression", "(2 + 3) * 4", "(* (group (+ 2.0 3.0)) 4.0)"),
-    json_test_parser.TestCase("FunctionCallOneArg", "foo(42)", "(call foo 42.0)"),
-    json_test_parser.TestCase("FunctionCallMultipleArgs", "foo(1, 2, 3)", "(call foo 1.0 2.0 3.0)"),
+    json_test_parser.TestCase(
+      "ComplexExpression",
+      "2 + 3 * 4",
+      "(+ 2.0 (* 3.0 4.0))",
+    ),
+    json_test_parser.TestCase(
+      "GroupedExpression",
+      "(2 + 3) * 4",
+      "(* (group (+ 2.0 3.0)) 4.0)",
+    ),
+    json_test_parser.TestCase(
+      "FunctionCallOneArg",
+      "foo(42)",
+      "(call foo 42.0)",
+    ),
+    json_test_parser.TestCase(
+      "FunctionCallMultipleArgs",
+      "foo(1, 2, 3)",
+      "(call foo 1.0 2.0 3.0)",
+    ),
     json_test_parser.TestCase("Subtraction", "5 - 2", "(- 5.0 2.0)"),
     json_test_parser.TestCase("Division", "8 / 2", "(/ 8.0 2.0)"),
     json_test_parser.TestCase("Comparison", "3 < 5", "(< 3.0 5.0)"),
@@ -80,26 +98,78 @@ pub fn manual_json_tests_test() {
     json_test_parser.TestCase("UnaryMinus", "-42", "(- 42.0)"),
     json_test_parser.TestCase("EmptyRecord", "{}", "{}"),
     json_test_parser.TestCase("Boolean", "True({})", "(union True {})"),
-    json_test_parser.TestCase("BuiltinCall", "!int_add(1, 2)", "(call (builtin int_add) 1.0 2.0)"),
+    json_test_parser.TestCase(
+      "BuiltinCall",
+      "!int_add(1, 2)",
+      "(call (builtin int_add) 1.0 2.0)",
+    ),
     json_test_parser.TestCase("LogicalNot", "!True({})", "(! (union True {}))"),
     json_test_parser.TestCase("FunctionCallNoArgs", "foo({})", "(call foo {})"),
-    json_test_parser.TestCase("NestedGrouping", "((1 + 2) * 3)", "(group (* (group (+ 1.0 2.0)) 3.0))"),
-    json_test_parser.TestCase("MixedTypes", "\"hello\" == \"world\"", "(== hello world)"),
-    json_test_parser.TestCase("Records", "{name: \"Alice\", age: 30}", "(record (field name Alice) (field age 30.0))"),
-    json_test_parser.TestCase("RecordAccess", "alice.name", "(access alice name)"),
+    json_test_parser.TestCase(
+      "NestedGrouping",
+      "((1 + 2) * 3)",
+      "(group (* (group (+ 1.0 2.0)) 3.0))",
+    ),
+    json_test_parser.TestCase(
+      "MixedTypes",
+      "\"hello\" == \"world\"",
+      "(== hello world)",
+    ),
+    json_test_parser.TestCase(
+      "Records",
+      "{name: \"Alice\", age: 30}",
+      "(record (field name Alice) (field age 30.0))",
+    ),
+    json_test_parser.TestCase(
+      "RecordAccess",
+      "alice.name",
+      "(access alice name)",
+    ),
     json_test_parser.TestCase("List", "[1, 2, 3]", "(list 1.0 2.0 3.0)"),
-    json_test_parser.TestCase("ListSpread", "[0, ..items]", "(list 0.0 (spread items))"),
-    json_test_parser.TestCase("Effects", "perform Log(\"hello\")", "(perform Log hello)"),
-    json_test_parser.TestCase("LetBinding", "x = 5; x + 10", "(let x 5.0 (+ x 10.0))"),
-    json_test_parser.TestCase("Lambda", "|x, y| { !int_add(x, y) }", "(lambda (args x y) (call (builtin int_add) x y))"),
-    json_test_parser.TestCase("Block", "{ perform Log(\"a\"); perform Log(\"b\") }", "(block (perform Log a) (perform Log b))"),
-    json_test_parser.TestCase("ChainedCalls", "foo({})(bar)", "(call (call foo {}) bar)"),
+    json_test_parser.TestCase(
+      "ListSpread",
+      "[0, ..items]",
+      "(list 0.0 (spread items))",
+    ),
+    json_test_parser.TestCase(
+      "Effects",
+      "perform Log(\"hello\")",
+      "(perform Log hello)",
+    ),
+    json_test_parser.TestCase(
+      "LetBinding",
+      "x = 5; x + 10",
+      "(let x 5.0 (+ x 10.0))",
+    ),
+    json_test_parser.TestCase(
+      "Lambda",
+      "|x, y| { !int_add(x, y) }",
+      "(lambda (args x y) (call (builtin int_add) x y))",
+    ),
+    json_test_parser.TestCase(
+      "Block",
+      "{ perform Log(\"a\"); perform Log(\"b\") }",
+      "(block (perform Log a) (perform Log b))",
+    ),
+    json_test_parser.TestCase(
+      "ChainedCalls",
+      "foo({})(bar)",
+      "(call (call foo {}) bar)",
+    ),
     json_test_parser.TestCase("Thunk", "|| {}", "(thunk {})"),
-    json_test_parser.TestCase("Handle", "handle Alert(|value, resume| { resume({}) }, |_| { {} })", "(handle Alert (lambda (args value resume) (call resume {})) (lambda (args _) {}))"),
+    json_test_parser.TestCase(
+      "Handle",
+      "handle Alert(|value, resume| { resume({}) }, |_| { {} })",
+      "(handle Alert (lambda (args value resume) (call resume {})) (lambda (args _) {}))",
+    ),
     json_test_parser.TestCase("NamedRef", "@std:1", "(named_ref std 1)"),
-    json_test_parser.TestCase("Match", "match value { Ok(x) -> x, Error(_) -> 0 }", "(match value (case (pattern Ok x) x) (case (pattern Error _) 0.0))"),
+    json_test_parser.TestCase(
+      "Match",
+      "match value { Ok(x) -> x, Error(_) -> 0 }",
+      "(match value (case (pattern Ok x) x) (case (pattern Error _) 0.0))",
+    ),
   ]
-  
+
   run_test_cases(test_cases)
 }
 
@@ -129,8 +199,6 @@ fn run_single_test(test_case: json_test_parser.TestCase) -> Nil {
     Error(errors) -> {
       io.println("✗ " <> test_case.name <> " failed with parse errors:")
       list.each(errors, fn(err) { io.println("  " <> err.message) })
-      
-
 
       should.fail()
     }

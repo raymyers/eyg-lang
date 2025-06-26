@@ -1,7 +1,7 @@
-import gleam_parser/parser
-import gleam_parser/ast
 import gleam/io
 import gleam/list
+import gleam_parser/ast
+import gleam_parser/parser
 import gleeunit
 import gleeunit/should
 

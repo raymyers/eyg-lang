@@ -1,5 +1,5 @@
-import gleam/json
 import gleam/dynamic/decode
+import gleam/json
 
 pub type TestCase {
   TestCase(name: String, input: String, expected: String)
@@ -27,10 +27,14 @@ fn parser_tests_decoder() {
   decode.success(ParserTests(tests:))
 }
 
-pub fn parse_tokenizer_tests(json_string: String) -> Result(TestSuite, json.DecodeError) {
+pub fn parse_tokenizer_tests(
+  json_string: String,
+) -> Result(TestSuite, json.DecodeError) {
   json.parse(from: json_string, using: tokenizer_tests_decoder())
 }
 
-pub fn parse_parser_tests(json_string: String) -> Result(TestSuite, json.DecodeError) {
+pub fn parse_parser_tests(
+  json_string: String,
+) -> Result(TestSuite, json.DecodeError) {
   json.parse(from: json_string, using: parser_tests_decoder())
 }

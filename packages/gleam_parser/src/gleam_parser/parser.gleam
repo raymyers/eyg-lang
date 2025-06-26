@@ -1,10 +1,10 @@
-import gleam_parser/token.{type Token}
-import gleam_parser/ast.{type Expr}
-import gleam_parser/lexer
-import gleam/list
-import gleam/string
 import gleam/float
 import gleam/int
+import gleam/list
+import gleam/string
+import gleam_parser/ast.{type Expr}
+import gleam_parser/lexer
+import gleam_parser/token.{type Token}
 
 pub type ParseError {
   ParseError(message: String, line: Int)
@@ -28,7 +28,8 @@ pub fn parse(source: String) -> Result(Expr, List(ParseError)) {
             errors -> Error(list.reverse(errors))
           }
         }
-        #(Error(err), final_parser) -> Error(list.reverse([err, ..final_parser.errors]))
+        #(Error(err), final_parser) ->
+          Error(list.reverse([err, ..final_parser.errors]))
       }
     }
     errors -> {
@@ -133,12 +134,16 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
               case value_result {
                 Ok(value) -> {
                   // Check for semicolon and body
-                  let #(matched_semi, parser4) = match_tokens(parser3, [token.Semicolon])
+                  let #(matched_semi, parser4) =
+                    match_tokens(parser3, [token.Semicolon])
                   case matched_semi {
                     True -> {
                       let #(body_result, parser5) = parse_assignment(parser4)
                       case body_result {
-                        Ok(body) -> #(Ok(ast.Var(expr, value, body, 1)), parser5)
+                        Ok(body) -> #(
+                          Ok(ast.Var(expr, value, body, 1)),
+                          parser5,
+                        )
                         Error(err) -> #(Error(err), parser5)
                       }
                     }
@@ -150,9 +155,13 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
                           #(Ok(value), parser3)
                         }
                         _ -> {
-                          let #(body_result, parser4) = parse_assignment(parser3)
+                          let #(body_result, parser4) =
+                            parse_assignment(parser3)
                           case body_result {
-                            Ok(body) -> #(Ok(ast.Var(expr, value, body, 1)), parser4)
+                            Ok(body) -> #(
+                              Ok(ast.Var(expr, value, body, 1)),
+                              parser4,
+                            )
                             Error(_) -> {
                               // If body parsing fails, just return the value
                               #(Ok(value), parser3)
@@ -185,9 +194,13 @@ fn parse_equality(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
   }
 }
 
-fn parse_equality_rest(parser: Parser, left: Expr) -> #(Result(Expr, ParseError), Parser) {
+fn parse_equality_rest(
+  parser: Parser,
+  left: Expr,
+) -> #(Result(Expr, ParseError), Parser) {
   let current_token = peek(parser)
-  let #(matched, parser1) = match_tokens(parser, [token.BangEqual, token.EqualEqual])
+  let #(matched, parser1) =
+    match_tokens(parser, [token.BangEqual, token.EqualEqual])
   case matched {
     True -> {
       let operator = current_token
@@ -213,9 +226,18 @@ fn parse_comparison(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
   }
 }
 
-fn parse_comparison_rest(parser: Parser, left: Expr) -> #(Result(Expr, ParseError), Parser) {
+fn parse_comparison_rest(
+  parser: Parser,
+  left: Expr,
+) -> #(Result(Expr, ParseError), Parser) {
   let current_token = peek(parser)
-  let #(matched, parser1) = match_tokens(parser, [token.Greater, token.GreaterEqual, token.Less, token.LessEqual])
+  let #(matched, parser1) =
+    match_tokens(parser, [
+      token.Greater,
+      token.GreaterEqual,
+      token.Less,
+      token.LessEqual,
+    ])
   case matched {
     True -> {
       let operator = current_token
@@ -241,7 +263,10 @@ fn parse_term(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
   }
 }
 
-fn parse_term_rest(parser: Parser, left: Expr) -> #(Result(Expr, ParseError), Parser) {
+fn parse_term_rest(
+  parser: Parser,
+  left: Expr,
+) -> #(Result(Expr, ParseError), Parser) {
   let current_token = peek(parser)
   let #(matched, parser1) = match_tokens(parser, [token.Minus, token.Plus])
   case matched {
@@ -269,7 +294,10 @@ fn parse_factor(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
   }
 }
 
-fn parse_factor_rest(parser: Parser, left: Expr) -> #(Result(Expr, ParseError), Parser) {
+fn parse_factor_rest(
+  parser: Parser,
+  left: Expr,
+) -> #(Result(Expr, ParseError), Parser) {
   let current_token = peek(parser)
   let #(matched, parser1) = match_tokens(parser, [token.Slash, token.Star])
   case matched {
@@ -314,7 +342,10 @@ fn parse_call(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
   }
 }
 
-fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Parser) {
+fn parse_call_rest(
+  parser: Parser,
+  expr: Expr,
+) -> #(Result(Expr, ParseError), Parser) {
   // Check for function call
   let #(matched_paren, parser1) = match_tokens(parser, [token.LeftParen])
   case matched_paren {
@@ -322,7 +353,8 @@ fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Pa
       let #(args_result, parser2) = parse_arguments(parser1)
       case args_result {
         Ok(args) -> {
-          let #(matched_close, parser3) = match_tokens(parser2, [token.RightParen])
+          let #(matched_close, parser3) =
+            match_tokens(parser2, [token.RightParen])
           case matched_close {
             True -> {
               // Check if this should be a union constructor or function call
@@ -338,7 +370,10 @@ fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Pa
               }
               parse_call_rest(parser3, result_expr)
             }
-            False -> #(Error(ParseError("Expected ')' after arguments", 1)), parser2)
+            False -> #(
+              Error(ParseError("Expected ')' after arguments", 1)),
+              parser2,
+            )
           }
         }
         Error(err) -> #(Error(err), parser2)
@@ -355,7 +390,10 @@ fn parse_call_rest(parser: Parser, expr: Expr) -> #(Result(Expr, ParseError), Pa
               let access_expr = ast.Access(expr, field_name, 1)
               parse_call_rest(parser_field, access_expr)
             }
-            _ -> #(Error(ParseError("Expected field name after '.'", 1)), parser_dot)
+            _ -> #(
+              Error(ParseError("Expected field name after '.'", 1)),
+              parser_dot,
+            )
           }
         }
         False -> #(Ok(expr), parser)
@@ -372,7 +410,8 @@ fn is_capitalized(name: String) -> Bool {
       case code {
         [codepoint] -> {
           let value = string.utf_codepoint_to_int(codepoint)
-          value >= 65 && value <= 90  // A-Z
+          value >= 65 && value <= 90
+          // A-Z
         }
         _ -> False
       }
@@ -395,7 +434,10 @@ fn parse_arguments(parser: Parser) -> #(Result(List(Expr), ParseError), Parser) 
   }
 }
 
-fn parse_arguments_rest(parser: Parser, args: List(Expr)) -> #(Result(List(Expr), ParseError), Parser) {
+fn parse_arguments_rest(
+  parser: Parser,
+  args: List(Expr),
+) -> #(Result(List(Expr), ParseError), Parser) {
   let #(matched, parser1) = match_tokens(parser, [token.Comma])
   case matched {
     True -> {
@@ -416,15 +458,18 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       let parser1 = advance(parser)
       case float.parse(literal) {
         Ok(num) -> #(Ok(ast.Literal(ast.NumberValue(num), 1)), parser1)
-        Error(_) -> #(Error(ParseError("Invalid number literal: " <> literal, 1)), parser1)
+        Error(_) -> #(
+          Error(ParseError("Invalid number literal: " <> literal, 1)),
+          parser1,
+        )
       }
     }
-    
+
     token.String(_, literal) -> {
       let parser1 = advance(parser)
       #(Ok(ast.Literal(ast.StringValue(literal), 1)), parser1)
     }
-    
+
     token.Identifier(name) -> {
       let parser1 = advance(parser)
       // Check if this is a builtin identifier (starts with !)
@@ -436,12 +481,12 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
         False -> #(Ok(ast.Variable(name, 1)), parser1)
       }
     }
-    
+
     token.Underscore -> {
       let parser1 = advance(parser)
       #(Ok(ast.Variable("_", 1)), parser1)
     }
-    
+
     token.LeftParen -> {
       let parser1 = advance(parser)
       let #(expr_result, parser2) = parse_expression(parser1)
@@ -450,13 +495,16 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
           let #(matched, parser3) = match_tokens(parser2, [token.RightParen])
           case matched {
             True -> #(Ok(ast.Grouping(expr, 1)), parser3)
-            False -> #(Error(ParseError("Expected ')' after expression", 1)), parser2)
+            False -> #(
+              Error(ParseError("Expected ')' after expression", 1)),
+              parser2,
+            )
           }
         }
         Error(err) -> #(Error(err), parser2)
       }
     }
-    
+
     token.LeftBrace -> {
       let parser1 = advance(parser)
       // Check if this is a record or a block
@@ -479,12 +527,12 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
         _ -> parse_block(parser1)
       }
     }
-    
+
     token.LeftBracket -> {
       let parser1 = advance(parser)
       parse_list(parser1)
     }
-    
+
     token.Perform -> {
       let parser1 = advance(parser)
       let #(effect_result, parser2) = parse_expression(parser1)
@@ -510,13 +558,13 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
         Error(err) -> #(Error(err), parser2)
       }
     }
-    
+
     token.Pipe -> {
       let parser1 = advance(parser)
       // This is a lambda: |params| { body }
       parse_lambda(parser1)
     }
-    
+
     token.PipePipe -> {
       // This is a thunk: || { body }
       let parser1 = advance(parser)
@@ -533,10 +581,14 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
               let #(body_result, parser3) = parse_expression(parser2)
               case body_result {
                 Ok(body) -> {
-                  let #(matched_close, parser4) = match_tokens(parser3, [token.RightBrace])
+                  let #(matched_close, parser4) =
+                    match_tokens(parser3, [token.RightBrace])
                   case matched_close {
                     True -> #(Ok(ast.Thunk(body, 1)), parser4)
-                    False -> #(Error(ParseError("Expected '}' after thunk body", 1)), parser3)
+                    False -> #(
+                      Error(ParseError("Expected '}' after thunk body", 1)),
+                      parser3,
+                    )
                   }
                 }
                 Error(err) -> #(Error(err), parser3)
@@ -544,31 +596,40 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
             }
           }
         }
-        False -> #(Error(ParseError("Expected '{' after thunk '||'", 1)), parser1)
+        False -> #(
+          Error(ParseError("Expected '{' after thunk '||'", 1)),
+          parser1,
+        )
       }
     }
-    
+
     token.Handle -> {
       // Parse handle: handle Effect(handler, fallback)
       let parser1 = advance(parser)
       parse_handle(parser1)
     }
-    
+
     token.At -> {
       // Parse named reference: @module:index
       let parser1 = advance(parser)
       parse_named_ref(parser1)
     }
-    
+
     token.Match -> {
       // Parse match expression: match value { pattern -> expr, ... }
       let parser1 = advance(parser)
       parse_match(parser1)
     }
-    
+
     _ -> {
       let current_token = peek(parser)
-      #(Error(ParseError("Unexpected token: " <> string.inspect(current_token), 1)), parser)
+      #(
+        Error(ParseError(
+          "Unexpected token: " <> string.inspect(current_token),
+          1,
+        )),
+        parser,
+      )
     }
   }
 }
@@ -584,10 +645,14 @@ fn parse_record(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       let #(fields_result, parser2) = parse_record_fields(parser, [])
       case fields_result {
         Ok(fields) -> {
-          let #(matched_close, parser3) = match_tokens(parser2, [token.RightBrace])
+          let #(matched_close, parser3) =
+            match_tokens(parser2, [token.RightBrace])
           case matched_close {
             True -> #(Ok(ast.Record(fields, 1)), parser3)
-            False -> #(Error(ParseError("Expected '}' after record fields", 1)), parser2)
+            False -> #(
+              Error(ParseError("Expected '}' after record fields", 1)),
+              parser2,
+            )
           }
         }
         Error(err) -> #(Error(err), parser2)
@@ -597,7 +662,10 @@ fn parse_record(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
 }
 
 // Parse record fields: field: value, field2: value2
-fn parse_record_fields(parser: Parser, fields: List(ast.RecordField)) -> #(Result(List(ast.RecordField), ParseError), Parser) {
+fn parse_record_fields(
+  parser: Parser,
+  fields: List(ast.RecordField),
+) -> #(Result(List(ast.RecordField), ParseError), Parser) {
   case peek(parser) {
     token.Identifier(field_name) -> {
       let parser1 = advance(parser)
@@ -609,9 +677,10 @@ fn parse_record_fields(parser: Parser, fields: List(ast.RecordField)) -> #(Resul
             Ok(value) -> {
               let field = ast.RecordField(field_name, value)
               let new_fields = [field, ..fields]
-              
+
               // Check if there's a comma for more fields
-              let #(matched_comma, parser4) = match_tokens(parser3, [token.Comma])
+              let #(matched_comma, parser4) =
+                match_tokens(parser3, [token.Comma])
               case matched_comma {
                 True -> parse_record_fields(parser4, new_fields)
                 False -> #(Ok(list.reverse(new_fields)), parser3)
@@ -620,7 +689,10 @@ fn parse_record_fields(parser: Parser, fields: List(ast.RecordField)) -> #(Resul
             Error(err) -> #(Error(err), parser3)
           }
         }
-        False -> #(Error(ParseError("Expected ':' after field name", 1)), parser1)
+        False -> #(
+          Error(ParseError("Expected ':' after field name", 1)),
+          parser1,
+        )
       }
     }
     _ -> #(Error(ParseError("Expected field name in record", 1)), parser)
@@ -638,10 +710,14 @@ fn parse_list(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       let #(elements_result, parser2) = parse_list_elements(parser, [])
       case elements_result {
         Ok(elements) -> {
-          let #(matched_close, parser3) = match_tokens(parser2, [token.RightBracket])
+          let #(matched_close, parser3) =
+            match_tokens(parser2, [token.RightBracket])
           case matched_close {
             True -> #(Ok(ast.List(elements, 1)), parser3)
-            False -> #(Error(ParseError("Expected ']' after list elements", 1)), parser2)
+            False -> #(
+              Error(ParseError("Expected ']' after list elements", 1)),
+              parser2,
+            )
           }
         }
         Error(err) -> #(Error(err), parser2)
@@ -651,7 +727,10 @@ fn parse_list(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
 }
 
 // Parse list elements: 1, 2, 3 or 0, ..items
-fn parse_list_elements(parser: Parser, elements: List(Expr)) -> #(Result(List(Expr), ParseError), Parser) {
+fn parse_list_elements(
+  parser: Parser,
+  elements: List(Expr),
+) -> #(Result(List(Expr), ParseError), Parser) {
   // Check for spread operator
   let #(matched_spread, parser_spread) = match_tokens(parser, [token.DotDot])
   case matched_spread {
@@ -673,9 +752,10 @@ fn parse_list_elements(parser: Parser, elements: List(Expr)) -> #(Result(List(Ex
       case expr_result {
         Ok(expr) -> {
           let new_elements = [expr, ..elements]
-          
+
           // Check if there's a comma for more elements
-          let #(matched_comma, parser_comma) = match_tokens(parser_expr, [token.Comma])
+          let #(matched_comma, parser_comma) =
+            match_tokens(parser_expr, [token.Comma])
           case matched_comma {
             True -> parse_list_elements(parser_comma, new_elements)
             False -> #(Ok(list.reverse(new_elements)), parser_expr)
@@ -696,25 +776,36 @@ fn parse_lambda(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       let #(matched_pipe, parser2) = match_tokens(parser1, [token.Pipe])
       case matched_pipe {
         True -> {
-          let #(matched_brace, parser3) = match_tokens(parser2, [token.LeftBrace])
+          let #(matched_brace, parser3) =
+            match_tokens(parser2, [token.LeftBrace])
           case matched_brace {
             True -> {
               let #(body_result, parser4) = parse_expression(parser3)
               case body_result {
                 Ok(body) -> {
-                  let #(matched_close, parser5) = match_tokens(parser4, [token.RightBrace])
+                  let #(matched_close, parser5) =
+                    match_tokens(parser4, [token.RightBrace])
                   case matched_close {
                     True -> #(Ok(ast.Lambda(params, body, 1)), parser5)
-                    False -> #(Error(ParseError("Expected '}' after lambda body", 1)), parser4)
+                    False -> #(
+                      Error(ParseError("Expected '}' after lambda body", 1)),
+                      parser4,
+                    )
                   }
                 }
                 Error(err) -> #(Error(err), parser4)
               }
             }
-            False -> #(Error(ParseError("Expected '{' after lambda parameters", 1)), parser2)
+            False -> #(
+              Error(ParseError("Expected '{' after lambda parameters", 1)),
+              parser2,
+            )
           }
         }
-        False -> #(Error(ParseError("Expected '|' after lambda parameters", 1)), parser1)
+        False -> #(
+          Error(ParseError("Expected '|' after lambda parameters", 1)),
+          parser1,
+        )
       }
     }
     Error(err) -> #(Error(err), parser1)
@@ -722,12 +813,15 @@ fn parse_lambda(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
 }
 
 // Parse lambda parameters: x, y
-fn parse_lambda_params(parser: Parser, params: List(String)) -> #(Result(List(String), ParseError), Parser) {
+fn parse_lambda_params(
+  parser: Parser,
+  params: List(String),
+) -> #(Result(List(String), ParseError), Parser) {
   case peek(parser) {
     token.Identifier(param_name) -> {
       let parser1 = advance(parser)
       let new_params = list.append(params, [param_name])
-      
+
       // Check what comes next
       case peek(parser1) {
         token.Comma -> {
@@ -738,7 +832,10 @@ fn parse_lambda_params(parser: Parser, params: List(String)) -> #(Result(List(St
           // End of parameters
           #(Ok(new_params), parser1)
         }
-        _ -> #(Error(ParseError("Expected ',' or '|' after lambda parameter", 1)), parser1)
+        _ -> #(
+          Error(ParseError("Expected ',' or '|' after lambda parameter", 1)),
+          parser1,
+        )
       }
     }
     token.Pipe -> {
@@ -749,7 +846,7 @@ fn parse_lambda_params(parser: Parser, params: List(String)) -> #(Result(List(St
       // Underscore parameter
       let parser1 = advance(parser)
       let new_params = list.append(params, ["_"])
-      
+
       // Check what comes next
       case peek(parser1) {
         token.Comma -> {
@@ -760,7 +857,10 @@ fn parse_lambda_params(parser: Parser, params: List(String)) -> #(Result(List(St
           // End of parameters
           #(Ok(new_params), parser1)
         }
-        _ -> #(Error(ParseError("Expected ',' or '|' after lambda parameter", 1)), parser1)
+        _ -> #(
+          Error(ParseError("Expected ',' or '|' after lambda parameter", 1)),
+          parser1,
+        )
       }
     }
     _ -> #(Error(ParseError("Expected parameter name in lambda", 1)), parser)
@@ -773,7 +873,10 @@ fn parse_block(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
 }
 
 // Parse block statements
-fn parse_block_statements(parser: Parser, statements: List(Expr)) -> #(Result(Expr, ParseError), Parser) {
+fn parse_block_statements(
+  parser: Parser,
+  statements: List(Expr),
+) -> #(Result(Expr, ParseError), Parser) {
   case peek(parser) {
     token.RightBrace -> {
       let parser1 = advance(parser)
@@ -814,7 +917,8 @@ fn parse_handle(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
           case handler_result {
             Ok(handler) -> {
               // Expect comma
-              let #(matched_comma, parser4) = match_tokens(parser3, [token.Comma])
+              let #(matched_comma, parser4) =
+                match_tokens(parser3, [token.Comma])
               case matched_comma {
                 True -> {
                   // Parse fallback lambda
@@ -822,22 +926,38 @@ fn parse_handle(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
                   case fallback_result {
                     Ok(fallback) -> {
                       // Expect closing parenthesis
-                      let #(matched_close, parser6) = match_tokens(parser5, [token.RightParen])
+                      let #(matched_close, parser6) =
+                        match_tokens(parser5, [token.RightParen])
                       case matched_close {
-                        True -> #(Ok(ast.Handle(effect_name, handler, fallback, 1)), parser6)
-                        False -> #(Error(ParseError("Expected ')' after handle fallback", 1)), parser5)
+                        True -> #(
+                          Ok(ast.Handle(effect_name, handler, fallback, 1)),
+                          parser6,
+                        )
+                        False -> #(
+                          Error(ParseError(
+                            "Expected ')' after handle fallback",
+                            1,
+                          )),
+                          parser5,
+                        )
                       }
                     }
                     Error(err) -> #(Error(err), parser5)
                   }
                 }
-                False -> #(Error(ParseError("Expected ',' after handle handler", 1)), parser3)
+                False -> #(
+                  Error(ParseError("Expected ',' after handle handler", 1)),
+                  parser3,
+                )
               }
             }
             Error(err) -> #(Error(err), parser3)
           }
         }
-        False -> #(Error(ParseError("Expected '(' after handle effect name", 1)), parser1)
+        False -> #(
+          Error(ParseError("Expected '(' after handle effect name", 1)),
+          parser1,
+        )
       }
     }
     _ -> #(Error(ParseError("Expected effect name after 'handle'", 1)), parser)
@@ -858,13 +978,28 @@ fn parse_named_ref(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
               // Use the lexeme (the original text) for integer parsing
               case int.parse(lexeme) {
                 Ok(index) -> #(Ok(ast.NamedRef(module_name, index, 1)), parser3)
-                Error(_) -> #(Error(ParseError("Invalid number in named reference", 1)), parser2)
+                Error(_) -> #(
+                  Error(ParseError("Invalid number in named reference", 1)),
+                  parser2,
+                )
               }
             }
-            _ -> #(Error(ParseError("Expected number after ':' in named reference", 1)), parser2)
+            _ -> #(
+              Error(ParseError(
+                "Expected number after ':' in named reference",
+                1,
+              )),
+              parser2,
+            )
           }
         }
-        False -> #(Error(ParseError("Expected ':' after module name in named reference", 1)), parser1)
+        False -> #(
+          Error(ParseError(
+            "Expected ':' after module name in named reference",
+            1,
+          )),
+          parser1,
+        )
       }
     }
     _ -> #(Error(ParseError("Expected module name after '@'", 1)), parser)
@@ -883,16 +1018,23 @@ fn parse_match(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
           let #(cases_result, parser3) = parse_match_cases(parser2, [])
           case cases_result {
             Ok(cases) -> {
-              let #(matched_close, parser4) = match_tokens(parser3, [token.RightBrace])
+              let #(matched_close, parser4) =
+                match_tokens(parser3, [token.RightBrace])
               case matched_close {
                 True -> #(Ok(ast.Match(value, cases, 1)), parser4)
-                False -> #(Error(ParseError("Expected '}' after match cases", 1)), parser3)
+                False -> #(
+                  Error(ParseError("Expected '}' after match cases", 1)),
+                  parser3,
+                )
               }
             }
             Error(err) -> #(Error(err), parser3)
           }
         }
-        False -> #(Error(ParseError("Expected '{' after match value", 1)), parser1)
+        False -> #(
+          Error(ParseError("Expected '{' after match value", 1)),
+          parser1,
+        )
       }
     }
     Error(err) -> #(Error(err), parser1)
@@ -900,7 +1042,10 @@ fn parse_match(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
 }
 
 // Parse match cases: pattern -> expr, pattern -> expr, ...
-fn parse_match_cases(parser: Parser, cases: List(ast.MatchCase)) -> #(Result(List(ast.MatchCase), ParseError), Parser) {
+fn parse_match_cases(
+  parser: Parser,
+  cases: List(ast.MatchCase),
+) -> #(Result(List(ast.MatchCase), ParseError), Parser) {
   case peek(parser) {
     token.RightBrace -> #(Ok(list.reverse(cases)), parser)
     _ -> {
@@ -923,7 +1068,9 @@ fn parse_match_cases(parser: Parser, cases: List(ast.MatchCase)) -> #(Result(Lis
 }
 
 // Parse a single match case: pattern -> expr
-fn parse_match_case(parser: Parser) -> #(Result(ast.MatchCase, ParseError), Parser) {
+fn parse_match_case(
+  parser: Parser,
+) -> #(Result(ast.MatchCase, ParseError), Parser) {
   let #(pattern_result, parser1) = parse_pattern(parser)
   case pattern_result {
     Ok(pattern) -> {
@@ -955,13 +1102,17 @@ fn parse_pattern(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
           let #(arg_result, parser3) = parse_pattern(parser2)
           case arg_result {
             Ok(arg) -> {
-              let #(matched_paren, parser4) = match_tokens(parser3, [token.RightParen])
+              let #(matched_paren, parser4) =
+                match_tokens(parser3, [token.RightParen])
               case matched_paren {
                 True -> {
                   // Create a constructor pattern
                   #(Ok(ast.ConstructorPattern(name, arg, 1)), parser4)
                 }
-                False -> #(Error(ParseError("Expected ')' after pattern argument", 1)), parser3)
+                False -> #(
+                  Error(ParseError("Expected ')' after pattern argument", 1)),
+                  parser3,
+                )
               }
             }
             Error(err) -> #(Error(err), parser3)
@@ -990,7 +1141,13 @@ fn parse_pattern(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
     }
     _ -> {
       let current_token = peek(parser)
-      #(Error(ParseError("Unexpected token in pattern: " <> string.inspect(current_token), 1)), parser)
+      #(
+        Error(ParseError(
+          "Unexpected token in pattern: " <> string.inspect(current_token),
+          1,
+        )),
+        parser,
+      )
     }
   }
 }

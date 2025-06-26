@@ -1,4 +1,3 @@
-
 import gleam_parser/lexer
 
 pub fn main() {
