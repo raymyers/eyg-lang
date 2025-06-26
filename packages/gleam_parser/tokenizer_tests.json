@@ -1,0 +1,64 @@
+{
+  "tokenizer_tests": [
+    {
+      "name": "Parens",
+      "input": "(())",
+      "expected": "LEFT_PAREN ( null\nLEFT_PAREN ( null\nRIGHT_PAREN ) null\nRIGHT_PAREN ) null\nEOF  null\n"
+    },
+    {
+      "name": "Braces",
+      "input": "{{}}",
+      "expected": "LEFT_BRACE { null\nLEFT_BRACE { null\nRIGHT_BRACE } null\nRIGHT_BRACE } null\nEOF  null\n"
+    },
+    {
+      "name": "Brackets",
+      "input": "[[]]",
+      "expected": "LEFT_BRACKET [ null\nLEFT_BRACKET [ null\nRIGHT_BRACKET ] null\nRIGHT_BRACKET ] null\nEOF  null\n"
+    },
+    {
+      "name": "Ops",
+      "input": "({*.,+-;|})",
+      "expected": "LEFT_PAREN ( null\nLEFT_BRACE { null\nSTAR * null\nDOT . null\nCOMMA , null\nPLUS + null\nMINUS - null\nSEMICOLON ; null\nPIPE | null\nRIGHT_BRACE } null\nRIGHT_PAREN ) null\nEOF  null\n"
+    },
+    {
+      "name": "EygOps",
+      "input": "!@:->||..",
+      "expected": "BANG ! null\nAT @ null\nCOLON : null\nARROW -> null\nPIPE_PIPE || null\nDOT_DOT .. null\nEOF  null\n"
+    },
+    {
+      "name": "HashComment",
+      "input": "()# comment",
+      "expected": "LEFT_PAREN ( null\nRIGHT_PAREN ) null\nEOF  null\n"
+    },
+    {
+      "name": "TabsSpaces",
+      "input": "( ){\t}",
+      "expected": "LEFT_PAREN ( null\nRIGHT_PAREN ) null\nLEFT_BRACE { null\nRIGHT_BRACE } null\nEOF  null\n"
+    },
+    {
+      "name": "MultiLine",
+      "input": "(\n)",
+      "expected": "LEFT_PAREN ( null\nRIGHT_PAREN ) null\nEOF  null\n"
+    },
+    {
+      "name": "StringLit",
+      "input": "( \"Hello World\" )",
+      "expected": "LEFT_PAREN ( null\nSTRING \"Hello World\" Hello World\nRIGHT_PAREN ) null\nEOF  null\n"
+    },
+    {
+      "name": "NumberLit",
+      "input": "42 3.14 0.5 1757.7378",
+      "expected": "NUMBER 42 42.0\nNUMBER 3.14 3.14\nNUMBER 0.5 0.5\nNUMBER 1757.7378 1757.7378\nEOF  null\n"
+    },
+    {
+      "name": "Identifier",
+      "input": "foo_bar a b _",
+      "expected": "IDENTIFIER foo_bar null\nIDENTIFIER a null\nIDENTIFIER b null\nUNDERSCORE _ null\nEOF  null\n"
+    },
+    {
+      "name": "EygKeywords",
+      "input": "match perform handle True False Ok Error Cat",
+      "expected": "MATCH match null\nPERFORM perform null\nHANDLE handle null\nIDENTIFIER True null\nIDENTIFIER False null\nIDENTIFIER Ok null\nIDENTIFIER Error null\nIDENTIFIER Cat null\nEOF  null"
+    }
+  ]
+}

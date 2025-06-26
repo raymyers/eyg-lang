@@ -1,7 +1,10 @@
 import gleam_parser/lexer
 import gleam_parser/token as t
+import gleam_parser/json_test_parser
+import gleam_parser/file_utils
 import gleam/string
 import gleam/list
+import gleam/io
 
 import gleeunit
 import gleeunit/should
@@ -11,42 +14,48 @@ pub fn main() {
 }
 
 pub fn tokenizer_tests_test() {
-  let tests = get_test_cases()
-  run_all_tests(tests)
+  case file_utils.read_file("tokenizer_tests.json") {
+    Ok(content) -> {
+      case json_test_parser.parse_tokenizer_tests(content) {
+        Ok(json_test_parser.TokenizerTests(tests)) -> {
+          run_json_tests(tests)
+        }
+        Ok(json_test_parser.ParserTests(_)) -> {
+          io.println("Expected tokenizer tests but got parser tests")
+          should.fail()
+        }
+        Error(err) -> {
+          io.println("Failed to parse JSON: " <> string.inspect(err))
+          should.fail()
+        }
+      }
+    }
+    Error(_) -> {
+      io.println("Failed to read tokenizer_tests.json")
+      should.fail()
+    }
+  }
 }
 
-type TestCase {
-  TestCase(name: String, input: String, expected: String)
+fn run_json_tests(tests: List(json_test_parser.TestCase)) -> Nil {
+  list.each(tests, fn(test_case) {
+    io.println("Running tokenizer test: " <> test_case.name)
+    let tokens = lexer.lex_tokens(test_case.input)
+    let actual = tokens_to_string(tokens)
+    let expected = string.trim(test_case.expected)
+    case actual == expected {
+      True -> io.println("✓ " <> test_case.name <> " passed")
+      False -> {
+        io.println("✗ " <> test_case.name <> " failed")
+        io.println("Expected: " <> expected)
+        io.println("Actual: " <> actual)
+        should.fail()
+      }
+    }
+  })
 }
 
-fn get_test_cases() -> List(TestCase) {
-  [
-    TestCase("Parens", "(())", "LEFT_PAREN ( null\nLEFT_PAREN ( null\nRIGHT_PAREN ) null\nRIGHT_PAREN ) null\nEOF  null"),
-    TestCase("Braces", "{{}}", "LEFT_BRACE { null\nLEFT_BRACE { null\nRIGHT_BRACE } null\nRIGHT_BRACE } null\nEOF  null"),
-    TestCase("Brackets", "[[]]", "LEFT_BRACKET [ null\nLEFT_BRACKET [ null\nRIGHT_BRACKET ] null\nRIGHT_BRACKET ] null\nEOF  null"),
-    TestCase("Ops", "({*.,+-;|})", "LEFT_PAREN ( null\nLEFT_BRACE { null\nSTAR * null\nDOT . null\nCOMMA , null\nPLUS + null\nMINUS - null\nSEMICOLON ; null\nPIPE | null\nRIGHT_BRACE } null\nRIGHT_PAREN ) null\nEOF  null"),
-    TestCase("EygOps", "!@:->||..", "BANG ! null\nAT @ null\nCOLON : null\nARROW -> null\nPIPE_PIPE || null\nDOT_DOT .. null\nEOF  null"),
-    TestCase("HashComment", "()# comment", "LEFT_PAREN ( null\nRIGHT_PAREN ) null\nEOF  null"),
-    TestCase("TabsSpaces", "( ){\t}", "LEFT_PAREN ( null\nRIGHT_PAREN ) null\nLEFT_BRACE { null\nRIGHT_BRACE } null\nEOF  null"),
-    TestCase("MultiLine", "(\n)", "LEFT_PAREN ( null\nRIGHT_PAREN ) null\nEOF  null"),
-    TestCase("StringLit", "( \"Hello World\" )", "LEFT_PAREN ( null\nSTRING \"Hello World\" Hello World\nRIGHT_PAREN ) null\nEOF  null"),
-    TestCase("NumberLit", "42 3.14 0.5 1757.7378", "NUMBER 42 42.0\nNUMBER 3.14 3.14\nNUMBER 0.5 0.5\nNUMBER 1757.7378 1757.7378\nEOF  null"),
-    TestCase("Identifier", "foo_bar a b _", "IDENTIFIER foo_bar null\nIDENTIFIER a null\nIDENTIFIER b null\nUNDERSCORE _ null\nEOF  null"),
-    TestCase("EygKeywords", "match perform handle True False Ok Error Cat", "MATCH match null\nPERFORM perform null\nHANDLE handle null\nIDENTIFIER True null\nIDENTIFIER False null\nIDENTIFIER Ok null\nIDENTIFIER Error null\nIDENTIFIER Cat null\nEOF  null")
-  ]
-}
 
-fn run_all_tests(tests: List(TestCase)) -> Nil {
-  list.each(tests, run_single_test)
-}
-
-fn run_single_test(test_case: TestCase) -> Nil {
-  let result = lexer.lex(test_case.input)
-  let actual = tokens_to_string(result.tokens)
-  
-  actual
-  |> should.equal(test_case.expected)
-}
 
 fn tokens_to_string(tokens: List(#(t.Token, Int))) -> String {
   tokens

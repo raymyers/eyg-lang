@@ -142,7 +142,25 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
                         Error(err) -> #(Error(err), parser5)
                       }
                     }
-                    False -> #(Error(ParseError("Expected ';' after assignment", 1)), parser3)
+                    False -> {
+                      // Try to parse the body without semicolon (implicit separation)
+                      case peek(parser3) {
+                        token.Eof -> {
+                          // End of input, use the value as the body
+                          #(Ok(value), parser3)
+                        }
+                        _ -> {
+                          let #(body_result, parser4) = parse_assignment(parser3)
+                          case body_result {
+                            Ok(body) -> #(Ok(ast.Var(expr, value, body, 1)), parser4)
+                            Error(_) -> {
+                              // If body parsing fails, just return the value
+                              #(Ok(value), parser3)
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
                 Error(err) -> #(Error(err), parser3)
@@ -417,6 +435,11 @@ fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
         }
         False -> #(Ok(ast.Variable(name, 1)), parser1)
       }
+    }
+    
+    token.Underscore -> {
+      let parser1 = advance(parser)
+      #(Ok(ast.Variable("_", 1)), parser1)
     }
     
     token.LeftParen -> {
