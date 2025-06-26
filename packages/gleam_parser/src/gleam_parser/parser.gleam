@@ -206,7 +206,15 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
                       case peek(parser3) {
                         token.Eof -> {
                           // End of input, use empty record as body
-                          #(Ok(ast.Var(destructure_pattern, value, ast.EmptyRecord(1), 1)), parser3)
+                          #(
+                            Ok(ast.Var(
+                              destructure_pattern,
+                              value,
+                              ast.EmptyRecord(1),
+                              1,
+                            )),
+                            parser3,
+                          )
                         }
                         _ -> {
                           let #(body_result, parser4) =
@@ -218,7 +226,15 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
                             )
                             Error(_) -> {
                               // If body parsing fails, use empty record as body
-                              #(Ok(ast.Var(destructure_pattern, value, ast.EmptyRecord(1), 1)), parser3)
+                              #(
+                                Ok(ast.Var(
+                                  destructure_pattern,
+                                  value,
+                                  ast.EmptyRecord(1),
+                                  1,
+                                )),
+                                parser3,
+                              )
                             }
                           }
                         }
