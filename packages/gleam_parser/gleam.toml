@@ -3,8 +3,9 @@ version = "1.0.0"
 target = "javascript"
 
 [dependencies]
-gleam_stdlib = ">= 0.34.0 and < 2.0.0"
-gleam_json = ">= 3.0.0 and < 4.0.0"
+gleam_stdlib = ">= 0.44.0 and < 0.60.0"
+eyg_ir = {path = "../gleam_ir"}
+gleam_javascript = ">= 0.13.0 and < 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
