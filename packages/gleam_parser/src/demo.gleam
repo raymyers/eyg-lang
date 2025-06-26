@@ -2,7 +2,6 @@ import gleam_parser/lexer
 import gleam_parser/token as t
 import gleam/io
 import gleam/list
-import gleam/string
 import gleam/int
 
 pub fn main() {

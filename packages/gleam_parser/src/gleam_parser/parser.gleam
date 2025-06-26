@@ -125,7 +125,7 @@ fn parse_assignment(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
     Ok(expr) -> {
       // Check if this is a variable that could be assigned to
       case expr {
-        ast.Variable(name, _) -> {
+        ast.Variable(_name, _) -> {
           let #(matched_equal, parser2) = match_tokens(parser1, [token.Equal])
           case matched_equal {
             True -> {
