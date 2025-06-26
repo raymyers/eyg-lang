@@ -116,7 +116,7 @@ fn do_lex(source: String, at: Int, tokens: List(#(t.Token, Int)), errors: List(S
     "\"" -> {
       let #(string_result, new_at) = read_string(source, at + 1, "")
       case string_result {
-        Ok(value) -> do_lex(source, new_at, [#(t.String(value), at), ..tokens], errors)
+        Ok(value) -> do_lex(source, new_at, [#(t.String("\"" <> value <> "\"", value), at), ..tokens], errors)
         Error(value) -> do_lex(source, new_at, [#(t.UnterminatedString(value), at), ..tokens], ["Unterminated string", ..errors])
       }
     }
@@ -134,10 +134,10 @@ fn do_lex(source: String, at: Int, tokens: List(#(t.Token, Int)), errors: List(S
           case float.parse(number_to_parse) {
             Ok(float_val) -> {
               let formatted = float.to_string(float_val)
-              // Store both lexeme and literal in a tuple-like format
-              do_lex(source, new_at, [#(t.Number(number <> "|" <> formatted), at), ..tokens], errors)
+              // Store lexeme and literal separately
+              do_lex(source, new_at, [#(t.Number(number, formatted), at), ..tokens], errors)
             }
-            Error(_) -> do_lex(source, new_at, [#(t.Number(number <> "|" <> number), at), ..tokens], ["Invalid number: " <> number, ..errors])
+            Error(_) -> do_lex(source, new_at, [#(t.Number(number, number), at), ..tokens], ["Invalid number: " <> number, ..errors])
           }
         }
         False -> {

@@ -53,14 +53,8 @@ fn tokens_to_string(tokens: List(#(t.Token, Int))) -> String {
   |> list.map(fn(token_pair) {
     let #(token, _pos) = token_pair
     case token {
-      t.String(value) -> t.to_canonical_string(token, "\"" <> value <> "\"", value)
-      t.Number(combined) -> {
-        // Split the combined lexeme|literal format
-        case string.split(combined, "|") {
-          [lexeme, literal] -> t.to_canonical_string(token, lexeme, literal)
-          _ -> t.to_canonical_string(token, combined, combined)
-        }
-      }
+      t.String(lexeme, literal) -> t.to_canonical_string(token, lexeme, literal)
+      t.Number(lexeme, literal) -> t.to_canonical_string(token, lexeme, literal)
       t.Identifier(value) -> t.to_canonical_string(token, value, "")
       t.LeftParen -> t.to_canonical_string(token, "(", "")
       t.RightParen -> t.to_canonical_string(token, ")", "")

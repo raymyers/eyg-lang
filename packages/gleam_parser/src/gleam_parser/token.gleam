@@ -1,7 +1,7 @@
 pub type Token {
   // Literals
-  String(String)
-  Number(String)
+  String(lexeme: String, literal: String)
+  Number(lexeme: String, literal: String)
   Identifier(String)
   
   // Single-character tokens
@@ -60,8 +60,8 @@ pub type Token {
 
 pub fn to_string(token: Token) -> String {
   case token {
-    String(value) -> "String(\"" <> value <> "\")"
-    Number(value) -> "Number(" <> value <> ")"
+    String(lexeme, literal) -> "String(\"" <> lexeme <> "\", \"" <> literal <> "\")"
+    Number(lexeme, literal) -> "Number(\"" <> lexeme <> "\", \"" <> literal <> "\")"
     Identifier(value) -> "Identifier(" <> value <> ")"
     LeftParen -> "LeftParen"
     RightParen -> "RightParen"
@@ -110,8 +110,8 @@ pub fn to_string(token: Token) -> String {
 // Convert to canonical test format: "TOKEN_TYPE lexeme literal"
 pub fn to_canonical_string(token: Token, lexeme: String, literal: String) -> String {
   let token_type = case token {
-    String(_) -> "STRING"
-    Number(_) -> "NUMBER"
+    String(_, _) -> "STRING"
+    Number(_, _) -> "NUMBER"
     Identifier(_) -> "IDENTIFIER"
     LeftParen -> "LEFT_PAREN"
     RightParen -> "RIGHT_PAREN"

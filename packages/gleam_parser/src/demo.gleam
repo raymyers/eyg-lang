@@ -30,13 +30,8 @@ pub fn main() {
     list.each(result.tokens, fn(token_pair) {
       let #(token, pos) = token_pair
       let token_str = case token {
-        t.String(value) -> "STRING(\"" <> value <> "\")"
-        t.Number(combined) -> {
-          case string.split(combined, "|") {
-            [lexeme, literal] -> "NUMBER(" <> lexeme <> " -> " <> literal <> ")"
-            _ -> "NUMBER(" <> combined <> ")"
-          }
-        }
+        t.String(lexeme, literal) -> "STRING(\"" <> lexeme <> "\" -> \"" <> literal <> "\")"
+        t.Number(lexeme, literal) -> "NUMBER(" <> lexeme <> " -> " <> literal <> ")"
         t.Identifier(value) -> "IDENTIFIER(" <> value <> ")"
         _ -> t.to_string(token)
       }

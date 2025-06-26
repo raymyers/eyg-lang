@@ -73,8 +73,8 @@ fn match_tokens(parser: Parser, types: List(Token)) -> #(Bool, Parser) {
 // Check if two tokens are of the same type (ignoring values)
 fn token_matches(token1: Token, token2: Token) -> Bool {
   case token1, token2 {
-    token.Number(_), token.Number(_) -> True
-    token.String(_), token.String(_) -> True
+    token.Number(_, _), token.Number(_, _) -> True
+    token.String(_, _), token.String(_, _) -> True
     token.Identifier(_), token.Identifier(_) -> True
     token.LeftParen, token.LeftParen -> True
     token.RightParen, token.RightParen -> True
@@ -394,24 +394,17 @@ fn parse_arguments_rest(parser: Parser, args: List(Expr)) -> #(Result(List(Expr)
 // Parse primary expressions (literals, identifiers, grouping)
 fn parse_primary(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
   case peek(parser) {
-    token.Number(value) -> {
+    token.Number(_, literal) -> {
       let parser1 = advance(parser)
-      // The lexer stores numbers as "lexeme|literal", extract the literal part
-      let parts = string.split(value, "|")
-      case parts {
-        [_, literal] -> {
-          case float.parse(literal) {
-            Ok(num) -> #(Ok(ast.Literal(ast.NumberValue(num), 1)), parser1)
-            Error(_) -> #(Error(ParseError("Invalid number literal: " <> literal, 1)), parser1)
-          }
-        }
-        _ -> #(Error(ParseError("Invalid number format: " <> value, 1)), parser1)
+      case float.parse(literal) {
+        Ok(num) -> #(Ok(ast.Literal(ast.NumberValue(num), 1)), parser1)
+        Error(_) -> #(Error(ParseError("Invalid number literal: " <> literal, 1)), parser1)
       }
     }
     
-    token.String(value) -> {
+    token.String(_, literal) -> {
       let parser1 = advance(parser)
-      #(Ok(ast.Literal(ast.StringValue(value), 1)), parser1)
+      #(Ok(ast.Literal(ast.StringValue(literal), 1)), parser1)
     }
     
     token.Identifier(name) -> {
@@ -837,24 +830,12 @@ fn parse_named_ref(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       case matched_colon {
         True -> {
           case peek(parser2) {
-            token.Number(number_str) -> {
+            token.Number(lexeme, _) -> {
               let parser3 = advance(parser2)
-              // Extract the number part from "literal|value" format
-              let parts = string.split(number_str, "|")
-              case parts {
-                [literal_str, _] -> {
-                  // Use the literal part (the original text) for integer parsing
-                  case int.parse(literal_str) {
-                    Ok(index) -> #(Ok(ast.NamedRef(module_name, index, 1)), parser3)
-                    Error(_) -> #(Error(ParseError("Invalid number in named reference", 1)), parser2)
-                  }
-                }
-                _ -> {
-                  case int.parse(number_str) {
-                    Ok(index) -> #(Ok(ast.NamedRef(module_name, index, 1)), parser3)
-                    Error(_) -> #(Error(ParseError("Invalid number in named reference", 1)), parser2)
-                  }
-                }
+              // Use the lexeme (the original text) for integer parsing
+              case int.parse(lexeme) {
+                Ok(index) -> #(Ok(ast.NamedRef(module_name, index, 1)), parser3)
+                Error(_) -> #(Error(ParseError("Invalid number in named reference", 1)), parser2)
               }
             }
             _ -> #(Error(ParseError("Expected number after ':' in named reference", 1)), parser2)
@@ -973,28 +954,16 @@ fn parse_pattern(parser: Parser) -> #(Result(Expr, ParseError), Parser) {
       let parser1 = advance(parser)
       #(Ok(ast.Wildcard(1)), parser1)
     }
-    token.Number(number_str) -> {
+    token.Number(_, literal) -> {
       let parser1 = advance(parser)
-      // Extract the float value from "literal|value" format
-      let parts = string.split(number_str, "|")
-      case parts {
-        [_, value_str] -> {
-          case float.parse(value_str) {
-            Ok(value) -> #(Ok(ast.Literal(ast.NumberValue(value), 1)), parser1)
-            Error(_) -> #(Error(ParseError("Invalid number in pattern", 1)), parser)
-          }
-        }
-        _ -> {
-          case float.parse(number_str) {
-            Ok(value) -> #(Ok(ast.Literal(ast.NumberValue(value), 1)), parser1)
-            Error(_) -> #(Error(ParseError("Invalid number in pattern", 1)), parser)
-          }
-        }
+      case float.parse(literal) {
+        Ok(value) -> #(Ok(ast.Literal(ast.NumberValue(value), 1)), parser1)
+        Error(_) -> #(Error(ParseError("Invalid number in pattern", 1)), parser)
       }
     }
-    token.String(string_value) -> {
+    token.String(_, literal) -> {
       let parser1 = advance(parser)
-      #(Ok(ast.Literal(ast.StringValue(string_value), 1)), parser1)
+      #(Ok(ast.Literal(ast.StringValue(literal), 1)), parser1)
     }
     _ -> {
       let current_token = peek(parser)
