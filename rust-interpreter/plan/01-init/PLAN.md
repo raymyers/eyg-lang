@@ -454,10 +454,9 @@ These are lower priority but worth considering for heavily-used interpreters:
 
 **Progress**: `progress/OUTPUT_FORMAT.md`
 
-Updated Rust CLI output to match Go (mulch) reference implementation's `Debug()`
-format. The Go CLI is the production reference, not JS.
+Updated Rust CLI output to match Go (mulch) and Gleam `debug()` format.
 
-### Format (matches Go mulch CLI)
+### Format (matches Go and Gleam)
 
 | Value Type | Output |
 |------------|--------|
