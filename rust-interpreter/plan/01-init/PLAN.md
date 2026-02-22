@@ -270,38 +270,40 @@ Gleam source stays obvious.
 
 ---
 
-## Milestone 5: Built-in Functions
+## Milestone 5: Built-in Functions ✅
+
+**Progress**: `progress/BUILTIN_FUNCTIONS.md`
 
 Port every function from `builtin.gleam`.  Each built-in receives its fully-
 applied argument list plus `(env, k)` and returns `StepReturn`.
 
-- [ ] **Equality / control flow**
+- [x] **Equality / control flow**
   - `equal` (Arity2): structural equality → `Tagged("True"|"False", unit)`
   - `fix` (Arity1): fixed-point combinator — calls builder with
     `Partial(Builtin("fixed"), [builder])`
   - `fixed` (Arity2): one step of the fixed-point unrolling
   - `never` (Arity1): always returns `IncorrectTerm("Never", …)`
-- [ ] **Integer operations** (`int_compare`, `int_add`, `int_subtract`,
+- [x] **Integer operations** (`int_compare`, `int_add`, `int_subtract`,
       `int_multiply`, `int_divide`, `int_absolute`, `int_parse`,
       `int_to_string`)
   - `int_compare` → `Tagged("Lt"|"Eq"|"Gt", unit)`
   - `int_divide` → `Tagged("Ok"|"Error", …)` (divide-by-zero returns `Error`)
   - `int_parse` → `Tagged("Ok"|"Error", …)`
-- [ ] **String operations** (`string_append`, `string_split`,
+- [x] **String operations** (`string_append`, `string_split`,
       `string_split_once`, `string_replace`, `string_uppercase`,
       `string_lowercase`, `string_starts_with`, `string_ends_with`,
       `string_length`, `string_to_binary`, `string_from_binary`)
   - `string_split` → `Record { head: Str, tail: LinkedList<Str> }`
   - `string_split_once` → `Tagged("Ok", Record { pre, post }) | Tagged("Error", unit)`
   - `string_from_binary` → `Tagged("Ok", Str) | Tagged("Error", unit)`
-- [ ] **Binary operations** (`binary_from_integers`, `binary_fold`)
+- [x] **Binary operations** (`binary_from_integers`, `binary_fold`)
   - `binary_from_integers`: list of `Integer` → `Binary`
   - `binary_fold` (Arity3): mirrors `list_fold` but over bytes
-- [ ] **List operations** (`list_pop`, `list_fold`)
+- [x] **List operations** (`list_pop`, `list_fold`)
   - `list_pop` → `Tagged("Ok", Record { head, tail }) | Tagged("Error", unit)`
   - `list_fold` (Arity3): recursive CPS fold; push continuation frames onto
     the stack rather than recursing, matching the Gleam implementation.
-- [ ] Implement `src/interpreter/cast.rs` with helpers: `as_integer`,
+- [x] Implement `src/interpreter/cast.rs` with helpers: `as_integer`,
       `as_string`, `as_binary`, `as_list`, `as_record`, `as_tagged`.
 
 ---

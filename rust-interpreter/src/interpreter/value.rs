@@ -114,3 +114,54 @@ pub fn none() -> Value {
         value: Rc::new(unit()),
     }
 }
+
+/// Structural equality for values
+/// Mirrors Gleam's == operator behavior
+impl Value {
+    pub fn equals(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Value::Binary(a), Value::Binary(b)) => a == b,
+            (Value::Integer(a), Value::Integer(b)) => a == b,
+            (Value::Str(a), Value::Str(b)) => a == b,
+            (Value::LinkedList(a), Value::LinkedList(b)) => {
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
+            }
+            (Value::Record(a), Value::Record(b)) => {
+                a.len() == b.len() && a.iter().all(|(k, v)| {
+                    b.get(k).is_some_and(|v2| v.equals(v2))
+                })
+            }
+            (Value::Tagged { label: l1, value: v1 }, Value::Tagged { label: l2, value: v2 }) => {
+                l1 == l2 && v1.equals(v2)
+            }
+            (Value::Closure { param: p1, body: b1, env: e1 },
+             Value::Closure { param: p2, body: b2, env: e2 }) => {
+                // Closures are equal if they have the same structure
+                // Note: This is a simplified comparison
+                p1 == p2 && b1 == b2 && e1.len() == e2.len()
+            }
+            (Value::Partial(s1, args1), Value::Partial(s2, args2)) => {
+                switch_equals(s1, s2) && args1.len() == args2.len()
+                    && args1.iter().zip(args2.iter()).all(|(x, y)| x.equals(y))
+            }
+            _ => false,
+        }
+    }
+}
+
+fn switch_equals(s1: &Switch, s2: &Switch) -> bool {
+    match (s1, s2) {
+        (Switch::Cons, Switch::Cons) => true,
+        (Switch::Extend(a), Switch::Extend(b)) => a == b,
+        (Switch::Overwrite(a), Switch::Overwrite(b)) => a == b,
+        (Switch::Select(a), Switch::Select(b)) => a == b,
+        (Switch::Tag(a), Switch::Tag(b)) => a == b,
+        (Switch::Match(a), Switch::Match(b)) => a == b,
+        (Switch::NoCases, Switch::NoCases) => true,
+        (Switch::Perform(a), Switch::Perform(b)) => a == b,
+        (Switch::Handle(a), Switch::Handle(b)) => a == b,
+        (Switch::Resume(_), Switch::Resume(_)) => false, // Contexts are not comparable
+        (Switch::Builtin(a), Switch::Builtin(b)) => a == b,
+        _ => false,
+    }
+}
