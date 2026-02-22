@@ -94,13 +94,15 @@ Reference sources:
 
 ---
 
-## Milestone 2: IR Data Structures
+## Milestone 2: IR Data Structures ✅
+
+**Progress**: `progress/IR_DATA_STRUCTURES.md`
 
 Map every Gleam `Expression(m)` variant from `tree.gleam` to a Rust enum.
 The metadata type parameter `m` is fixed to `()` for the initial port
 (all nodes carry `()` as their annotation, matching `Node(Nil)` in tests).
 
-- [ ] Define `src/ir/ast.rs`:
+- [x] Define `src/ir/ast.rs`:
   ```rust
   pub type Node = (Expr, ());   // or Box<Expr> for tree nodes
 
@@ -122,7 +124,7 @@ The metadata type parameter `m` is fixed to `()` for the initial port
       Release { package: String, release: i64, cid: String },
   }
   ```
-- [ ] Implement `serde::Deserialize` for `Expr` / `Node` in
+- [x] Implement `serde::Deserialize` for `Expr` / `Node` in
       `src/ir/dag_json.rs`, mirroring the field-key table from `dag_json.gleam`:
 
   | JSON `"0"` value | Rust variant |
@@ -150,11 +152,11 @@ The metadata type parameter `m` is fixed to `()` for the initial port
   | `"#"` | `Reference` (field `"l"` = CID link) |
   | `"@"` | `Release` (fields `"p"`, `"r"`, `"l"`) |
 
-- [ ] Handle the dag-json binary encoding: `{"/":{bytes":"<base64url>"}}`;
+- [x] Handle the dag-json binary encoding: `{"/":{bytes":"<base64url>"}}`;
       decode the inner base64url string to `Vec<u8>`.
-- [ ] Handle the dag-json CID link encoding: `{"/":"<multibase-cid-string>"}`;
+- [x] Handle the dag-json CID link encoding: `{"/":"<multibase-cid-string>"}`;
       store as `String`.
-- [ ] Write unit tests that round-trip each fixture in `spec/ir_suite.json`
+- [x] Write unit tests that round-trip each fixture in `spec/ir_suite.json`
       through `serde_json::from_str::<Node>`.
 
 ---
