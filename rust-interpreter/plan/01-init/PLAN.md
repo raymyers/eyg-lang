@@ -53,18 +53,20 @@ Reference sources:
 
 ---
 
-## Milestone 1: Project Setup
+## Milestone 1: Project Setup ✅
 
-- [ ] Run `cargo new --lib rust-interpreter` inside `rust-interpreter/`; rename
+**Progress**: `progress/PROJECT_SETUP.md`
+
+- [x] Run `cargo new --lib rust-interpreter` inside `rust-interpreter/`; rename
       the default binary to `src/main.rs` (`cargo new --bin` or add
       `[[bin]]` to `Cargo.toml`).
-- [ ] Add dependencies via `cargo add`:
+- [x] Add dependencies via `cargo add`:
   - `serde = { features = ["derive"] }`
   - `serde_json`
   - `im` (persistent/immutable collections)
   - `base64` (dag-json binary decoding uses base64url)
   - `clap` (CLI argument parsing, Milestone 6)
-- [ ] Define workspace layout:
+- [x] Define workspace layout:
   ```
   rust-interpreter/
     Cargo.toml
@@ -86,9 +88,9 @@ Reference sources:
     tests/
       evaluation_suite.rs   # reads spec/evaluation/*.json
   ```
-- [ ] Confirm `cargo check` passes on the empty project skeleton before
+- [x] Confirm `cargo check` passes on the empty project skeleton before
       proceeding.
-- [ ] Setup Makefile in rust-interpreter, with `make check` running cargo test and clippy.
+- [x] Setup Makefile in rust-interpreter, with `make check` running cargo test and clippy.
 
 ---
 
