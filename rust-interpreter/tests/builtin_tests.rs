@@ -2,19 +2,19 @@
 use rust_interpreter::interpreter::builtin;
 use rust_interpreter::interpreter::state::{Env, Stack};
 use rust_interpreter::interpreter::value::Value;
-use std::collections::HashMap;
+use im;
 use std::rc::Rc;
 
 fn empty_env() -> Env {
     Env {
-        scope: Vec::new(),
-        references: HashMap::new(),
-        builtins: HashMap::new(),
+        scope: im::Vector::new(),
+        references: im::HashMap::new(),
+        builtins: im::HashMap::new(),
     }
 }
 
 fn empty_stack() -> Stack {
-    Stack::Empty(HashMap::new())
+    Stack::Empty(im::HashMap::new())
 }
 
 #[test]

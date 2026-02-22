@@ -4,7 +4,7 @@
 use super::state::{Control, Env, EvalResult, Next, Stack};
 use super::value::{Scope, Value};
 use crate::ir::ast::Node;
-use std::collections::HashMap;
+use im;
 use std::rc::Rc;
 
 /// Main evaluation loop
@@ -20,14 +20,14 @@ pub fn execute(exp: Node, scope: Scope) -> EvalResult {
     eval_loop(super::state::step(
         Control::Expr(exp),
         new_env(scope),
-        Box::new(Stack::Empty(HashMap::new())),
+        Box::new(Stack::Empty(im::HashMap::new())),
     ))
 }
 
 /// Call a function with arguments
 pub fn call(f: Rc<Value>, args: Vec<(Rc<Value>, ())>) -> EvalResult {
-    let env = new_env(vec![]);
-    let h = HashMap::new();
+    let env = new_env(im::Vector::new());
+    let h = im::HashMap::new();
 
     // Build the stack with CallWith frames for each argument
     let mut k = Stack::Empty(h);
@@ -51,18 +51,18 @@ pub fn resume(value: Rc<Value>, env: Env, k: Stack) -> EvalResult {
 pub fn new_env(scope: Scope) -> Env {
     Env {
         scope,
-        references: HashMap::new(),
+        references: im::HashMap::new(),
         builtins: builtins(),
     }
 }
 
 /// Build the builtins map
 /// Mirrors the builtins() function from packages/gleam_interpreter/src/eyg/interpreter/expression.gleam
-fn builtins() -> HashMap<String, super::state::Builtin> {
+fn builtins() -> im::HashMap<String, super::state::Builtin> {
     use super::builtin;
     use super::state::Builtin;
 
-    let mut map = HashMap::new();
+    let mut map = im::HashMap::new();
 
     // Equality / control flow
     map.insert("equal".to_string(), Builtin::Arity2(builtin::equal));

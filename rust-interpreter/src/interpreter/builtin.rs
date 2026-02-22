@@ -159,7 +159,6 @@ pub fn string_append(left: Rc<Value>, right: Rc<Value>, _meta: (), env: Env, k: 
 /// string_split: Arity2 - split a string by a delimiter
 pub fn string_split(value: Rc<Value>, delimiter: Rc<Value>, _meta: (), env: Env, k: Stack) -> StepReturn {
     use super::cast;
-    use std::collections::HashMap;
     let s = cast::as_string(&value).map_err(|r| wrap_error(r, &env, &k))?;
     let pattern = cast::as_string(&delimiter).map_err(|r| wrap_error(r, &env, &k))?;
 
@@ -182,7 +181,7 @@ pub fn string_split(value: Rc<Value>, delimiter: Rc<Value>, _meta: (), env: Env,
         rest.iter().map(|s| Rc::new(Value::Str(s.clone()))).collect()
     );
 
-    let mut fields = HashMap::new();
+    let mut fields = im::HashMap::new();
     fields.insert("head".to_string(), Rc::new(Value::Str(first)));
     fields.insert("tail".to_string(), Rc::new(tail));
 
@@ -192,7 +191,6 @@ pub fn string_split(value: Rc<Value>, delimiter: Rc<Value>, _meta: (), env: Env,
 /// string_split_once: Arity2 - split a string once by a delimiter
 pub fn string_split_once(value: Rc<Value>, delimiter: Rc<Value>, _meta: (), env: Env, k: Stack) -> StepReturn {
     use super::cast;
-    use std::collections::HashMap;
     let s = cast::as_string(&value).map_err(|r| wrap_error(r, &env, &k))?;
     let pattern = cast::as_string(&delimiter).map_err(|r| wrap_error(r, &env, &k))?;
 
@@ -200,7 +198,7 @@ pub fn string_split_once(value: Rc<Value>, delimiter: Rc<Value>, _meta: (), env:
         let (pre, post_with_pattern) = s.split_at(pos);
         let post = &post_with_pattern[pattern.len()..];
 
-        let mut fields = HashMap::new();
+        let mut fields = im::HashMap::new();
         fields.insert("pre".to_string(), Rc::new(Value::Str(pre.to_string())));
         fields.insert("post".to_string(), Rc::new(Value::Str(post.to_string())));
 
@@ -346,7 +344,6 @@ pub fn binary_fold(binary: Rc<Value>, state: Rc<Value>, func: Rc<Value>, meta: (
 /// list_pop: Arity1 - pop the head of a list
 pub fn list_pop(value: Rc<Value>, _meta: (), env: Env, k: Stack) -> StepReturn {
     use super::cast;
-    use std::collections::HashMap;
     let elements = cast::as_list(&value).map_err(|r| wrap_error(r, &env, &k))?;
 
     let result = if elements.is_empty() {
@@ -355,7 +352,7 @@ pub fn list_pop(value: Rc<Value>, _meta: (), env: Env, k: Stack) -> StepReturn {
         let head = elements[0].clone();
         let tail = Value::LinkedList(elements[1..].to_vec());
 
-        let mut fields = HashMap::new();
+        let mut fields = im::HashMap::new();
         fields.insert("head".to_string(), head);
         fields.insert("tail".to_string(), Rc::new(tail));
 

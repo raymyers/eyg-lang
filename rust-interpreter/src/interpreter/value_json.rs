@@ -2,8 +2,8 @@
 // Used by CLI and tests to convert between JSON and runtime values
 
 use super::value::Value;
+use im;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Deserialize a JSON value into a runtime Value
@@ -44,7 +44,7 @@ pub fn deserialize_value(json: &JsonValue) -> Value {
         return Value::LinkedList(items);
     }
     if let Some(record) = json.get("record") {
-        let fields: HashMap<String, Rc<Value>> = record
+        let fields: im::HashMap<String, Rc<Value>> = record
             .as_object()
             .expect("record should be object")
             .iter()

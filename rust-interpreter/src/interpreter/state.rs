@@ -4,7 +4,7 @@
 use super::break_reason::BreakReason;
 use super::value::{Scope, Switch, Value};
 use crate::ir::ast::Node;
-use std::collections::HashMap;
+use im;
 use std::rc::Rc;
 
 /// Control represents what we're currently evaluating.
@@ -42,18 +42,19 @@ pub enum Stack {
     /// A frame with a continuation
     Frame(Kontinue, (), Box<Stack>),
     /// Empty stack with extrinsic effect handlers
-    Empty(HashMap<String, Extrinsic>),
+    Empty(im::HashMap<String, Extrinsic>),
 }
 
 /// Extrinsic effect handler function type
 pub type Extrinsic = fn(Rc<Value>) -> Result<Value, BreakReason>;
 
 /// Environment holds variable bindings, references, and builtins.
+/// Uses persistent data structures (im::Vector, im::HashMap) for O(log n) cloning.
 #[derive(Debug, Clone)]
 pub struct Env {
     pub scope: Scope,
-    pub references: HashMap<String, Rc<Value>>,
-    pub builtins: HashMap<String, Builtin>,
+    pub references: im::HashMap<String, Rc<Value>>,
+    pub builtins: im::HashMap<String, Builtin>,
 }
 
 /// Type alias for builtin function implementations
@@ -101,6 +102,8 @@ pub type EvalResult = Result<Rc<Value>, Debug>;
 pub type StepReturn = Result<(Control, Env, Stack), Debug>;
 
 /// Main stepper function - drives the evaluation loop.
+/// Box<Stack> is necessary for the recursive Stack type, not for performance.
+#[allow(clippy::boxed_local)]
 pub fn step(c: Control, env: Env, k: Box<Stack>) -> Next {
     match (c, *k) {
         (Control::Expr(exp), k) => try_step(eval(&exp, env, k)),
@@ -123,16 +126,17 @@ impl Env {
     /// Create an empty environment
     pub fn empty() -> Self {
         Env {
-            scope: Vec::new(),
-            references: HashMap::new(),
-            builtins: HashMap::new(),
+            scope: im::Vector::new(),
+            references: im::HashMap::new(),
+            builtins: im::HashMap::new(),
         }
     }
 
-    /// Extend the scope with a new binding
+    /// Extend the scope with a new binding.
+    /// Uses im::Vector::push_front for O(log n) structural sharing.
     pub fn extend(&self, label: String, value: Rc<Value>) -> Self {
-        let mut new_scope = vec![(label, value)];
-        new_scope.extend(self.scope.clone());
+        let mut new_scope = self.scope.clone();
+        new_scope.push_front((label, value));
         Env {
             scope: new_scope,
             references: self.references.clone(),
@@ -267,8 +271,8 @@ pub fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack) -> StepR
 
     match f.as_ref() {
         Value::Closure { param, body, env: captured } => {
-            let mut new_scope = vec![(param.clone(), arg)];
-            new_scope.extend(captured.clone());
+            let mut new_scope = captured.clone();
+            new_scope.push_front((param.clone(), arg));
             let new_env = Env {
                 scope: new_scope,
                 references: env.references.clone(),

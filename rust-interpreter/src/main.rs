@@ -69,7 +69,7 @@ fn main() {
     };
 
     // Execute the program
-    let mut result = expression::execute(node, vec![]);
+    let mut result = expression::execute(node, im::Vector::new());
 
     // Handle effects
     for handler in &effect_handlers {

@@ -3,7 +3,7 @@
 
 use super::break_reason::BreakReason;
 use super::value::Value;
-use std::collections::HashMap;
+use im;
 use std::rc::Rc;
 
 /// Cast a value to an integer
@@ -51,7 +51,7 @@ pub fn as_list(value: &Value) -> Result<Vec<Rc<Value>>, BreakReason> {
 }
 
 /// Cast a value to a record
-pub fn as_record(value: &Value) -> Result<HashMap<String, Rc<Value>>, BreakReason> {
+pub fn as_record(value: &Value) -> Result<im::HashMap<String, Rc<Value>>, BreakReason> {
     match value {
         Value::Record(fields) => Ok(fields.clone()),
         _ => Err(BreakReason::IncorrectTerm {

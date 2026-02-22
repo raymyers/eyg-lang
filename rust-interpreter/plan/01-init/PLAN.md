@@ -357,24 +357,29 @@ Drive the same JSON test fixtures used by the Gleam test suite.
 
 ---
 
-## Milestone 8: Performance Optimizations (Pending)
+## Milestone 8: Performance Optimizations (In Progress)
 
-**Progress**: Not started
+**Progress**: `progress/PERSISTENT_DATA_STRUCTURES.md`
 
 Code review identified several opportunities to improve memory efficiency and
 reduce unnecessary allocations. The current implementation prioritizes
 correctness over performance, which is appropriate for a first port, but these
 optimizations should be addressed for production use.
 
-### 8.1 Use Persistent Data Structures (High Priority)
+### 8.1 Use Persistent Data Structures ✅
 
-The `im` crate is already a dependency but is never used. Environment cloning
+**Progress**: `progress/PERSISTENT_DATA_STRUCTURES.md`
+
+The `im` crate is already a dependency but was never used. Environment cloning
 happens on every `let` binding and closure call, making this a hot path.
 
-- [ ] Change `Scope` from `Vec<(String, Rc<Value>)>` to `im::Vector<(String, Rc<Value>)>`
-- [ ] Change `Env.references` from `HashMap<String, Rc<Value>>` to `im::HashMap<String, Rc<Value>>`
-- [ ] Change `Env.builtins` from `HashMap<String, Builtin>` to `im::HashMap<String, Builtin>`
-- [ ] Update `Env::extend()` to use `im::Vector::push_front()` for O(log n) instead of O(n)
+- [x] Change `Scope` from `Vec<(String, Rc<Value>)>` to `im::Vector<(String, Rc<Value>)>`
+- [x] Change `Env.references` from `HashMap<String, Rc<Value>>` to `im::HashMap<String, Rc<Value>>`
+- [x] Change `Env.builtins` from `HashMap<String, Builtin>` to `im::HashMap<String, Builtin>`
+- [x] Update `Env::extend()` to use `im::Vector::push_front()` for O(log n) instead of O(n)
+- [x] Update all usage sites in interpreter modules
+- [x] Update all test files
+- [x] Verify all tests pass (26 tests)
 
 **Impact**: `Env::extend()` goes from O(n) full clone to O(log n) structural sharing.
 

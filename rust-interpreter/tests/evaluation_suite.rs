@@ -98,7 +98,7 @@ fn run_fixture(fixture: Fixture) {
         .unwrap_or_else(|e| panic!("Failed to deserialize source for '{}': {}", name, e));
 
     // Execute the program
-    let mut result = expression::execute(source, vec![]);
+    let mut result = expression::execute(source, im::Vector::new());
 
     // Handle effects
     for effect in &fixture.effects {

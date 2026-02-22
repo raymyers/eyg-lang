@@ -2,13 +2,14 @@
 // Mirrors packages/gleam_interpreter/src/eyg/interpreter/value.gleam
 
 use crate::ir::ast::Node;
-use std::collections::HashMap;
+use im;
 use std::fmt;
 use std::rc::Rc;
 
 /// Scope is a list of variable bindings (name -> value).
 /// Most-recently-bound wins (linear scan from head).
-pub type Scope = Vec<(String, Rc<Value>)>;
+/// Uses im::Vector for O(log n) structural sharing on clone.
+pub type Scope = im::Vector<(String, Rc<Value>)>;
 
 /// Context represents a captured delimited continuation for effect handlers.
 /// It's a tuple of (popped stack frames, environment).
@@ -22,7 +23,7 @@ pub enum Value {
     Integer(i64),
     Str(String),
     LinkedList(Vec<Rc<Value>>),
-    Record(HashMap<String, Rc<Value>>),
+    Record(im::HashMap<String, Rc<Value>>),
     Tagged {
         label: String,
         value: Rc<Value>,
@@ -56,7 +57,7 @@ pub enum Switch {
 
 /// Unit value (empty record)
 pub fn unit() -> Value {
-    Value::Record(HashMap::new())
+    Value::Record(im::HashMap::new())
 }
 
 /// True value
