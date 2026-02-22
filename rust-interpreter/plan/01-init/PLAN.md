@@ -336,7 +336,7 @@ Drive the same JSON test fixtures used by the Gleam test suite.
 
 ## Milestone 7: CLI ✅
 
-**Progress**: `progress/CLI_IMPLEMENTATION.md`
+**Progress**: `progress/CLI_IMPLEMENTATION.md`, `progress/EFFECTS_FLAG.md`
 
 - [x] In `src/main.rs`, use `clap` to define:
   ```
@@ -345,10 +345,11 @@ Drive the same JSON test fixtures used by the Gleam test suite.
   - Reads the file, deserialises as a `Node`, calls `execute(node, vec![])`.
   - On `Ok(value)`: pretty-print the value to stdout.
   - On `Err(reason)`: print the break reason to stderr and exit with code 1.
-- [ ] Add a `--effects` flag (or stdin protocol) so callers can supply effect
+- [x] Add a `--effects` flag (or stdin protocol) so callers can supply effect
       handlers for effects that would otherwise be `UnhandledEffect`.
-  - Initial approach: handle no effects (programs that require effects will
-    print the unhandled effect info and exit).
+  - Implemented `--effects <file>` flag to read effect handlers from JSON
+  - Handlers specify label and reply value for each effect
+  - Programs with unhandled effects print error and exit with code 1
 - [x] Implement a `Display` (or simple `fn to_string`) for `Value` and
       `BreakReason` suitable for human-readable CLI output.
 - [x] Verify the CLI works end-to-end with a simple program from
