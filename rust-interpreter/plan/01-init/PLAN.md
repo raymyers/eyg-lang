@@ -354,3 +354,87 @@ Drive the same JSON test fixtures used by the Gleam test suite.
       `BreakReason` suitable for human-readable CLI output.
 - [x] Verify the CLI works end-to-end with a simple program from
       `spec/evaluation/core_suite.json` (e.g., `"integer primitive"` → `42`).
+
+---
+
+## Milestone 8: Performance Optimizations (Pending)
+
+**Progress**: Not started
+
+Code review identified several opportunities to improve memory efficiency and
+reduce unnecessary allocations. The current implementation prioritizes
+correctness over performance, which is appropriate for a first port, but these
+optimizations should be addressed for production use.
+
+### 8.1 Use Persistent Data Structures (High Priority)
+
+The `im` crate is already a dependency but is never used. Environment cloning
+happens on every `let` binding and closure call, making this a hot path.
+
+- [ ] Change `Scope` from `Vec<(String, Rc<Value>)>` to `im::Vector<(String, Rc<Value>)>`
+- [ ] Change `Env.references` from `HashMap<String, Rc<Value>>` to `im::HashMap<String, Rc<Value>>`
+- [ ] Change `Env.builtins` from `HashMap<String, Builtin>` to `im::HashMap<String, Builtin>`
+- [ ] Update `Env::extend()` to use `im::Vector::push_front()` for O(log n) instead of O(n)
+
+**Impact**: `Env::extend()` goes from O(n) full clone to O(log n) structural sharing.
+
+### 8.2 Refactor Cast Functions to Return References (High Priority)
+
+Current cast functions clone inner data unnecessarily:
+```rust
+// Current - clones entire HashMap
+pub fn as_record(value: &Value) -> Result<HashMap<String, Rc<Value>>, BreakReason>
+
+// Better - returns reference to existing data
+pub fn as_record(value: &Value) -> Result<&HashMap<String, Rc<Value>>, BreakReason>
+```
+
+- [ ] Change `as_string` to return `Result<&str, BreakReason>`
+- [ ] Change `as_binary` to return `Result<&[u8], BreakReason>`
+- [ ] Change `as_list` to return `Result<&Vec<Rc<Value>>, BreakReason>`
+- [ ] Change `as_record` to return `Result<&HashMap<String, Rc<Value>>, BreakReason>`
+- [ ] Update all call sites in `builtin.rs` and `state.rs` accordingly
+
+**Impact**: Eliminates deep clones of strings, byte arrays, lists, and records on every type check.
+
+### 8.3 Accept References in Builtin Functions (Medium Priority)
+
+Clippy warns that many builtin functions receive `Rc<Value>` by value but only
+borrow the contents:
+```rust
+// Current - takes ownership unnecessarily
+pub fn int_add(left: Rc<Value>, right: Rc<Value>, ...) -> StepReturn
+
+// Better - borrows without incrementing refcount
+pub fn int_add(left: &Rc<Value>, right: &Rc<Value>, ...) -> StepReturn
+```
+
+- [ ] Update `BuiltinFn1..4` type aliases to take `&Rc<Value>` instead of `Rc<Value>`
+- [ ] Update all builtin function signatures in `builtin.rs`
+- [ ] Update `call_builtin` in `state.rs` to pass references
+
+**Impact**: Avoids unnecessary reference count increments/decrements in builtin calls.
+
+### 8.4 Address Clippy Pedantic Warnings (Low Priority)
+
+Running `cargo clippy -- -W clippy::pedantic -W clippy::nursery` produces ~215
+warnings. Most are style suggestions that improve code quality:
+
+- [ ] Use `Self` instead of type name in impl blocks
+- [ ] Add `#[must_use]` attributes to pure functions
+- [ ] Use inline format args (`format!("{x}")` instead of `format!("{}", x)`)
+- [ ] Add `# Errors` sections to doc comments for functions returning `Result`
+- [ ] Use `i64::from(byte)` instead of `byte as i64` for lossless casts
+
+### 8.5 Consider Additional Optimizations (Future)
+
+These are lower priority but worth considering for heavily-used interpreters:
+
+- [ ] **Intern strings**: Use a string interner for labels/identifiers to reduce
+      allocations and enable cheap equality checks
+- [ ] **Arena allocation**: Consider using an arena allocator for AST nodes and
+      Values to improve cache locality
+- [ ] **Tail call optimization**: Detect and optimize tail calls to avoid stack
+      growth in recursive programs
+- [ ] **Bytecode compilation**: For frequently-executed code, compile to a more
+      efficient bytecode representation
