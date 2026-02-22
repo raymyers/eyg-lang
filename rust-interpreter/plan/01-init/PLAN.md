@@ -235,9 +235,11 @@ Gleam source stays obvious.
 
 ---
 
-## Milestone 4: Environment & Scope
+## Milestone 4: Environment & Scope ✅
 
-- [ ] Define `src/interpreter/env.rs`:
+**Progress**: `progress/ENV_AND_SCOPE.md`
+
+- [x] Define `src/interpreter/env.rs`:
   ```rust
   pub struct Env {
       pub scope:      Scope,                          // lexical bindings
@@ -252,15 +254,19 @@ Gleam source stays obvious.
       Arity4(fn(Rc<Value>, Rc<Value>, Rc<Value>, Rc<Value>, Env, Stack) -> StepReturn),
   }
   ```
-- [ ] Because `Env` is passed by value through the CPS stepper (cloned at each
+- [x] Because `Env` is passed by value through the CPS stepper (cloned at each
       scope extension), wrap `scope` in `im::Vector<(String, Rc<Value>)>` so
       that clone is O(1).  Alternatively use `Rc<Vec<...>>` with prepend-on-copy.
-- [ ] `scope` lookup: linear scan from head (most-recently-bound wins), matching
+      (Note: Using Vec for now, can optimize later if needed)
+- [x] `scope` lookup: linear scan from head (most-recently-bound wins), matching
       Gleam's `list.key_find`.
-- [ ] Implement `fn extend_scope(env: &Env, label: String, value: Rc<Value>)
+- [x] Implement `fn extend_scope(env: &Env, label: String, value: Rc<Value>)
       -> Env` — returns a new `Env` with the binding prepended.
-- [ ] Populate the builtins map in `expression::new_env` with the same 27 keys
+      (Implemented as `Env::extend()` method)
+- [x] Populate the builtins map in `expression::new_env` with the same 27 keys
       listed in `expression.gleam`'s `builtins()` function.
+- [x] Create stub implementations for all 27 builtin functions in `builtin.rs`
+      (actual implementations will be added in Milestone 5).
 
 ---
 

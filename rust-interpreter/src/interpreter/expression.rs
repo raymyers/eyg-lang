@@ -57,8 +57,49 @@ pub fn new_env(scope: Scope) -> Env {
 }
 
 /// Build the builtins map
+/// Mirrors the builtins() function from packages/gleam_interpreter/src/eyg/interpreter/expression.gleam
 fn builtins() -> HashMap<String, super::state::Builtin> {
-    // For now, return an empty map
-    // We'll populate this in Milestone 5
-    HashMap::new()
+    use super::builtin;
+    use super::state::Builtin;
+
+    let mut map = HashMap::new();
+
+    // Equality / control flow
+    map.insert("equal".to_string(), Builtin::Arity2(builtin::equal));
+    map.insert("fix".to_string(), Builtin::Arity1(builtin::fix));
+    map.insert("fixed".to_string(), Builtin::Arity2(builtin::fixed));
+    map.insert("never".to_string(), Builtin::Arity1(builtin::never));
+
+    // Integer operations
+    map.insert("int_compare".to_string(), Builtin::Arity2(builtin::int_compare));
+    map.insert("int_add".to_string(), Builtin::Arity2(builtin::int_add));
+    map.insert("int_subtract".to_string(), Builtin::Arity2(builtin::int_subtract));
+    map.insert("int_multiply".to_string(), Builtin::Arity2(builtin::int_multiply));
+    map.insert("int_divide".to_string(), Builtin::Arity2(builtin::int_divide));
+    map.insert("int_absolute".to_string(), Builtin::Arity1(builtin::int_absolute));
+    map.insert("int_parse".to_string(), Builtin::Arity1(builtin::int_parse));
+    map.insert("int_to_string".to_string(), Builtin::Arity1(builtin::int_to_string));
+
+    // String operations
+    map.insert("string_append".to_string(), Builtin::Arity2(builtin::string_append));
+    map.insert("string_split".to_string(), Builtin::Arity2(builtin::string_split));
+    map.insert("string_split_once".to_string(), Builtin::Arity2(builtin::string_split_once));
+    map.insert("string_replace".to_string(), Builtin::Arity3(builtin::string_replace));
+    map.insert("string_uppercase".to_string(), Builtin::Arity1(builtin::string_uppercase));
+    map.insert("string_lowercase".to_string(), Builtin::Arity1(builtin::string_lowercase));
+    map.insert("string_starts_with".to_string(), Builtin::Arity2(builtin::string_starts_with));
+    map.insert("string_ends_with".to_string(), Builtin::Arity2(builtin::string_ends_with));
+    map.insert("string_length".to_string(), Builtin::Arity1(builtin::string_length));
+    map.insert("string_to_binary".to_string(), Builtin::Arity1(builtin::string_to_binary));
+    map.insert("string_from_binary".to_string(), Builtin::Arity1(builtin::string_from_binary));
+
+    // Binary operations
+    map.insert("binary_from_integers".to_string(), Builtin::Arity1(builtin::binary_from_integers));
+    map.insert("binary_fold".to_string(), Builtin::Arity3(builtin::binary_fold));
+
+    // List operations
+    map.insert("list_pop".to_string(), Builtin::Arity1(builtin::list_pop));
+    map.insert("list_fold".to_string(), Builtin::Arity3(builtin::list_fold));
+
+    map
 }
