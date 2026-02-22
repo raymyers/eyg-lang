@@ -443,3 +443,44 @@ These are lower priority but worth considering for heavily-used interpreters:
       growth in recursive programs
 - [ ] **Bytecode compilation**: For frequently-executed code, compile to a more
       efficient bytecode representation
+
+---
+
+## Milestone 9: CLI Output Format Compatibility (Pending)
+
+**Progress**: Not started
+
+The Rust CLI output format differs from the JavaScript reference implementation.
+While both interpreters produce semantically equivalent results, the display
+formatting should match for consistency and easier testing/comparison.
+
+### Current Differences
+
+| Value Type | Rust Output | JS Output |
+|------------|-------------|-----------|
+| String | `"hello"` | `hello` |
+| Tagged | `Ok(42)` | `Tagged { tag: 'Ok', inner: 42 }` |
+| Boolean | `True({})` | `Tagged { tag: 'True', inner: Map {...} }` |
+| Record | `{name: "Alice", age: 30}` | `{ name: 'Alice', age: 30 }` |
+| List | `[1, 2, 3]` | `[ 1, 2, 3 ]` |
+| Closure | `<closure x>` | `Closure { lambda: {...}, captured: Map {...} }` |
+| Binary | `Binary(11 bytes)` | `{ '/': { bytes: '...' } }` |
+
+### Tasks
+
+- [ ] Study the JS interpreter's `native()` function in `packages/javascript_interpreter/src/value.mjs`
+      to understand the exact output format
+- [ ] Update `Display` impl for `Value` in `src/interpreter/value.rs` to match JS format:
+  - [ ] Strings: Remove surrounding quotes (print `hello` not `"hello"`)
+  - [ ] Tagged values: Use `Tagged { tag: '...', inner: ... }` format
+  - [ ] Records: Add spaces inside braces, use single quotes for keys
+  - [ ] Lists: Add spaces inside brackets
+  - [ ] Closures: Show full structure with lambda and captured environment
+  - [ ] Binary: Output as dag-json format `{ '/': { bytes: '...' } }`
+- [ ] Consider adding a `--format` flag to choose between:
+  - `native` (JS-compatible, default)
+  - `debug` (Rust debug format for development)
+  - `json` (machine-readable JSON output)
+- [ ] Update CLI tests to verify output format matches JS reference
+- [ ] Add integration test that runs same inputs through both interpreters and
+      compares outputs programmatically
