@@ -172,17 +172,24 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::Binary(bytes) => {
-                write!(f, "Binary({} bytes)", bytes.len())
+                write!(f, "<<")?;
+                for (i, &b) in bytes.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", b as i8)?;
+                }
+                write!(f, ">>")
             }
-            Value::Integer(n) => write!(f, "{}", n),
-            Value::Str(s) => write!(f, "\"{}\"", s),
+            Value::Integer(n) => write!(f, "{n}"),
+            Value::Str(s) => write!(f, "\"{s}\""),
             Value::LinkedList(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", item)?;
+                    write!(f, "{item}")?;
                 }
                 write!(f, "]")
             }
@@ -194,19 +201,75 @@ impl fmt::Display for Value {
                         write!(f, ", ")?;
                     }
                     first = false;
-                    write!(f, "{}: {}", key, value)?;
+                    write!(f, "{key}: {value}")?;
                 }
                 write!(f, "}}")
             }
             Value::Tagged { label, value } => {
-                write!(f, "{}({})", label, value)
+                write!(f, "{label}({value})")
             }
             Value::Closure { param, .. } => {
-                write!(f, "<closure {}>", param)
+                write!(f, "({param}) -> {{ ... }}")
             }
-            Value::Partial(switch, args) => {
-                write!(f, "<partial {:?} with {} args>", switch, args.len())
+            Value::Partial(switch, args) => display_partial(f, switch, args),
+        }
+    }
+}
+
+fn display_partial(f: &mut fmt::Formatter<'_>, switch: &Switch, args: &[Rc<Value>]) -> fmt::Result {
+    match switch {
+        Switch::Cons => {
+            // Partially applied cons: show accumulated args
+            write!(f, "cons")?;
+            if !args.is_empty() {
+                write!(f, "(")?;
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{a}")?;
+                }
+                write!(f, ")")?;
             }
+            Ok(())
+        }
+        Switch::Extend(label) => {
+            write!(f, "+{label}")?;
+            if !args.is_empty() {
+                write!(f, "(")?;
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{a}")?;
+                }
+                write!(f, ")")?;
+            }
+            Ok(())
+        }
+        Switch::Select(label) => write!(f, ".{label}"),
+        Switch::Overwrite(label) => write!(f, ":={label}"),
+        Switch::Tag(label) => {
+            if args.is_empty() {
+                write!(f, "{label}")
+            } else {
+                write!(f, "{label}({})", args[0])
+            }
+        }
+        Switch::Match(label) => write!(f, "case {label}"),
+        Switch::NoCases => write!(f, "nocases"),
+        Switch::Perform(label) => write!(f, "^{label}"),
+        Switch::Handle(label) => {
+            if args.is_empty() {
+                write!(f, "deep {label}")
+            } else {
+                write!(f, "deep {label}({})", args[0])
+            }
+        }
+        Switch::Resume(_) => write!(f, "resume"),
+        Switch::Builtin(name) => {
+            write!(f, "Defunc {name} (")?;
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 { write!(f, ", ")?; }
+                write!(f, "{a}")?;
+            }
+            write!(f, ")")
         }
     }
 }

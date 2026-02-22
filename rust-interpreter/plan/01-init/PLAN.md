@@ -450,41 +450,44 @@ These are lower priority but worth considering for heavily-used interpreters:
 
 ---
 
-## Milestone 9: CLI Output Format Compatibility (Pending)
+## Milestone 9: CLI Output Format Compatibility ✅
 
-**Progress**: Not started
+**Progress**: `progress/OUTPUT_FORMAT.md`
 
-The Rust CLI output format differs from the JavaScript reference implementation.
-While both interpreters produce semantically equivalent results, the display
-formatting should match for consistency and easier testing/comparison.
+Updated Rust CLI output to match Go (mulch) reference implementation's `Debug()`
+format. The Go CLI is the production reference, not JS.
 
-### Current Differences
+### Format (matches Go mulch CLI)
 
-| Value Type | Rust Output | JS Output |
-|------------|-------------|-----------|
-| String | `"hello"` | `hello` |
-| Tagged | `Ok(42)` | `Tagged { tag: 'Ok', inner: 42 }` |
-| Boolean | `True({})` | `Tagged { tag: 'True', inner: Map {...} }` |
-| Record | `{name: "Alice", age: 30}` | `{ name: 'Alice', age: 30 }` |
-| List | `[1, 2, 3]` | `[ 1, 2, 3 ]` |
-| Closure | `<closure x>` | `Closure { lambda: {...}, captured: Map {...} }` |
-| Binary | `Binary(11 bytes)` | `{ '/': { bytes: '...' } }` |
+| Value Type | Output |
+|------------|--------|
+| String | `"hello"` |
+| Integer | `42` |
+| Tagged | `Ok(42)` |
+| Boolean | `True({})` |
+| Record | `{name: "Alice", age: 30}` |
+| List | `[1, 2, 3]` |
+| Closure | `(x) -> { ... }` |
+| Binary | `<<72, 101, 108>>` (signed i8) |
+| Partial Select | `.label` |
+| Partial Overwrite | `:=label` |
+| Partial Tag | `label` / `label(arg)` |
+| Partial Case | `case label` |
+| Partial NoCases | `nocases` |
+| Partial Perform | `^label` |
+| Partial Handle | `deep label` / `deep label(handler)` |
+| Partial Resume | `resume` |
+| Partial Builtin | `Defunc name (arg1, ...)` |
 
 ### Tasks
 
-- [ ] Study the JS interpreter's `native()` function in `packages/javascript_interpreter/src/value.mjs`
-      to understand the exact output format
-- [ ] Update `Display` impl for `Value` in `src/interpreter/value.rs` to match JS format:
-  - [ ] Strings: Remove surrounding quotes (print `hello` not `"hello"`)
-  - [ ] Tagged values: Use `Tagged { tag: '...', inner: ... }` format
-  - [ ] Records: Add spaces inside braces, use single quotes for keys
-  - [ ] Lists: Add spaces inside brackets
-  - [ ] Closures: Show full structure with lambda and captured environment
-  - [ ] Binary: Output as dag-json format `{ '/': { bytes: '...' } }`
-- [ ] Consider adding a `--format` flag to choose between:
-  - `native` (JS-compatible, default)
-  - `debug` (Rust debug format for development)
-  - `json` (machine-readable JSON output)
-- [ ] Update CLI tests to verify output format matches JS reference
-- [ ] Add integration test that runs same inputs through both interpreters and
-      compares outputs programmatically
+- [x] Study Go mulch CLI `Debug()` methods as reference format
+- [x] Update `Display` impl for `Value` in `src/interpreter/value.rs`:
+  - [x] Binary: `<<b1, b2, ...>>` with signed i8 values
+  - [x] Closure: `(param) -> { ... }`
+  - [x] Partial: Per-switch formatting matching Go equivalents
+- [x] All 26 tests pass, clippy clean
+
+### Future
+- [ ] Consider adding a `--format` flag for alternate output modes
+- [ ] Add integration test comparing outputs across interpreters
