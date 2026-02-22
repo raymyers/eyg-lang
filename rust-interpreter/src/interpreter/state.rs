@@ -97,8 +97,8 @@ pub type Debug = Box<(BreakReason, (), Env, Stack)>;
 /// Result of evaluation.
 pub type EvalResult = Result<Rc<Value>, Debug>;
 
-/// Return type for step functions.
-pub type StepReturn = Result<(Control, Env, Stack), BreakReason>;
+/// Return type for step functions - includes full context on error for resumption
+pub type StepReturn = Result<(Control, Env, Stack), Debug>;
 
 /// Main stepper function - drives the evaluation loop.
 pub fn step(c: Control, env: Env, k: Box<Stack>) -> Next {
@@ -115,11 +115,7 @@ pub fn step(c: Control, env: Env, k: Box<Stack>) -> Next {
 fn try_step(result: StepReturn) -> Next {
     match result {
         Ok((c, e, k)) => Next::Loop(c, e, Box::new(k)),
-        Err(reason) => {
-            // We need to construct a Debug tuple, but we don't have env/stack here
-            // This is a simplified version - in practice we'd need to thread these through
-            Next::Break(Err(Box::new((reason, (), Env::empty(), Stack::Empty(HashMap::new())))))
-        }
+        Err(debug) => Next::Break(Err(debug)),
     }
 }
 
@@ -153,6 +149,11 @@ impl Env {
     }
 }
 
+/// Helper to wrap a BreakReason with full context
+fn wrap_error(reason: BreakReason, env: &Env, k: &Stack) -> Debug {
+    Box::new((reason, (), env.clone(), k.clone()))
+}
+
 /// Evaluate an expression node
 pub fn eval(node: &Node, env: Env, k: Stack) -> StepReturn {
     use crate::ir::ast::Expr;
@@ -181,8 +182,8 @@ pub fn eval(node: &Node, env: Env, k: Stack) -> StepReturn {
         }
 
         Expr::Variable { label } => match env.lookup(label) {
-            Some(term) => Ok((Control::Val(term), env, k)),
-            None => Err(BreakReason::UndefinedVariable(label.clone())),
+            Some(term) => Ok((Control::Val(term), env.clone(), k.clone())),
+            None => Err(wrap_error(BreakReason::UndefinedVariable(label.clone()), &env, &k)),
         },
 
         Expr::Let { label, definition, body } => {
@@ -202,7 +203,7 @@ pub fn eval(node: &Node, env: Env, k: Stack) -> StepReturn {
         Expr::String { value: data } => value(Value::Str(data.clone())),
         Expr::Tail => value(Value::LinkedList(vec![])),
         Expr::Cons => value(Value::Partial(Switch::Cons, vec![])),
-        Expr::Vacant => Err(BreakReason::Vacant),
+        Expr::Vacant => Err(wrap_error(BreakReason::Vacant, &env, &k)),
         Expr::Select { label } => value(Value::Partial(Switch::Select(label.clone()), vec![])),
         Expr::Tag { label } => value(Value::Partial(Switch::Tag(label.clone()), vec![])),
         Expr::Perform { label } => value(Value::Partial(Switch::Perform(label.clone()), vec![])),
@@ -217,21 +218,21 @@ pub fn eval(node: &Node, env: Env, k: Stack) -> StepReturn {
             if env.builtins.contains_key(identifier) {
                 value(Value::Partial(Switch::Builtin(identifier.clone()), vec![]))
             } else {
-                Err(BreakReason::UndefinedBuiltin(identifier.clone()))
+                Err(wrap_error(BreakReason::UndefinedBuiltin(identifier.clone()), &env, &k))
             }
         }
 
         Expr::Reference { identifier } => match env.references.get(identifier) {
             Some(v) => Ok((Control::Val(v.clone()), env, k)),
-            None => Err(BreakReason::UndefinedReference(identifier.clone())),
+            None => Err(wrap_error(BreakReason::UndefinedReference(identifier.clone()), &env, &k)),
         },
 
         Expr::Release { package, release, identifier } => {
-            Err(BreakReason::UndefinedRelease {
+            Err(wrap_error(BreakReason::UndefinedRelease {
                 package: package.clone(),
                 release: *release,
                 cid: identifier.clone(),
-            })
+            }, &env, &k))
         }
     }
 }
@@ -279,32 +280,32 @@ pub fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack) -> StepR
         Value::Partial(switch, applied) => {
             match (switch, applied.as_slice()) {
                 (Switch::Cons, [item]) => {
-                    let elements = cast::as_list(arg.as_ref())?;
+                    let elements = cast::as_list(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
                     let mut new_list = vec![item.clone()];
                     new_list.extend(elements);
                     Ok((Control::Val(Rc::new(Value::LinkedList(new_list))), env, k))
                 }
 
                 (Switch::Extend(label), [value]) => {
-                    let mut fields = cast::as_record(arg.as_ref())?;
+                    let mut fields = cast::as_record(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
                     fields.insert(label.clone(), value.clone());
                     Ok((Control::Val(Rc::new(Value::Record(fields))), env, k))
                 }
 
                 (Switch::Overwrite(label), [value]) => {
-                    let mut fields = cast::as_record(arg.as_ref())?;
+                    let mut fields = cast::as_record(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
                     if !fields.contains_key(label) {
-                        return Err(BreakReason::MissingField(label.clone()));
+                        return Err(wrap_error(BreakReason::MissingField(label.clone()), &env, &k));
                     }
                     fields.insert(label.clone(), value.clone());
                     Ok((Control::Val(Rc::new(Value::Record(fields))), env, k))
                 }
 
                 (Switch::Select(label), []) => {
-                    let fields = cast::as_record(arg.as_ref())?;
+                    let fields = cast::as_record(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
                     match fields.get(label) {
                         Some(value) => Ok((Control::Val(value.clone()), env, k)),
-                        None => Err(BreakReason::MissingField(label.clone())),
+                        None => Err(wrap_error(BreakReason::MissingField(label.clone()), &env, &k)),
                     }
                 }
 
@@ -320,7 +321,7 @@ pub fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack) -> StepR
                 }
 
                 (Switch::Match(label), [branch, otherwise]) => {
-                    let (l, inner) = cast::as_tagged(arg.as_ref())?;
+                    let (l, inner) = cast::as_tagged(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
                     if &l == label {
                         call(branch.clone(), inner, meta, env, k)
                     } else {
@@ -328,7 +329,7 @@ pub fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack) -> StepR
                     }
                 }
 
-                (Switch::NoCases, []) => Err(BreakReason::NoMatch(Box::new((*arg).clone()))),
+                (Switch::NoCases, []) => Err(wrap_error(BreakReason::NoMatch(Box::new((*arg).clone())), &env, &k)),
 
                 (Switch::Perform(label), []) => perform(label.clone(), arg, env, k),
 
@@ -360,7 +361,7 @@ pub fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack) -> StepR
             }
         }
 
-        term => Err(BreakReason::NotAFunction(Box::new(term.clone()))),
+        term => Err(wrap_error(BreakReason::NotAFunction(Box::new(term.clone())), &env, &k)),
     }
 }
 
@@ -391,7 +392,7 @@ fn call_builtin(
                 ))
             }
         },
-        None => Err(BreakReason::UndefinedBuiltin(key)),
+        None => Err(wrap_error(BreakReason::UndefinedBuiltin(key), &env, &k)),
     }
 }
 
@@ -459,16 +460,25 @@ fn do_perform(
         }
 
         Stack::Empty(extrinsic) => {
+            // Reconstruct the original stack before handling the effect
+            let original_k = move_frames(acc, Stack::Empty(extrinsic.clone()));
+
             // Check for extrinsic handler
             match extrinsic.get(&label) {
                 Some(handler) => match handler(arg.clone()) {
                     Ok(term) => {
-                        let original_k = move_frames(acc, Stack::Empty(extrinsic));
-                        Ok((Control::Val(Rc::new(term)), i_env, original_k))
+                        Ok((Control::Val(Rc::new(term)), i_env.clone(), original_k.clone()))
                     }
-                    Err(reason) => Err(reason),
+                    Err(reason) => Err(wrap_error(reason, &i_env, &original_k)),
                 },
-                None => Err(BreakReason::UnhandledEffect(label, Box::new((*arg).clone()))),
+                None => {
+                    // For UnhandledEffect, preserve the stack for resumption
+                    Err(wrap_error(
+                        BreakReason::UnhandledEffect(label, Box::new((*arg).clone())),
+                        &i_env,
+                        &original_k
+                    ))
+                }
             }
         }
     }

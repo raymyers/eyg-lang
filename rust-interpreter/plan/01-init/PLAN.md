@@ -308,11 +308,13 @@ applied argument list plus `(env, k)` and returns `StepReturn`.
 
 ---
 
-## Milestone 6: Testing
+## Milestone 6: Testing ✅
+
+**Progress**: `progress/TESTING.md`
 
 Drive the same JSON test fixtures used by the Gleam test suite.
 
-- [ ] Create `tests/evaluation_suite.rs` with a `#[test]` that:
+- [x] Create `tests/evaluation_suite.rs` with a `#[test]` that:
   1. Reads `spec/evaluation/core_suite.json`,
     `spec/evaluation/builtins_suite.json`,
     `spec/evaluation/effects_suite.json` relative to the workspace root.
@@ -326,8 +328,8 @@ Drive the same JSON test fixtures used by the Gleam test suite.
   4. For each listed effect, asserts `UnhandledEffect(label, lift)` was
      raised, then calls `expression::resume(reply, env, k)`.
   5. Compares final result to expected value or break reason.
-- [ ] All fixtures in all three suites must pass (`cargo test`).
-- [ ] Add unit tests for the dag-json decoder covering every node type using
+- [x] All fixtures in all three suites must pass (`cargo test`).
+- [x] Add unit tests for the dag-json decoder covering every node type using
       fixtures from `spec/ir_suite.json`.
 
 ---
