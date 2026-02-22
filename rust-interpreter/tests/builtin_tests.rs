@@ -21,8 +21,8 @@ fn empty_stack() -> Stack {
 fn test_int_add() {
     let left = Rc::new(Value::Integer(5));
     let right = Rc::new(Value::Integer(3));
-    let result = builtin::int_add(left, right, (), empty_env(), empty_stack());
-    
+    let result = builtin::int_add(&left, &right, (), empty_env(), empty_stack());
+
     assert!(result.is_ok());
     let (control, _, _) = result.unwrap();
     match control {
@@ -40,7 +40,7 @@ fn test_int_add() {
 fn test_int_subtract() {
     let left = Rc::new(Value::Integer(10));
     let right = Rc::new(Value::Integer(3));
-    let result = builtin::int_subtract(left, right, (), empty_env(), empty_stack());
+    let result = builtin::int_subtract(&left, &right, (), empty_env(), empty_stack());
     
     assert!(result.is_ok());
     let (control, _, _) = result.unwrap();
@@ -59,8 +59,8 @@ fn test_int_subtract() {
 fn test_int_multiply() {
     let left = Rc::new(Value::Integer(4));
     let right = Rc::new(Value::Integer(5));
-    let result = builtin::int_multiply(left, right, (), empty_env(), empty_stack());
-    
+    let result = builtin::int_multiply(&left, &right, (), empty_env(), empty_stack());
+
     assert!(result.is_ok());
     let (control, _, _) = result.unwrap();
     match control {
@@ -78,8 +78,8 @@ fn test_int_multiply() {
 fn test_int_divide_success() {
     let left = Rc::new(Value::Integer(20));
     let right = Rc::new(Value::Integer(4));
-    let result = builtin::int_divide(left, right, (), empty_env(), empty_stack());
-    
+    let result = builtin::int_divide(&left, &right, (), empty_env(), empty_stack());
+
     assert!(result.is_ok());
     let (control, _, _) = result.unwrap();
     match control {
@@ -103,7 +103,7 @@ fn test_int_divide_success() {
 fn test_int_divide_by_zero() {
     let left = Rc::new(Value::Integer(20));
     let right = Rc::new(Value::Integer(0));
-    let result = builtin::int_divide(left, right, (), empty_env(), empty_stack());
+    let result = builtin::int_divide(&left, &right, (), empty_env(), empty_stack());
     
     assert!(result.is_ok());
     let (control, _, _) = result.unwrap();
@@ -124,8 +124,8 @@ fn test_int_divide_by_zero() {
 fn test_string_append() {
     let left = Rc::new(Value::Str("Hello, ".to_string()));
     let right = Rc::new(Value::Str("World!".to_string()));
-    let result = builtin::string_append(left, right, (), empty_env(), empty_stack());
-    
+    let result = builtin::string_append(&left, &right, (), empty_env(), empty_stack());
+
     assert!(result.is_ok());
     let (control, _, _) = result.unwrap();
     match control {
@@ -143,8 +143,8 @@ fn test_string_append() {
 fn test_equal_true() {
     let left = Rc::new(Value::Integer(42));
     let right = Rc::new(Value::Integer(42));
-    let result = builtin::equal(left, right, (), empty_env(), empty_stack());
-    
+    let result = builtin::equal(&left, &right, (), empty_env(), empty_stack());
+
     assert!(result.is_ok());
     let (control, _, _) = result.unwrap();
     match control {

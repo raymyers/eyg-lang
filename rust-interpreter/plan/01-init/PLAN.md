@@ -404,7 +404,9 @@ pub fn as_record(value: &Value) -> Result<&HashMap<String, Rc<Value>>, BreakReas
 
 **Impact**: Eliminates deep clones of strings, byte arrays, lists, and records on every type check.
 
-### 8.3 Accept References in Builtin Functions (Medium Priority)
+### 8.3 Accept References in Builtin Functions ✅
+
+**Progress**: `progress/BUILTIN_REFERENCES.md`
 
 Clippy warns that many builtin functions receive `Rc<Value>` by value but only
 borrow the contents:
@@ -416,9 +418,9 @@ pub fn int_add(left: Rc<Value>, right: Rc<Value>, ...) -> StepReturn
 pub fn int_add(left: &Rc<Value>, right: &Rc<Value>, ...) -> StepReturn
 ```
 
-- [ ] Update `BuiltinFn1..4` type aliases to take `&Rc<Value>` instead of `Rc<Value>`
-- [ ] Update all builtin function signatures in `builtin.rs`
-- [ ] Update `call_builtin` in `state.rs` to pass references
+- [x] Update `BuiltinFn1..4` type aliases to take `&Rc<Value>` instead of `Rc<Value>`
+- [x] Update all builtin function signatures in `builtin.rs`
+- [x] Update `call_builtin` in `state.rs` to pass references
 
 **Impact**: Avoids unnecessary reference count increments/decrements in builtin calls.
 

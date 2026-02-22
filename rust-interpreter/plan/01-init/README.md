@@ -8,6 +8,10 @@ Using Auggie CLI in a single-agent ralph loop.
 npx @augmentcode/auggie --instruction-file rust-interpreter/plan/01-init/RALPH.md --print
 ```
 
+```sh
+openhands --headless -f rust-interpreter/plan/01-init/RALPH.md
+```
+
 # Seeding the plan doc
 
 The result of this was lightly edited into `rust-interpreter/plan/01-init/PLAN.md`.

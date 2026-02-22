@@ -58,10 +58,10 @@ pub struct Env {
 }
 
 /// Type alias for builtin function implementations
-pub type BuiltinFn1 = fn(Rc<Value>, (), Env, Stack) -> StepReturn;
-pub type BuiltinFn2 = fn(Rc<Value>, Rc<Value>, (), Env, Stack) -> StepReturn;
-pub type BuiltinFn3 = fn(Rc<Value>, Rc<Value>, Rc<Value>, (), Env, Stack) -> StepReturn;
-pub type BuiltinFn4 = fn(Rc<Value>, Rc<Value>, Rc<Value>, Rc<Value>, (), Env, Stack) -> StepReturn;
+pub type BuiltinFn1 = fn(&Rc<Value>, (), Env, Stack) -> StepReturn;
+pub type BuiltinFn2 = fn(&Rc<Value>, &Rc<Value>, (), Env, Stack) -> StepReturn;
+pub type BuiltinFn3 = fn(&Rc<Value>, &Rc<Value>, &Rc<Value>, (), Env, Stack) -> StepReturn;
+pub type BuiltinFn4 = fn(&Rc<Value>, &Rc<Value>, &Rc<Value>, &Rc<Value>, (), Env, Stack) -> StepReturn;
 
 /// Built-in function with different arities.
 #[derive(Clone)]
@@ -381,13 +381,13 @@ fn call_builtin(
 ) -> StepReturn {
     match env.builtins.get(&key) {
         Some(func) => match (func, applied.as_slice()) {
-            (Builtin::Arity1(impl_fn), [x]) => impl_fn(x.clone(), meta, env, k),
-            (Builtin::Arity2(impl_fn), [x, y]) => impl_fn(x.clone(), y.clone(), meta, env, k),
+            (Builtin::Arity1(impl_fn), [x]) => impl_fn(x, meta, env, k),
+            (Builtin::Arity2(impl_fn), [x, y]) => impl_fn(x, y, meta, env, k),
             (Builtin::Arity3(impl_fn), [x, y, z]) => {
-                impl_fn(x.clone(), y.clone(), z.clone(), meta, env, k)
+                impl_fn(x, y, z, meta, env, k)
             }
             (Builtin::Arity4(impl_fn), [x, y, z, a]) => {
-                impl_fn(x.clone(), y.clone(), z.clone(), a.clone(), meta, env, k)
+                impl_fn(x, y, z, a, meta, env, k)
             }
             _ => {
                 // Partial application
