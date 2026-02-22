@@ -334,9 +334,11 @@ Drive the same JSON test fixtures used by the Gleam test suite.
 
 ---
 
-## Milestone 7: CLI
+## Milestone 7: CLI ✅
 
-- [ ] In `src/main.rs`, use `clap` to define:
+**Progress**: `progress/CLI_IMPLEMENTATION.md`
+
+- [x] In `src/main.rs`, use `clap` to define:
   ```
   eyg-run <file.json>
   ```
@@ -347,7 +349,7 @@ Drive the same JSON test fixtures used by the Gleam test suite.
       handlers for effects that would otherwise be `UnhandledEffect`.
   - Initial approach: handle no effects (programs that require effects will
     print the unhandled effect info and exit).
-- [ ] Implement a `Display` (or simple `fn to_string`) for `Value` and
+- [x] Implement a `Display` (or simple `fn to_string`) for `Value` and
       `BreakReason` suitable for human-readable CLI output.
-- [ ] Verify the CLI works end-to-end with a simple program from
+- [x] Verify the CLI works end-to-end with a simple program from
       `spec/evaluation/core_suite.json` (e.g., `"integer primitive"` → `42`).

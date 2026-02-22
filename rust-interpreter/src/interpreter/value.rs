@@ -3,6 +3,7 @@
 
 use crate::ir::ast::Node;
 use std::collections::HashMap;
+use std::fmt;
 use std::rc::Rc;
 
 /// Scope is a list of variable bindings (name -> value).
@@ -163,5 +164,48 @@ fn switch_equals(s1: &Switch, s2: &Switch) -> bool {
         (Switch::Resume(_), Switch::Resume(_)) => false, // Contexts are not comparable
         (Switch::Builtin(a), Switch::Builtin(b)) => a == b,
         _ => false,
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Binary(bytes) => {
+                write!(f, "Binary({} bytes)", bytes.len())
+            }
+            Value::Integer(n) => write!(f, "{}", n),
+            Value::Str(s) => write!(f, "\"{}\"", s),
+            Value::LinkedList(items) => {
+                write!(f, "[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
+            Value::Record(fields) => {
+                write!(f, "{{")?;
+                let mut first = true;
+                for (key, value) in fields.iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Tagged { label, value } => {
+                write!(f, "{}({})", label, value)
+            }
+            Value::Closure { param, .. } => {
+                write!(f, "<closure {}>", param)
+            }
+            Value::Partial(switch, args) => {
+                write!(f, "<partial {:?} with {} args>", switch, args.len())
+            }
+        }
     }
 }
