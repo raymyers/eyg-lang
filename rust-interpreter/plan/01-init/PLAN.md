@@ -161,13 +161,15 @@ The metadata type parameter `m` is fixed to `()` for the initial port
 
 ---
 
-## Milestone 3: Core Interpreter
+## Milestone 3: Core Interpreter ✅
+
+**Progress**: `progress/CORE_INTERPRETER.md`
 
 Port `state.gleam` — the stepper, `eval`, and `apply` functions — as the heart
 of the interpreter.  Mirror the CPS structure exactly so the mapping to the
 Gleam source stays obvious.
 
-- [ ] Define `src/interpreter/value.rs` — mirror `value.gleam`:
+- [x] Define `src/interpreter/value.rs` — mirror `value.gleam`:
   ```rust
   pub type Scope = Vec<(String, Rc<Value>)>;
 
@@ -192,41 +194,41 @@ Gleam source stays obvious.
       Builtin(String),
   }
   ```
-- [ ] Define `src/interpreter/break_reason.rs` — mirror `break.gleam`:
+- [x] Define `src/interpreter/break_reason.rs` — mirror `break.gleam`:
   ```rust
   pub enum BreakReason {
-      NotAFunction(Value),
+      NotAFunction(Box<Value>),
       UndefinedVariable(String),
       UndefinedBuiltin(String),
       UndefinedReference(String),
       UndefinedRelease { package: String, release: i64, cid: String },
       Vacant,
-      NoMatch(Value),
-      UnhandledEffect(String, Value),
-      IncorrectTerm { expected: String, got: Value },
+      NoMatch(Box<Value>),
+      UnhandledEffect(String, Box<Value>),
+      IncorrectTerm { expected: String, got: Box<Value> },
       MissingField(String),
   }
   ```
-- [ ] Define `src/interpreter/state.rs`:
+- [x] Define `src/interpreter/state.rs`:
   - `Control` enum: `Expr(Node)` | `Val(Rc<Value>)`
   - `Kontinue` enum: `Arg(Node, Env)` | `Apply(Rc<Value>, Env)` |
     `Assign(String, Node, Env)` | `CallWith(Rc<Value>, Env)` |
     `Delimit { label: String, handler: Rc<Value>, env: Env, shallow: bool }`
   - `Stack` enum: `Frame(Kontinue, (), Box<Stack>)` | `Empty(Handlers)`
-    where `Handlers = HashMap<String, Box<dyn Fn(Rc<Value>) -> StepResult>>`
-  - `Next` enum: `Loop(Control, Env, Stack)` | `Break(EvalResult)`
-  - Implement `fn step(c: Control, env: Env, k: Stack) -> Next`
-  - Implement `fn eval(node: &Node, env: &Env, k: Stack) -> StepReturn`
+    where `Handlers = HashMap<String, Extrinsic>`
+  - `Next` enum: `Loop(Control, Env, Box<Stack>)` | `Break(EvalResult)`
+  - Implement `fn step(c: Control, env: Env, k: Box<Stack>) -> Next`
+  - Implement `fn eval(node: &Node, env: Env, k: Stack) -> StepReturn`
     mapping every `Expr` variant to a `Control`/`Stack` transition.
-  - Implement `fn apply(value: Rc<Value>, env: &Env, k: Kontinue, meta: (),
+  - Implement `fn apply(value: Rc<Value>, env: Env, k: Kontinue, meta: (),
     rest: Stack) -> StepReturn` mapping every `Kontinue` variant.
-  - Implement `fn call(f: Rc<Value>, arg: Rc<Value>, env: Env, k: Stack)
+  - Implement `fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack)
     -> StepReturn` covering `Closure`, `Partial`, and error cases.
   - Implement `fn perform(label, arg, env, k)` and `fn deep(label, handler,
-    exec, env, k)` mirroring the effect dispatch in `state.gleam`.
-- [ ] Implement `src/interpreter/expression.rs`:
+    exec, meta, env, k)` mirroring the effect dispatch in `state.gleam`.
+- [x] Implement `src/interpreter/expression.rs`:
   - `pub fn execute(node: Node, scope: Scope) -> EvalResult`
-  - `pub fn call_fn(f: Rc<Value>, args: Vec<Rc<Value>>) -> EvalResult`
+  - `pub fn call(f: Rc<Value>, args: Vec<(Rc<Value>, ())>) -> EvalResult`
   - `pub fn resume(value: Rc<Value>, env: Env, k: Stack) -> EvalResult`
   - `fn new_env(scope: Scope) -> Env` — builds an `Env` with an empty
     references map and the full builtins table.

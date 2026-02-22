@@ -1,3 +1,73 @@
 // Value casting helpers
-// Placeholder for Milestone 5
+// Mirrors packages/gleam_interpreter/src/eyg/interpreter/cast.gleam
 
+use super::break_reason::BreakReason;
+use super::value::Value;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+/// Cast a value to an integer
+pub fn as_integer(value: &Value) -> Result<i64, BreakReason> {
+    match value {
+        Value::Integer(v) => Ok(*v),
+        _ => Err(BreakReason::IncorrectTerm {
+            expected: "Integer".to_string(),
+            got: Box::new(value.clone()),
+        }),
+    }
+}
+
+/// Cast a value to a string
+pub fn as_string(value: &Value) -> Result<String, BreakReason> {
+    match value {
+        Value::Str(v) => Ok(v.clone()),
+        _ => Err(BreakReason::IncorrectTerm {
+            expected: "String".to_string(),
+            got: Box::new(value.clone()),
+        }),
+    }
+}
+
+/// Cast a value to binary data
+pub fn as_binary(value: &Value) -> Result<Vec<u8>, BreakReason> {
+    match value {
+        Value::Binary(v) => Ok(v.clone()),
+        _ => Err(BreakReason::IncorrectTerm {
+            expected: "Binary".to_string(),
+            got: Box::new(value.clone()),
+        }),
+    }
+}
+
+/// Cast a value to a list
+pub fn as_list(value: &Value) -> Result<Vec<Rc<Value>>, BreakReason> {
+    match value {
+        Value::LinkedList(elements) => Ok(elements.clone()),
+        _ => Err(BreakReason::IncorrectTerm {
+            expected: "List".to_string(),
+            got: Box::new(value.clone()),
+        }),
+    }
+}
+
+/// Cast a value to a record
+pub fn as_record(value: &Value) -> Result<HashMap<String, Rc<Value>>, BreakReason> {
+    match value {
+        Value::Record(fields) => Ok(fields.clone()),
+        _ => Err(BreakReason::IncorrectTerm {
+            expected: "Record".to_string(),
+            got: Box::new(value.clone()),
+        }),
+    }
+}
+
+/// Cast a value to a tagged value
+pub fn as_tagged(value: &Value) -> Result<(String, Rc<Value>), BreakReason> {
+    match value {
+        Value::Tagged { label, value } => Ok((label.clone(), value.clone())),
+        _ => Err(BreakReason::IncorrectTerm {
+            expected: "Tagged".to_string(),
+            got: Box::new(value.clone()),
+        }),
+    }
+}

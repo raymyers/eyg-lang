@@ -1,3 +1,3 @@
 ## Running
 
-npx @augmentcode/auggie -if rust-interpreter/plan/01-init/RALPH.md
+npx @augmentcode/auggie --instruction-file rust-interpreter/plan/01-init/RALPH.md --print
