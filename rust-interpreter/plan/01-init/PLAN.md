@@ -383,7 +383,9 @@ happens on every `let` binding and closure call, making this a hot path.
 
 **Impact**: `Env::extend()` goes from O(n) full clone to O(log n) structural sharing.
 
-### 8.2 Refactor Cast Functions to Return References (High Priority)
+### 8.2 Refactor Cast Functions to Return References ✅
+
+**Progress**: `progress/CAST_REFACTOR.md`
 
 Current cast functions clone inner data unnecessarily:
 ```rust
@@ -394,11 +396,11 @@ pub fn as_record(value: &Value) -> Result<HashMap<String, Rc<Value>>, BreakReaso
 pub fn as_record(value: &Value) -> Result<&HashMap<String, Rc<Value>>, BreakReason>
 ```
 
-- [ ] Change `as_string` to return `Result<&str, BreakReason>`
-- [ ] Change `as_binary` to return `Result<&[u8], BreakReason>`
-- [ ] Change `as_list` to return `Result<&Vec<Rc<Value>>, BreakReason>`
-- [ ] Change `as_record` to return `Result<&HashMap<String, Rc<Value>>, BreakReason>`
-- [ ] Update all call sites in `builtin.rs` and `state.rs` accordingly
+- [x] Change `as_string` to return `Result<&str, BreakReason>`
+- [x] Change `as_binary` to return `Result<&[u8], BreakReason>`
+- [x] Change `as_list` to return `Result<&Vec<Rc<Value>>, BreakReason>`
+- [x] Change `as_record` to return `Result<&HashMap<String, Rc<Value>>, BreakReason>`
+- [x] Update all call sites in `builtin.rs` and `state.rs` accordingly
 
 **Impact**: Eliminates deep clones of strings, byte arrays, lists, and records on every type check.
 

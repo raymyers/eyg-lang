@@ -286,23 +286,25 @@ pub fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack) -> StepR
                 (Switch::Cons, [item]) => {
                     let elements = cast::as_list(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
                     let mut new_list = vec![item.clone()];
-                    new_list.extend(elements);
+                    new_list.extend(elements.iter().cloned());
                     Ok((Control::Val(Rc::new(Value::LinkedList(new_list))), env, k))
                 }
 
                 (Switch::Extend(label), [value]) => {
-                    let mut fields = cast::as_record(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
-                    fields.insert(label.clone(), value.clone());
-                    Ok((Control::Val(Rc::new(Value::Record(fields))), env, k))
+                    let fields = cast::as_record(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
+                    let mut new_fields = fields.clone();
+                    new_fields.insert(label.clone(), value.clone());
+                    Ok((Control::Val(Rc::new(Value::Record(new_fields))), env, k))
                 }
 
                 (Switch::Overwrite(label), [value]) => {
-                    let mut fields = cast::as_record(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
+                    let fields = cast::as_record(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
                     if !fields.contains_key(label) {
                         return Err(wrap_error(BreakReason::MissingField(label.clone()), &env, &k));
                     }
-                    fields.insert(label.clone(), value.clone());
-                    Ok((Control::Val(Rc::new(Value::Record(fields))), env, k))
+                    let mut new_fields = fields.clone();
+                    new_fields.insert(label.clone(), value.clone());
+                    Ok((Control::Val(Rc::new(Value::Record(new_fields))), env, k))
                 }
 
                 (Switch::Select(label), []) => {
@@ -326,8 +328,8 @@ pub fn call(f: Rc<Value>, arg: Rc<Value>, meta: (), env: Env, k: Stack) -> StepR
 
                 (Switch::Match(label), [branch, otherwise]) => {
                     let (l, inner) = cast::as_tagged(arg.as_ref()).map_err(|r| wrap_error(r, &env, &k))?;
-                    if &l == label {
-                        call(branch.clone(), inner, meta, env, k)
+                    if l == label {
+                        call(branch.clone(), inner.clone(), meta, env, k)
                     } else {
                         call(otherwise.clone(), arg, meta, env, k)
                     }

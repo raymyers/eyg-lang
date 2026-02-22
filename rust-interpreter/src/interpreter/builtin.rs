@@ -153,7 +153,7 @@ pub fn string_append(left: Rc<Value>, right: Rc<Value>, _meta: (), env: Env, k: 
     use super::cast;
     let left = cast::as_string(&left).map_err(|r| wrap_error(r, &env, &k))?;
     let right = cast::as_string(&right).map_err(|r| wrap_error(r, &env, &k))?;
-    Ok((Control::Val(Rc::new(Value::Str(format!("{}{}", left, right)))), env, k))
+    Ok((Control::Val(Rc::new(Value::Str(format!("{left}{right}")))), env, k))
 }
 
 /// string_split: Arity2 - split a string by a delimiter
@@ -167,7 +167,7 @@ pub fn string_split(value: Rc<Value>, delimiter: Rc<Value>, _meta: (), env: Env,
         // Split into individual characters
         s.chars().map(|c| c.to_string()).collect()
     } else {
-        s.split(&pattern).map(|s| s.to_string()).collect()
+        s.split(pattern).map(|s| s.to_string()).collect()
     };
 
     // Gleam's string.split always returns at least one element
@@ -194,7 +194,7 @@ pub fn string_split_once(value: Rc<Value>, delimiter: Rc<Value>, _meta: (), env:
     let s = cast::as_string(&value).map_err(|r| wrap_error(r, &env, &k))?;
     let pattern = cast::as_string(&delimiter).map_err(|r| wrap_error(r, &env, &k))?;
 
-    let result = if let Some(pos) = s.find(&pattern) {
+    let result = if let Some(pos) = s.find(pattern) {
         let (pre, post_with_pattern) = s.split_at(pos);
         let post = &post_with_pattern[pattern.len()..];
 
@@ -217,7 +217,7 @@ pub fn string_replace(value: Rc<Value>, pattern: Rc<Value>, replacement: Rc<Valu
     let from = cast::as_string(&pattern).map_err(|r| wrap_error(r, &env, &k))?;
     let to = cast::as_string(&replacement).map_err(|r| wrap_error(r, &env, &k))?;
 
-    Ok((Control::Val(Rc::new(Value::Str(s.replace(&from, &to)))), env, k))
+    Ok((Control::Val(Rc::new(Value::Str(s.replace(from, to)))), env, k))
 }
 
 /// string_uppercase: Arity1 - convert a string to uppercase
@@ -239,7 +239,7 @@ pub fn string_starts_with(value: Rc<Value>, prefix: Rc<Value>, _meta: (), env: E
     use super::cast;
     let s = cast::as_string(&value).map_err(|r| wrap_error(r, &env, &k))?;
     let t = cast::as_string(&prefix).map_err(|r| wrap_error(r, &env, &k))?;
-    let result = super::value::bool_value(s.starts_with(&t));
+    let result = super::value::bool_value(s.starts_with(t));
     Ok((Control::Val(Rc::new(result)), env, k))
 }
 
@@ -248,7 +248,7 @@ pub fn string_ends_with(value: Rc<Value>, suffix: Rc<Value>, _meta: (), env: Env
     use super::cast;
     let s = cast::as_string(&value).map_err(|r| wrap_error(r, &env, &k))?;
     let t = cast::as_string(&suffix).map_err(|r| wrap_error(r, &env, &k))?;
-    let result = super::value::bool_value(s.ends_with(&t));
+    let result = super::value::bool_value(s.ends_with(t));
     Ok((Control::Val(Rc::new(result)), env, k))
 }
 
@@ -266,14 +266,14 @@ pub fn string_length(value: Rc<Value>, _meta: (), env: Env, k: Stack) -> StepRet
 pub fn string_to_binary(value: Rc<Value>, _meta: (), env: Env, k: Stack) -> StepReturn {
     use super::cast;
     let s = cast::as_string(&value).map_err(|r| wrap_error(r, &env, &k))?;
-    Ok((Control::Val(Rc::new(Value::Binary(s.into_bytes()))), env, k))
+    Ok((Control::Val(Rc::new(Value::Binary(s.as_bytes().to_vec()))), env, k))
 }
 
 /// string_from_binary: Arity1 - convert binary to a string
 pub fn string_from_binary(value: Rc<Value>, _meta: (), env: Env, k: Stack) -> StepReturn {
     use super::cast;
     let bytes = cast::as_binary(&value).map_err(|r| wrap_error(r, &env, &k))?;
-    let result = match String::from_utf8(bytes) {
+    let result = match String::from_utf8(bytes.to_vec()) {
         Ok(s) => super::value::ok(Value::Str(s)),
         Err(_) => super::value::error(super::value::unit()),
     };
@@ -333,7 +333,7 @@ pub fn binary_fold(binary: Rc<Value>, state: Rc<Value>, func: Rc<Value>, meta: (
             )),
         );
 
-        super::state::call(func, Rc::new(Value::Integer(byte as i64)), meta, env, new_k)
+        super::state::call(func, Rc::new(Value::Integer(i64::from(byte))), meta, env, new_k)
     }
 }
 
