@@ -33,11 +33,11 @@ fn do_unify(
             (_, _, _, Some(Binding::Bound(resolved))) => {
                 worklist.push((t1, resolved));
             }
-            (Type::Var(i), Some(Binding::Unbound(_)), other, _)
-            | (other, _, Type::Var(i), Some(Binding::Unbound(_))) => {
+            (Type::Var(i), Some(Binding::Unbound(var_level)), other, _)
+            | (other, _, Type::Var(i), Some(Binding::Unbound(var_level))) => {
                 let i = *i;
                 let other = other.clone();
-                occurs_and_levels(i, level, &[&other], bindings)?;
+                occurs_and_levels(i, var_level, &[&other], bindings)?;
                 bindings.bind(i, other);
             }
             (Type::Fun(arg1, eff1, ret1), _, Type::Fun(arg2, eff2, ret2), _) => {

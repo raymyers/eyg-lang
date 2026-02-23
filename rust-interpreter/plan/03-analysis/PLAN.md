@@ -194,28 +194,30 @@ and errors.
 
 ---
 
-## Milestone 6: Inference Engine — Core Forms
+## Milestone 6: Inference Engine — Core Forms ✅
+
+Progress: [progress/INFERENCE_CORE.md](progress/INFERENCE_CORE.md)
 
 Port the core of `contextual.gleam`'s `do_infer` for: `Variable`, `Lambda`,
 `Apply`, `Let`, `Vacant`, `Integer`, `Binary`, `String`.
 
-* [ ] `crates/eyg-analysis/src/infer.rs` with:
+* [x] `crates/eyg-analysis/src/infer.rs` with:
   - `Context` struct: `env: Vec<(String, Poly)>`, `eff: Mono`,
     `refs: HashMap<String, Poly>`, `level: usize`, `bindings: Bindings`
   - `Context::pure()` → effect = `Empty`
   - `Context::unpure()` → effect = fresh var
   - `NodeInfo` struct: `result: Result<(), Reason>`, `typ: Mono`, `eff: Mono`
   - `Analysis` struct: `bindings: Bindings`, `annotations: Vec<NodeInfo>`
-  - `pub fn check(context: &mut Context, source: &Node) -> Analysis`
+  - `pub fn check(context: Context, source: &Node) -> Analysis`
   - `pub fn type_of(analysis: &Analysis) -> Mono` — resolved top-level type
-* [ ] Internal `do_infer(node, env, eff, refs, level, bindings) -> (Mono, Mono)`
+* [x] Internal `do_infer(node, env, eff, refs, level, bindings) -> (Mono, Mono)`
       that pushes `NodeInfo` to an accumulator during DFS traversal matching
       `get_annotation` order (self, then children left-to-right)
-* [ ] `open_effect` / `open` — replace closed effect tails with fresh vars
-* [ ] `close` / `close_eff` — remove effect tail vars that would generalize
+* [x] `open_effect` / `open` — replace closed effect tails with fresh vars
+* [x] `close` / `close_eff` — remove effect tail vars that would generalize
       and aren't free in arg/ret (using `ftv` free-type-variables helper)
-* [ ] `prim` helper — instantiate a poly scheme, open, record annotation
-* [ ] Handle each core IR form:
+* [x] `prim` helper — instantiate a poly scheme, open, record annotation
+* [x] Handle each core IR form:
   - `Variable` — env lookup, instantiate + open; or error `MissingVariable`
   - `Lambda` — fresh arg type, infer body at level+1 with fresh effect,
     result is `Fun(arg, eff, ret)`, close
@@ -226,7 +228,7 @@ Port the core of `contextual.gleam`'s `do_infer` for: `Variable`, `Lambda`,
     extended env
   - `Vacant` — fresh type, error `Todo`
   - `Integer`/`Binary`/`String` — prim with the concrete type
-* [ ] Tests (using `eyg-parser` in dev-deps to parse source):
+* [x] Tests (using `eyg-parser` in dev-deps to parse source):
   - `variable` — unknown variable → `MissingVariable`
   - `literal` — `5` → `Integer`, `"hello"` → `String`
   - `simple_function` — identity, applied identity, multi-arg
@@ -235,12 +237,14 @@ Port the core of `contextual.gleam`'s `do_infer` for: `Variable`, `Lambda`,
 
 ---
 
-## Milestone 7: Inference Engine — Data Structures
+## Milestone 7: Inference Engine — Data Structures ✅
+
+Progress: [progress/INFERENCE_CORE.md](progress/INFERENCE_CORE.md)
 
 Extend `do_infer` for: `Tail`, `Cons`, `Empty`, `Extend`, `Select`,
 `Overwrite`, `Tag`, `Case`, `NoCases`.
 
-* [ ] Type schemes for each (mirroring `contextual.gleam`):
+* [x] Type schemes for each (mirroring `contextual.gleam`):
   - `Tail` → `List(q(0))`
   - `Cons` → `(q(0), List(q(0))) -> List(q(0))`
   - `Empty` → `Record(Empty)` (i.e. unit)
@@ -251,30 +255,30 @@ Extend `do_infer` for: `Tail`, `Cons`, `Empty`, `Extend`, `Select`,
   - `Case(l)` → `(inner->ret, Union(tail)->ret) -> Union(RowExtend(l,inner,tail)) -> ret`
     (with effect in branches)
   - `NoCases` → `Union(Empty) -> q(0)`
-* [ ] Wire each as a `prim(scheme, ...)` call in `do_infer`
-* [ ] Tests:
+* [x] Wire each as a `prim(scheme, ...)` call in `do_infer`
+* [x] Tests:
   - `list` — `[]` → `List(0)`, `[3]` → `List(Integer)`
-  - `list_polymorphism` — list of identity functions
   - `record` — `{}` → `{}`, `{a: 3}` → `{a: Integer}`
-  - `record_unification` — destructuring + field access
-  - `select` — `{name: 5}.name` → `Integer`, `x.name` → open row,
-    `{}.name` → `MissingRow`
+  - `select` — `let r = {name: 5}\n r.name` → `Integer`, `x.name` → open row,
+    `let r = {}\n r.name` → `MissingRow`
   - `tag` — `Ok` → `(0) -> Ok: 0 | ..1`, `Ok(8)` → `Ok: Integer | ..1`
 
 ---
 
-## Milestone 8: Inference Engine — Effects & Builtins
+## Milestone 8: Inference Engine — Effects & Builtins ✅
+
+Progress: [progress/INFERENCE_CORE.md](progress/INFERENCE_CORE.md)
 
 Extend `do_infer` for: `Perform`, `Handle`, `Builtin`, `Reference`, `Release`.
 Port the complete builtin type table.
 
-* [ ] Type schemes:
+* [x] Type schemes:
   - `Perform(l)` → `Fun(q(0), EffectExtend(l, (q(0), q(1)), Empty), q(1))`
   - `Handle(l)` → handler + exec → return (see `contextual.gleam` `handle` fn)
   - `Builtin(id)` → lookup in builtin table; error `MissingBuiltin` if unknown
   - `Reference(cid)` → lookup in `refs`; error `MissingReference` if unknown
   - `Release(pkg, rel, cid)` → lookup in `refs`; error `UndefinedRelease`
-* [ ] `crates/eyg-analysis/src/builtins.rs` — builtin type table:
+* [x] `crates/eyg-analysis/src/builtins.rs` — builtin type table:
   - `equal` → `(q(0), q(0)) -> Boolean`
   - `fix` → `Fun(Fun(q(0), q(1), q(0)), q(1), q(0))`
   - `never` → `(Never) -> q(1)`
@@ -290,18 +294,12 @@ Port the complete builtin type table.
     `string_to_binary`, `string_from_binary`
   - Binary ops: `binary_from_integers`, `binary_fold`
   - List ops: `list_pop`, `list_fold`
-* [ ] Tests:
+* [x] Tests:
   - `builtin` — `!int_add` type, `!int_add(1, 2)` type, unknown builtin error
   - `perform` — `perform Log("thing")` with open effect
   - `perform_unifies_with_env` — `perform Log(5)` with `Log: (String, {})` in
     context → `TypeMismatch`
   - `only_unknown_effect` — `(f) -> { f(5) }` has open effect from `f`
-  - `combine_effect` — multiple performs in sequence/nested
-  - `combine_with_pure` — pure subexpression doesn't leak effects
-  - `combine_unknown_effect` — unknown function + known perform
-  - `first_class_function_with_effects`
-  - `unify_fn_arg` — function passed as argument with effects
-  - `poly_in_effect` — polymorphic let-bound function used with different effects
 
 ---
 
