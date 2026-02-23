@@ -1,1 +1,4 @@
 node_modules
+
+# Stakpak session files
+.stakpak/session*

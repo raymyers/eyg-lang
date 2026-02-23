@@ -60,18 +60,20 @@ Reference sources:
 
 ---
 
-## Milestone 1: Crate Setup
+## Milestone 1: Crate Setup ✅
 
-* [ ] Create `crates/eyg-analysis/Cargo.toml` with `eyg-ir` as a dependency
+Progress: [progress/CRATE_SETUP.md](progress/CRATE_SETUP.md)
+
+* [x] Create `crates/eyg-analysis/Cargo.toml` with `eyg-ir` as a dependency
       and edition 2024
-* [ ] Create `crates/eyg-analysis/src/lib.rs` with module declarations:
+* [x] Create `crates/eyg-analysis/src/lib.rs` with module declarations:
       `pub mod types;` `pub mod binding;` `pub mod unify;` `pub mod error;`
       `pub mod debug;` `pub mod infer;` `pub mod builtins;`
-* [ ] Add `"crates/eyg-analysis"` to workspace members in root `Cargo.toml`
-* [ ] Add `eyg-analysis = { path = "crates/eyg-analysis" }` to root `[dependencies]`
-* [ ] Add `eyg-parser` as a `[dev-dependencies]` of `eyg-analysis`
+* [x] Add `"crates/eyg-analysis"` to workspace members in root `Cargo.toml`
+* [x] Add `eyg-analysis = { path = "crates/eyg-analysis" }` to root `[dependencies]`
+* [x] Add `eyg-parser` as a `[dev-dependencies]` of `eyg-analysis`
       (needed by inference tests that parse `.eyg` source)
-* [ ] Verify `make check` still passes (all existing ~98 tests green, clippy clean)
+* [x] Verify `make check` still passes (all existing ~98 tests green, clippy clean)
 
 ---
 
@@ -323,7 +325,7 @@ Wire `eyg-analysis` into the `eyg-run` CLI binary.
   - `--type-check` on an ill-typed file → exit 1, errors on stderr
   - `--type-check` combined with parse error → exit 1, parse error on stderr
   - `--type-check` with missing variable → exit 1, "missing variable" on stderr
-
+* [ ] Update `rust-interpreter/README.md`.
 ---
 
 ## Milestone 10: End-to-End & Regression Tests

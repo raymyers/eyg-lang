@@ -8,6 +8,16 @@ Using OpenHands in a single-agent ralph loop.
 openhands --headless -f rust-interpreter/plan/03-analysis/RALPH.md --json
 ```
 
+Or with the TUI.
+
+```sh
+openhands --yolo -f rust-interpreter/plan/03-analysis/RALPH.md
+```
+
+```sh
+stakpak --approve-all  --ignore-agents-md --async --prompt-file rust-interpreter/plan/03-analysis/RALPH.md
+```
+
 # Seeding the plan doc
 
 ```md
