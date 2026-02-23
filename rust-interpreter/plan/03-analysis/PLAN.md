@@ -307,11 +307,10 @@ Port the complete builtin type table.
 
 Wire `eyg-analysis` into the `eyg-run` CLI binary.
 
-* [ ] Add `--type-check <FILE>` flag to `Args` struct in `src/main.rs`
-      (mutually exclusive with existing modes)
-* [ ] Detect file extension or content:
-  - `.eyg` → parse source with `eyg_parser::from_string`, then type-check
-  - `.json` / other → deserialize dag-json as `Node`, then type-check
+* [ ] Correct existing args so that file only comes from positional `<FILE>`, the named args that are taking it now should be toggles.
+* [ ] Replace `--parse` args with `--in ir` (default) and `--in eyg` (default), default to interpreting, alternative `--dump-ir`
+* [ ] Add `--type-check` flag to `Args` struct in `src/main.rs`
+      (orthogonal to existing modes)
 * [ ] On success: print the resolved top-level type to stdout (using
       `debug::render_mono`), exit 0
 * [ ] On type errors: print each error (with `debug::render_reason`) to stderr,
