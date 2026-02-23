@@ -76,35 +76,40 @@ Port `packages/gleam_parser/src/eyg/parser/token.gleam` (27 variants).
 
 ---
 
-## Milestone 3: Lexer
+## Milestone 3: Lexer ✅
 
-Port `packages/gleam_parser/src/eyg/parser/lexer.gleam` (313 lines,
-hand-written byte-level scanner).
+* [x] `crates/eyg-parser/src/lexer.rs` — `pub fn lex(source: &str) -> Vec<(Token, usize)>`
+* [x] All single/two-char tokens, comments, whitespace, strings (with escapes), integers
+* [x] Identifiers: lowercase→`Name` (with keyword boundary guard), uppercase→`Uppername`
+* [x] `UnexpectedGrapheme` for unrecognized bytes
+* [x] 13 unit tests mirroring all 8 Gleam lexer tests + extras
 
-* [ ] Create `crates/eyg-parser/src/lexer.rs` with `pub fn lex(source: &str) -> Vec<(Token, usize)>`
-      where `usize` is the byte offset
-* [ ] Scan single-char tokens: `(`, `)`, `{`, `}`, `[`, `]`, `=`, `,`, `:`,
-      `.`, `|`, `!`, `#`, `@`
-* [ ] Scan two-char tokens: `->` (RightArrow), `..` (DotDot)
-* [ ] Scan line comments: `//` through end-of-line → `Comment(String)`
-* [ ] Scan whitespace: spaces → `Space`, `\n`/`\r\n` → `NewLine`
-* [ ] Scan integers: digit sequences, optionally preceded by `-`
-      (negative integer as single token, matching Gleam lexer)
-* [ ] Scan strings: `"..."` with escape sequences (`\"`, `\\`, `\n`),
-      produce `UnterminatedString` on EOF
-* [ ] Scan identifiers: lowercase-start → `Name` or keyword lookup
-      (`let` → `Let`, `match` → `Match`, `perform` → `Perform`,
-       `handle` → `Handle`)
-* [ ] Scan upper identifiers: uppercase-start → `UpperName` (tags)
-* [ ] Produce `UnexpectedGrapheme(ch)` for unrecognized bytes
-* [ ] Data-driven lexer tests in `testdata/lexer_cases.json`:
-  - Empty input
-  - Single integer, negative integer
-  - String with escapes
-  - Identifiers and keywords
-  - Mixed token sequences
-  - Comment handling
-  - Error tokens (unexpected grapheme, unterminated string)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ---
 
