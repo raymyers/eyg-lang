@@ -1,7 +1,7 @@
 Execute these steps.
 
-1. From the unfinished tasks in `rust-interpreter/plan/02-parse/PLAN.md`, choose a logical one to do next.
-2. If a progress file is specified in the task's milestone, study it. Otherwise create one in `rust-interpreter/plan/02-parse/progress/` and reference in the plan file section for that milestone.
+1. From the unfinished tasks in `rust-interpreter/plan/03-analysis/PLAN.md`, choose a logical one to do next.
+2. If a progress file is specified in the task's milestone, study it. Otherwise create one in `rust-interpreter/plan/03-analysis/progress/` and reference in the plan file section for that milestone.
 3. Any pending git changes are from a previous attempt. your choice to finish or reset.
 4. Do ONLY that task, and related automated tests.
 5. Verify (including `cargo test`).
