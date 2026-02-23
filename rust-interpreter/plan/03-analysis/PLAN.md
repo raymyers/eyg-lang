@@ -303,25 +303,27 @@ Port the complete builtin type table.
 
 ---
 
-## Milestone 9: CLI Integration
+## Milestone 9: CLI Integration ✅
+
+Progress: [progress/CLI_INTEGRATION.md](progress/CLI_INTEGRATION.md)
 
 Wire `eyg-analysis` into the `eyg-run` CLI binary.
 
-* [ ] Correct existing args so that file only comes from positional `<FILE>`, the named args that are taking it now should be toggles.
-* [ ] Replace `--parse` args with `--in ir` (default) and `--in eyg` (default), default to interpreting, alternative `--dump-ir`
-* [ ] Add `--type-check` flag to `Args` struct in `src/main.rs`
+* [x] Correct existing args so that file only comes from positional `<FILE>`, the named args that are taking it now should be toggles.
+* [x] Replace `--parse` args with `--in ir` (default) and `--in eyg` (default), default to interpreting, alternative `--dump-ir`
+* [x] Add `--type-check` flag to `Args` struct in `src/main.rs`
       (orthogonal to existing modes)
-* [ ] On success: print the resolved top-level type to stdout (using
+* [x] On success: print the resolved top-level type to stdout (using
       `debug::render_mono`), exit 0
-* [ ] On type errors: print each error (with `debug::render_reason`) to stderr,
+* [x] On type errors: print each error (with `debug::render_reason`) to stderr,
       still print inferred type to stdout, exit 1
-* [ ] Integration tests (in `tests/cli_tests.rs`):
+* [x] Integration tests (in `tests/cli_tests.rs`):
   - `--type-check` on a well-typed `.eyg` file → exit 0, prints type
   - `--type-check` on a well-typed `.json` file → exit 0, prints type
   - `--type-check` on an ill-typed file → exit 1, errors on stderr
   - `--type-check` combined with parse error → exit 1, parse error on stderr
   - `--type-check` with missing variable → exit 1, "missing variable" on stderr
-* [ ] Update `rust-interpreter/README.md`.
+* [x] Update `rust-interpreter/README.md`.
 ---
 
 ## Milestone 10: End-to-End & Regression Tests

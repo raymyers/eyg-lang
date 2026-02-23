@@ -1,4 +1,6 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use eyg_analysis::debug as type_debug;
+use eyg_analysis::infer::{self, Context};
 use rust_interpreter::interpreter::{
     break_reason::BreakReason, expression, value, value_json,
 };
@@ -9,20 +11,33 @@ use std::fs;
 use std::process;
 use std::rc::Rc;
 
+#[derive(ValueEnum, Clone, Debug, Default)]
+enum InputFormat {
+    /// dag-json IR format (default)
+    #[default]
+    Ir,
+    /// EYG source text
+    Eyg,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "eyg-run")]
 #[command(about = "EYG Rust Interpreter - Execute EYG programs", long_about = None)]
 struct Args {
-    /// Path to dag-json file to execute (default mode)
-    file: Option<String>,
+    /// Path to EYG program file
+    file: String,
 
-    /// Parse an .eyg source file and emit dag-json IR to stdout
-    #[arg(long, value_name = "FILE")]
-    parse_ir: Option<String>,
+    /// Input format: ir (dag-json, default) or eyg (source text)
+    #[arg(long = "in", default_value = "ir")]
+    input_format: InputFormat,
 
-    /// Parse an .eyg source file and execute it
-    #[arg(long, value_name = "FILE")]
-    parse_exec: Option<String>,
+    /// Dump parsed IR as dag-json instead of executing
+    #[arg(long)]
+    dump_ir: bool,
+
+    /// Type-check the program and print the inferred type
+    #[arg(long)]
+    type_check: bool,
 
     /// Path to JSON file containing effect handlers
     #[arg(long)]
@@ -132,52 +147,69 @@ fn run(node: Node, effect_handlers: &[EffectHandler]) {
     }
 }
 
-fn main() {
-    let args = Args::parse();
-
-    // Determine mode
-    match (&args.parse_ir, &args.parse_exec, &args.file) {
-        (Some(path), None, None) => {
-            // --parse-ir: parse source, emit dag-json to stdout
-            let node = parse_source(path);
-            match serde_json::to_string(&node) {
-                Ok(json) => println!("{}", json),
-                Err(e) => {
-                    eprintln!("Error serializing to JSON: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-        (None, Some(path), None) => {
-            // --parse-exec: parse source, then execute
-            let node = parse_source(path);
-            let handlers = args
-                .effects
-                .as_deref()
-                .map(load_effects)
-                .unwrap_or_default();
-            run(node, &handlers);
-        }
-        (None, None, Some(path)) => {
-            // Default: read dag-json, execute
+fn load_node(path: &str, format: &InputFormat) -> Node {
+    match format {
+        InputFormat::Eyg => parse_source(path),
+        InputFormat::Ir => {
             let contents = read_file(path);
-            let node: Node = match serde_json::from_str(&contents) {
+            match serde_json::from_str(&contents) {
                 Ok(n) => n,
                 Err(e) => {
                     eprintln!("Error parsing JSON: {}", e);
                     process::exit(1);
                 }
-            };
-            let handlers = args
-                .effects
-                .as_deref()
-                .map(load_effects)
-                .unwrap_or_default();
-            run(node, &handlers);
-        }
-        _ => {
-            eprintln!("Error: Provide exactly one of: <file>, --parse-ir <file>, or --parse-exec <file>");
-            process::exit(1);
+            }
         }
     }
+}
+
+fn type_check(node: &Node) {
+    let context = Context::unpure();
+    let analysis = infer::check(context, node);
+    let top_type = analysis.type_of();
+    let type_str = type_debug::render_mono(&top_type);
+
+    let errors: Vec<_> = analysis
+        .annotations
+        .iter()
+        .filter_map(|info| info.result.as_ref().err())
+        .collect();
+
+    if errors.is_empty() {
+        println!("{}", type_str);
+    } else {
+        for reason in &errors {
+            eprintln!("Type error: {}", type_debug::render_reason(reason));
+        }
+        println!("{}", type_str);
+        process::exit(1);
+    }
+}
+
+fn main() {
+    let args = Args::parse();
+    let node = load_node(&args.file, &args.input_format);
+
+    if args.dump_ir {
+        match serde_json::to_string(&node) {
+            Ok(json) => println!("{}", json),
+            Err(e) => {
+                eprintln!("Error serializing to JSON: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
+
+    if args.type_check {
+        type_check(&node);
+        return;
+    }
+
+    let handlers = args
+        .effects
+        .as_deref()
+        .map(load_effects)
+        .unwrap_or_default();
+    run(node, &handlers);
 }

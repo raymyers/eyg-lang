@@ -1,6 +1,8 @@
 # EYG Rust Interpreter
 
-A Rust port of the EYG interpreter (`packages/gleam_interpreter`). Reads EYG programs serialised as dag-json, executes them using a continuation-passing-style (CPS) evaluator, and prints the result.
+A Rust port of the EYG interpreter and type-checker. Reads EYG programs as
+dag-json IR or `.eyg` source, executes them using a CPS evaluator, and
+optionally type-checks with Algorithm J + levels.
 
 ## Build
 
@@ -11,14 +13,33 @@ cargo build --release
 ## Usage
 
 ```sh
-# Run a program
+# Execute dag-json IR (default)
 eyg-run program.json
 
-# Run with effect handlers
+# Execute EYG source
+eyg-run --in eyg program.eyg
+
+# Parse EYG source and dump dag-json IR
+eyg-run --in eyg --dump-ir program.eyg
+
+# Type-check a program (prints inferred type)
+eyg-run --type-check program.json
+eyg-run --in eyg --type-check program.eyg
+
+# Execute with effect handlers
 eyg-run program.json --effects handlers.json
 ```
 
-The input file is an EYG IR tree encoded as [dag-json](https://ipld.io/specs/codecs/dag-json/). On success the result value is printed to stdout; on error the break reason goes to stderr with exit code 1.
+### Input Formats
+
+- `--in ir` (default): dag-json encoded IR tree
+- `--in eyg`: EYG source text
+
+### Modes
+
+- **Execute** (default): run the program, print result to stdout
+- `--dump-ir`: parse and emit dag-json IR to stdout
+- `--type-check`: infer and print the top-level type; errors go to stderr (exit 1)
 
 ## Development
 

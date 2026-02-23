@@ -2,17 +2,20 @@
 use std::fs;
 use std::process::Command;
 
-// --- --parse-ir tests ---
+fn eyg_run() -> Command {
+    Command::new("./target/debug/eyg-run")
+}
+
+// --- --in eyg --dump-ir tests ---
 
 #[test]
-fn test_parse_ir_integer() {
+fn test_dump_ir_integer() {
     let source = "42";
-    let temp = "/tmp/eyg_test_parse_ir_int.eyg";
+    let temp = "/tmp/eyg_test_dump_ir_int.eyg";
     fs::write(temp, source).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg("--parse-ir")
-        .arg(temp)
+    let output = eyg_run()
+        .args(["--in", "eyg", "--dump-ir", temp])
         .output()
         .expect("Failed to execute");
 
@@ -22,14 +25,13 @@ fn test_parse_ir_integer() {
 }
 
 #[test]
-fn test_parse_ir_let() {
+fn test_dump_ir_let() {
     let source = "let x = 1\nx";
-    let temp = "/tmp/eyg_test_parse_ir_let.eyg";
+    let temp = "/tmp/eyg_test_dump_ir_let.eyg";
     fs::write(temp, source).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg("--parse-ir")
-        .arg(temp)
+    let output = eyg_run()
+        .args(["--in", "eyg", "--dump-ir", temp])
         .output()
         .expect("Failed to execute");
 
@@ -41,14 +43,13 @@ fn test_parse_ir_let() {
 }
 
 #[test]
-fn test_parse_ir_error() {
+fn test_dump_ir_parse_error() {
     let source = "!!bad";
-    let temp = "/tmp/eyg_test_parse_ir_err.eyg";
+    let temp = "/tmp/eyg_test_dump_ir_err.eyg";
     fs::write(temp, source).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg("--parse-ir")
-        .arg(temp)
+    let output = eyg_run()
+        .args(["--in", "eyg", "--dump-ir", temp])
         .output()
         .expect("Failed to execute");
 
@@ -57,17 +58,16 @@ fn test_parse_ir_error() {
     assert!(stderr.contains("Parse error"));
 }
 
-// --- --parse-exec tests ---
+// --- --in eyg (execute) tests ---
 
 #[test]
-fn test_parse_exec_integer() {
+fn test_eyg_exec_integer() {
     let source = "42";
-    let temp = "/tmp/eyg_test_parse_exec_int.eyg";
+    let temp = "/tmp/eyg_test_exec_int.eyg";
     fs::write(temp, source).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg("--parse-exec")
-        .arg(temp)
+    let output = eyg_run()
+        .args(["--in", "eyg", temp])
         .output()
         .expect("Failed to execute");
 
@@ -76,15 +76,14 @@ fn test_parse_exec_integer() {
 }
 
 #[test]
-fn test_parse_exec_lambda() {
+fn test_eyg_exec_lambda() {
     let source = r#"let id = (x) -> { x }
 id(99)"#;
-    let temp = "/tmp/eyg_test_parse_exec_lambda.eyg";
+    let temp = "/tmp/eyg_test_exec_lambda.eyg";
     fs::write(temp, source).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg("--parse-exec")
-        .arg(temp)
+    let output = eyg_run()
+        .args(["--in", "eyg", temp])
         .output()
         .expect("Failed to execute");
 
@@ -95,35 +94,31 @@ id(99)"#;
 // --- Log handler tests ---
 
 #[test]
-fn test_parse_exec_log() {
+fn test_eyg_exec_log() {
     let source = r#"perform Log("hi")"#;
-    let temp = "/tmp/eyg_test_parse_exec_log.eyg";
+    let temp = "/tmp/eyg_test_exec_log.eyg";
     fs::write(temp, source).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg("--parse-exec")
-        .arg(temp)
+    let output = eyg_run()
+        .args(["--in", "eyg", temp])
         .output()
         .expect("Failed to execute");
 
     assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
-    // Log goes to stderr
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("\"hi\""), "stderr was: {}", stderr);
-    // Result is unit
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "{}");
 }
 
 #[test]
-fn test_parse_exec_log_chained() {
+fn test_eyg_exec_log_chained() {
     let source = r#"let _ = perform Log("a")
 perform Log("b")"#;
-    let temp = "/tmp/eyg_test_parse_exec_log_chain.eyg";
+    let temp = "/tmp/eyg_test_exec_log_chain.eyg";
     fs::write(temp, source).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg("--parse-exec")
-        .arg(temp)
+    let output = eyg_run()
+        .args(["--in", "eyg", temp])
         .output()
         .expect("Failed to execute");
 
@@ -139,7 +134,7 @@ fn test_cli_integer() {
     let temp_file = "/tmp/eyg_test_integer.json";
     fs::write(temp_file, json).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
+    let output = eyg_run()
         .arg(temp_file)
         .output()
         .expect("Failed to execute command");
@@ -154,7 +149,7 @@ fn test_cli_string() {
     let temp_file = "/tmp/eyg_test_string.json";
     fs::write(temp_file, json).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
+    let output = eyg_run()
         .arg(temp_file)
         .output()
         .expect("Failed to execute command");
@@ -169,7 +164,7 @@ fn test_cli_error() {
     let temp_file = "/tmp/eyg_test_error.json";
     fs::write(temp_file, json).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
+    let output = eyg_run()
         .arg(temp_file)
         .output()
         .expect("Failed to execute command");
@@ -198,7 +193,7 @@ fn test_cli_lambda_application() {
     let temp_file = "/tmp/eyg_test_lambda.json";
     fs::write(temp_file, json).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
+    let output = eyg_run()
         .arg(temp_file)
         .output()
         .expect("Failed to execute command");
@@ -209,7 +204,7 @@ fn test_cli_lambda_application() {
 
 #[test]
 fn test_cli_file_not_found() {
-    let output = Command::new("./target/debug/eyg-run")
+    let output = eyg_run()
         .arg("/tmp/nonexistent_file.json")
         .output()
         .expect("Failed to execute command");
@@ -224,7 +219,7 @@ fn test_cli_invalid_json() {
     let temp_file = "/tmp/eyg_test_invalid.json";
     fs::write(temp_file, json).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
+    let output = eyg_run()
         .arg(temp_file)
         .output()
         .expect("Failed to execute command");
@@ -289,10 +284,8 @@ fn test_cli_with_effects() {
     fs::write(program_file, program_json).unwrap();
     fs::write(effects_file, effects_json).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
-        .arg(program_file)
-        .arg("--effects")
-        .arg(effects_file)
+    let output = eyg_run()
+        .args([program_file, "--effects", effects_file])
         .output()
         .expect("Failed to execute command");
 
@@ -322,12 +315,126 @@ fn test_cli_unhandled_effect() {
     let program_file = "/tmp/eyg_test_unhandled_effect.json";
     fs::write(program_file, program_json).unwrap();
 
-    let output = Command::new("./target/debug/eyg-run")
+    let output = eyg_run()
         .arg(program_file)
         .output()
         .expect("Failed to execute command");
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Unhandled effect 'Foo'"));
+}
+
+// --- --type-check tests ---
+
+#[test]
+fn test_type_check_well_typed_eyg() {
+    let source = "5";
+    let temp = "/tmp/eyg_test_tc_int.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = eyg_run()
+        .args(["--in", "eyg", "--type-check", temp])
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "Integer");
+}
+
+#[test]
+fn test_type_check_well_typed_json() {
+    let json = r#"{"0":"i","v":42}"#;
+    let temp = "/tmp/eyg_test_tc_int.json";
+    fs::write(temp, json).unwrap();
+
+    let output = eyg_run()
+        .args(["--type-check", temp])
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "Integer");
+}
+
+#[test]
+fn test_type_check_string() {
+    let source = r#""hello""#;
+    let temp = "/tmp/eyg_test_tc_str.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = eyg_run()
+        .args(["--in", "eyg", "--type-check", temp])
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "String");
+}
+
+#[test]
+fn test_type_check_function() {
+    let source = "(x) -> { x }";
+    let temp = "/tmp/eyg_test_tc_fn.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = eyg_run()
+        .args(["--in", "eyg", "--type-check", temp])
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Identity fn: (a) -> a — the var IDs may vary
+    assert!(stdout.contains("->"), "stdout was: {}", stdout);
+}
+
+#[test]
+fn test_type_check_ill_typed() {
+    // Missing variable → type error
+    let source = "x";
+    let temp = "/tmp/eyg_test_tc_err.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = eyg_run()
+        .args(["--in", "eyg", "--type-check", temp])
+        .output()
+        .expect("Failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing variable"), "stderr was: {}", stderr);
+}
+
+#[test]
+fn test_type_check_parse_error() {
+    let source = "!!bad";
+    let temp = "/tmp/eyg_test_tc_parse_err.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = eyg_run()
+        .args(["--in", "eyg", "--type-check", temp])
+        .output()
+        .expect("Failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Parse error"), "stderr was: {}", stderr);
+}
+
+#[test]
+fn test_type_check_vacant() {
+    // Vacant (todo) produces a type error
+    let json = r#"{"0":"z"}"#;
+    let temp = "/tmp/eyg_test_tc_vacant.json";
+    fs::write(temp, json).unwrap();
+
+    let output = eyg_run()
+        .args(["--type-check", temp])
+        .output()
+        .expect("Failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("code incomplete"), "stderr was: {}", stderr);
 }
 
