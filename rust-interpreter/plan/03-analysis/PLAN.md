@@ -77,30 +77,30 @@ Progress: [progress/CRATE_SETUP.md](progress/CRATE_SETUP.md)
 
 ---
 
-## Milestone 2: Type Representation & Error Types
+## Milestone 2: Type Representation & Error Types ✅
 
 Port `type_/isomorphic.gleam` and `type_/binding/error.gleam`.
 
-* [ ] `crates/eyg-analysis/src/types.rs` — `Type<V>` enum with 13 variants:
+* [x] `crates/eyg-analysis/src/types.rs` — `Type<V>` enum with 13 variants:
       `Var(V)`, `Fun(Box<Type<V>>, Box<Type<V>>, Box<Type<V>>)`,
       `Binary`, `Integer`, `String`, `List(Box<Type<V>>)`,
       `Record(Box<Type<V>>)`, `Union(Box<Type<V>>)`, `Empty`,
       `RowExtend(String, Box<Type<V>>, Box<Type<V>>)`,
       `EffectExtend(String, (Box<Type<V>>, Box<Type<V>>), Box<Type<V>>)`,
       `Never`, `Promise(Box<Type<V>>)`
-* [ ] Type aliases: `pub type Mono = Type<usize>;`
+* [x] Type aliases: `pub type Mono = Type<usize>;`
       `pub type Poly = Type<(bool, usize)>;`
-* [ ] Convenience constructors: `Type::unit()` → `Record(Empty)`,
+* [x] Convenience constructors: `Type::unit()` → `Record(Empty)`,
       `Type::boolean()` → `Union(RowExtend("True", unit, RowExtend("False", unit, Empty)))`,
       `Type::result(value, reason)`, `Type::rows(pairs)`, `Type::record(pairs)`,
       `Type::union(pairs)`
-* [ ] `crates/eyg-analysis/src/error.rs` — `Reason` enum with 9 variants:
+* [x] `crates/eyg-analysis/src/error.rs` — `Reason` enum with 9 variants:
       `Todo`, `MissingVariable(String)`, `MissingBuiltin(String)`,
       `MissingReference(String)`, `UndefinedRelease { package, release, identifier }`,
       `TypeMismatch(Mono, Mono)`, `MissingRow(String)`, `Recursive`, `SameTail(Mono, Mono)`
-* [ ] Derive `Debug`, `Clone`, `PartialEq` on both enums
-* [ ] Unit tests: construct each `Type` variant, verify `PartialEq`; construct
-      each `Reason` variant
+* [x] Derive `Debug`, `Clone`, `PartialEq` on both enums
+* [x] Unit tests: construct each `Type` variant, verify `PartialEq`; construct
+      each `Reason` variant (13 tests total)
 
 ---
 
