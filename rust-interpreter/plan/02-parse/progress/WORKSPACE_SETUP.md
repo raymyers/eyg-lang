@@ -1,11 +1,24 @@
-# Milestone 1: Workspace & Crate Setup
+# Milestones 1-6: Workspace, Token, Lexer, Parser, API
 
-## Status: COMPLETE
+## Status: ALL COMPLETE
 
-## What was done
-- Created `crates/eyg-ir` with `ast.rs` and `dag_json.rs` extracted from `src/ir/`
-- Created `crates/eyg-parser` skeleton (empty lib.rs, depends on eyg-ir)
-- Root `Cargo.toml` now has `[workspace]` with both crates as members and path deps
-- `src/ir/mod.rs` re-exports from `eyg_ir` — existing `crate::ir::ast::*` paths still work
-- Old `src/ir/ast.rs` and `src/ir/dag_json.rs` removed (now in eyg-ir crate)
-- All 26 tests pass, clippy clean
+## Milestone 1: Workspace setup
+- Cargo workspace: `crates/eyg-ir`, `crates/eyg-parser`, root crate
+- IR types extracted to `eyg-ir`, root re-exports via `src/ir/mod.rs`
+
+## Milestone 2: Token types
+- `crates/eyg-parser/src/token.rs`: 27+ Token variants matching Gleam
+- `drop_whitespace`, `drop_comments`, `Display`
+
+## Milestone 3: Lexer
+- `crates/eyg-parser/src/lexer.rs`: byte-level scanner, all token types
+- Keyword boundary guard (e.g. `letter` → Name, not Let + `ter`)
+
+## Milestones 4-6: Parser + Public API
+- `crates/eyg-parser/src/parser.rs`: complete recursive-descent parser
+- All expression forms: atoms, lambdas, application, let, records, lists, match
+- Auto-currying, destructuring, field access, spread, open match
+- `from_string()`, `block_from_string()` in `lib.rs`
+- 62 parser tests + 26 existing = 88 total, all pass, clippy clean
+
+## Next: Milestone 7 (CLI Integration)

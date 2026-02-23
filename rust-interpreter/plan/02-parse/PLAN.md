@@ -104,27 +104,29 @@ All implemented together in `crates/eyg-parser/src/parser.rs` + `lib.rs`.
 
 ---
 
-## Milestone 7: CLI Integration
+## Milestone 7: CLI Integration ✅
 
-Add `--parse-ir` and `--parse-exec` flags to `eyg-run`, plus default Log handler.
+Progress: [progress/CLI_INTEGRATION.md](progress/CLI_INTEGRATION.md)
 
-* [ ] Add `--parse-ir <file>` subcommand/flag to `src/main.rs`:
+* [x] Add `--parse-ir <file>` flag to `src/main.rs`:
   - Read source file as UTF-8 string
   - Call `eyg_parser::from_string(source)`
   - Serialize resulting `Node` as dag-json to stdout
   - On parse error: print error with byte offset to stderr, exit 1
-* [ ] Add `--parse-exec <file>` subcommand/flag:
+* [x] Add `--parse-exec <file>` flag:
   - Parse source → `Node`
   - Execute `Node` through the interpreter (same path as JSON execution)
   - On parse error: stderr + exit 1
-* [ ] Add built-in `Log` extrinsic effect handler:
+* [x] Add built-in `Log` extrinsic effect handler:
   - When an `UnhandledEffect("Log", value)` bubbles to the stack base,
     print the lifted value to stderr (matching convention: Log goes to stderr)
   - Resume with unit (`Value::Record(empty)`)
-  - Wire as a default extrinsic in `expression::execute` or in the CLI main loop
-* [ ] Verify `eyg-run --parse-exec hello.eyg` with a file containing
+  - Wired in the CLI `run()` function as a loop after explicit handlers
+* [x] Verify `eyg-run --parse-exec hello.eyg` with a file containing
       `perform Log("Hello, World!")` prints to stderr and exits 0
-* [ ] Verify `eyg-run --parse-ir hello.eyg` outputs the expected dag-json
+* [x] Verify `eyg-run --parse-ir hello.eyg` outputs the expected dag-json
+* [x] Added dag-json `serialize_with` for Binary, Reference, Release fields
+* [x] 7 new CLI integration tests (15 total CLI tests, 95 total)
 
 ---
 

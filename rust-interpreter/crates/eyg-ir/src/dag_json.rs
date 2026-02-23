@@ -1,8 +1,8 @@
-// dag-json serde Deserialize implementations
+// dag-json serde implementations
 // Handles special dag-json encodings for binary data and CID links
 
 use base64::{engine::general_purpose, Engine as _};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
 /// Deserialize dag-json binary encoding: {"/":{bytes":"<base64url>"}}
@@ -55,3 +55,23 @@ where
     Err(serde::de::Error::custom("Expected dag-json CID link"))
 }
 
+/// Serialize bytes as dag-json binary: {"/":{"bytes":"<base64url>"}}
+pub fn serialize_dag_binary<S>(value: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde_json::json;
+    let encoded = general_purpose::URL_SAFE_NO_PAD.encode(value);
+    let dag = json!({"/": {"bytes": encoded}});
+    dag.serialize(serializer)
+}
+
+/// Serialize a CID string as dag-json link: {"/":"<cid>"}
+pub fn serialize_dag_cid<S>(value: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde_json::json;
+    let dag = json!({"/": value});
+    dag.serialize(serializer)
+}

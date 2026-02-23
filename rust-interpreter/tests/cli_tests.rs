@@ -2,6 +2,137 @@
 use std::fs;
 use std::process::Command;
 
+// --- --parse-ir tests ---
+
+#[test]
+fn test_parse_ir_integer() {
+    let source = "42";
+    let temp = "/tmp/eyg_test_parse_ir_int.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = Command::new("./target/debug/eyg-run")
+        .arg("--parse-ir")
+        .arg(temp)
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), r#"{"0":"i","v":42}"#);
+}
+
+#[test]
+fn test_parse_ir_let() {
+    let source = "let x = 1\nx";
+    let temp = "/tmp/eyg_test_parse_ir_let.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = Command::new("./target/debug/eyg-run")
+        .arg("--parse-ir")
+        .arg(temp)
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(parsed["0"], "l");
+    assert_eq!(parsed["l"], "x");
+}
+
+#[test]
+fn test_parse_ir_error() {
+    let source = "!!bad";
+    let temp = "/tmp/eyg_test_parse_ir_err.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = Command::new("./target/debug/eyg-run")
+        .arg("--parse-ir")
+        .arg(temp)
+        .output()
+        .expect("Failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Parse error"));
+}
+
+// --- --parse-exec tests ---
+
+#[test]
+fn test_parse_exec_integer() {
+    let source = "42";
+    let temp = "/tmp/eyg_test_parse_exec_int.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = Command::new("./target/debug/eyg-run")
+        .arg("--parse-exec")
+        .arg(temp)
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}
+
+#[test]
+fn test_parse_exec_lambda() {
+    let source = r#"let id = (x) -> { x }
+id(99)"#;
+    let temp = "/tmp/eyg_test_parse_exec_lambda.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = Command::new("./target/debug/eyg-run")
+        .arg("--parse-exec")
+        .arg(temp)
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "99");
+}
+
+// --- Log handler tests ---
+
+#[test]
+fn test_parse_exec_log() {
+    let source = r#"perform Log("hi")"#;
+    let temp = "/tmp/eyg_test_parse_exec_log.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = Command::new("./target/debug/eyg-run")
+        .arg("--parse-exec")
+        .arg(temp)
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    // Log goes to stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("\"hi\""), "stderr was: {}", stderr);
+    // Result is unit
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "{}");
+}
+
+#[test]
+fn test_parse_exec_log_chained() {
+    let source = r#"let _ = perform Log("a")
+perform Log("b")"#;
+    let temp = "/tmp/eyg_test_parse_exec_log_chain.eyg";
+    fs::write(temp, source).unwrap();
+
+    let output = Command::new("./target/debug/eyg-run")
+        .arg("--parse-exec")
+        .arg(temp)
+        .output()
+        .expect("Failed to execute");
+
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("\"a\""), "stderr was: {}", stderr);
+    assert!(stderr.contains("\"b\""), "stderr was: {}", stderr);
+}
+
 #[test]
 fn test_cli_integer() {
     let json = r#"{"0":"i","v":42}"#;

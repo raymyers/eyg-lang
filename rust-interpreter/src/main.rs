@@ -1,5 +1,7 @@
 use clap::Parser;
-use rust_interpreter::interpreter::{break_reason::BreakReason, expression, value_json};
+use rust_interpreter::interpreter::{
+    break_reason::BreakReason, expression, value, value_json,
+};
 use rust_interpreter::ir::ast::Node;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -9,10 +11,18 @@ use std::rc::Rc;
 
 #[derive(Parser, Debug)]
 #[command(name = "eyg-run")]
-#[command(about = "EYG Rust Interpreter - Execute EYG programs from dag-json files", long_about = None)]
+#[command(about = "EYG Rust Interpreter - Execute EYG programs", long_about = None)]
 struct Args {
-    /// Path to the JSON file containing the EYG program
-    file: String,
+    /// Path to dag-json file to execute (default mode)
+    file: Option<String>,
+
+    /// Parse an .eyg source file and emit dag-json IR to stdout
+    #[arg(long, value_name = "FILE")]
+    parse_ir: Option<String>,
+
+    /// Parse an .eyg source file and execute it
+    #[arg(long, value_name = "FILE")]
+    parse_exec: Option<String>,
 
     /// Path to JSON file containing effect handlers
     #[arg(long)]
@@ -22,63 +32,54 @@ struct Args {
 #[derive(Debug, Deserialize)]
 struct EffectHandler {
     label: String,
-    #[allow(dead_code)] // Reserved for future validation of lift values
+    #[allow(dead_code)]
     lift: JsonValue,
     reply: JsonValue,
 }
 
-fn main() {
-    let args = Args::parse();
-
-    // Read the program file
-    let contents = match fs::read_to_string(&args.file) {
+fn read_file(path: &str) -> String {
+    match fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error reading file '{}': {}", args.file, e);
+            eprintln!("Error reading file '{}': {}", path, e);
             process::exit(1);
         }
-    };
+    }
+}
 
-    // Parse the JSON into a Node
-    let node: Node = match serde_json::from_str(&contents) {
-        Ok(n) => n,
+fn parse_source(path: &str) -> Node {
+    let source = read_file(path);
+    match eyg_parser::from_string(&source) {
+        Ok(node) => node,
         Err(e) => {
-            eprintln!("Error parsing JSON: {}", e);
+            eprintln!("Parse error: {}", e);
             process::exit(1);
         }
-    };
+    }
+}
 
-    // Load effect handlers if provided
-    let effect_handlers: Vec<EffectHandler> = if let Some(effects_file) = &args.effects {
-        let effects_contents = match fs::read_to_string(effects_file) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("Error reading effects file '{}': {}", effects_file, e);
-                process::exit(1);
-            }
-        };
-        match serde_json::from_str(&effects_contents) {
-            Ok(h) => h,
-            Err(e) => {
-                eprintln!("Error parsing effects JSON: {}", e);
-                process::exit(1);
-            }
+fn load_effects(path: &str) -> Vec<EffectHandler> {
+    let contents = read_file(path);
+    match serde_json::from_str(&contents) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("Error parsing effects JSON: {}", e);
+            process::exit(1);
         }
-    } else {
-        vec![]
-    };
+    }
+}
 
-    // Execute the program
+/// Execute a node, handling Log effects automatically and explicit effect handlers.
+fn run(node: Node, effect_handlers: &[EffectHandler]) {
     let mut result = expression::execute(node, im::Vector::new());
 
-    // Handle effects
-    for handler in &effect_handlers {
+    // Handle explicit effect handlers first
+    for handler in effect_handlers {
         match &result {
             Err(debug) => {
                 let (reason, _meta, env, stack) = &**debug;
                 match reason {
                     BreakReason::UnhandledEffect(label, _lift_value) => {
-                        // Verify the effect label matches
                         if label != &handler.label {
                             eprintln!(
                                 "Error: Expected effect '{}', but got '{}'",
@@ -86,11 +87,6 @@ fn main() {
                             );
                             process::exit(1);
                         }
-
-                        // Optionally verify the lift value matches expected
-                        // (for now we just accept any lift value and use the handler's reply)
-
-                        // Resume with the reply value
                         let reply = Rc::new(value_json::deserialize_value(&handler.reply));
                         result = expression::resume(reply, env.clone(), stack.clone());
                     }
@@ -110,15 +106,77 @@ fn main() {
         }
     }
 
-    // Final result
+    // Handle Log effects in a loop (built-in extrinsic)
+    while let Err(debug) = &result {
+        let (reason, _meta, env, stack) = &**debug;
+        if let BreakReason::UnhandledEffect(label, lift_value) = reason
+            && label == "Log"
+        {
+            eprintln!("{}", lift_value);
+            let reply = Rc::new(value::unit());
+            result = expression::resume(reply, env.clone(), stack.clone());
+        } else {
+            break;
+        }
+    }
+
     match result {
-        Ok(value) => {
-            println!("{}", value);
+        Ok(val) => {
+            println!("{}", val);
         }
         Err(debug) => {
-            // Debug is Box<(BreakReason, (), Env, Stack)>
             let (reason, _, _, _) = *debug;
             eprintln!("Error: {}", reason);
+            process::exit(1);
+        }
+    }
+}
+
+fn main() {
+    let args = Args::parse();
+
+    // Determine mode
+    match (&args.parse_ir, &args.parse_exec, &args.file) {
+        (Some(path), None, None) => {
+            // --parse-ir: parse source, emit dag-json to stdout
+            let node = parse_source(path);
+            match serde_json::to_string(&node) {
+                Ok(json) => println!("{}", json),
+                Err(e) => {
+                    eprintln!("Error serializing to JSON: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
+        (None, Some(path), None) => {
+            // --parse-exec: parse source, then execute
+            let node = parse_source(path);
+            let handlers = args
+                .effects
+                .as_deref()
+                .map(load_effects)
+                .unwrap_or_default();
+            run(node, &handlers);
+        }
+        (None, None, Some(path)) => {
+            // Default: read dag-json, execute
+            let contents = read_file(path);
+            let node: Node = match serde_json::from_str(&contents) {
+                Ok(n) => n,
+                Err(e) => {
+                    eprintln!("Error parsing JSON: {}", e);
+                    process::exit(1);
+                }
+            };
+            let handlers = args
+                .effects
+                .as_deref()
+                .map(load_effects)
+                .unwrap_or_default();
+            run(node, &handlers);
+        }
+        _ => {
+            eprintln!("Error: Provide exactly one of: <file>, --parse-ir <file>, or --parse-exec <file>");
             process::exit(1);
         }
     }
