@@ -62,24 +62,17 @@ Progress: [progress/WORKSPACE_SETUP.md](progress/WORKSPACE_SETUP.md)
 
 ---
 
-## Milestone 2: Token Types
+## Milestone 2: Token Types ✅
 
 Port `packages/gleam_parser/src/eyg/parser/token.gleam` (27 variants).
 
-* [ ] Create `crates/eyg-parser/src/token.rs` with a `Token` enum:
-  - Literals: `Integer(i64)`, `String(String)`, `Name(String)`,
-    `UpperName(String)` (tags)
-  - Keywords: `Let`, `Match`, `Perform`, `Handle`
-  - Structural: `LeftParen`, `RightParen`, `LeftBrace`, `RightBrace`,
-    `LeftSquare`, `RightSquare`
-  - Operators: `Equal`, `Comma`, `Colon`, `Dot`, `DotDot`, `RightArrow`,
-    `Pipe`, `Bang`, `Hash`, `At`
-  - Whitespace/Comments: `Space`, `NewLine`, `Comment(String)`
-  - Errors: `UnexpectedGrapheme(String)`, `UnterminatedString`
-* [ ] Implement `drop_whitespace` — filter `Space` and `NewLine` tokens
-* [ ] Implement `drop_comments` — filter `Comment` tokens
-* [ ] Implement `Display` for `Token` (for error messages)
-* [ ] Unit tests for `drop_whitespace` and `drop_comments`
+* [x] Create `crates/eyg-parser/src/token.rs` with a `Token` enum
+      (follows Gleam source: `Whitespace(String)`, `Integer(String)`, `Minus`, `Deep`, `Bar`, etc.)
+* [x] Implement `drop_whitespace` — filter `Whitespace` tokens
+* [x] Implement `drop_comments` — filter `Comment` tokens
+* [x] Implement `Display` for `Token` (for error messages)
+* [x] Unit tests for `drop_whitespace`, `drop_comments`, and `Display`
+* [x] Updated Makefile to use `--workspace` for test and clippy
 
 ---
 
