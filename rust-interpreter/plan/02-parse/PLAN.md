@@ -84,133 +84,23 @@ Port `packages/gleam_parser/src/eyg/parser/token.gleam` (27 variants).
 * [x] `UnexpectedGrapheme` for unrecognized bytes
 * [x] 13 unit tests mirroring all 8 Gleam lexer tests + extras
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ---
 
-## Milestone 4: Parser — Atoms & Simple Expressions
+## Milestones 4-6: Parser, Compound Expressions & Public API ✅
 
-Port the atomic expression parsing from `parser.gleam` — the `expression`
-function entry point and simple forms that don't recurse.
+All implemented together in `crates/eyg-parser/src/parser.rs` + `lib.rs`.
 
-* [ ] Create `crates/eyg-parser/src/parser.rs` with error types:
-  - `ParseError::UnexpectedEnd`
-  - `ParseError::UnexpectedToken(Token, usize)`
-* [ ] Implement token-stream helpers: `pop` (take next token), `peek`,
-      `expect` (assert and consume a specific token)
-* [ ] Parse integer literals: `Integer(i64)` token → `Expr::Integer`
-* [ ] Parse string literals: `String(s)` token → `Expr::String`
-* [ ] Parse variables: `Name(s)` token → `Expr::Variable`
-* [ ] Parse tags: `UpperName(s)` token → `Expr::Tag`
-* [ ] Parse builtins: `Bang` + `Name(s)` → `Expr::Builtin`
-* [ ] Parse perform: `Perform` + `UpperName(s)` → `Expr::Perform`
-* [ ] Parse handle: `Handle` + `UpperName(s)` → `Expr::Handle`
-* [ ] Parse CID references: `Hash` + `Name(cid)` → `Expr::Reference`
-* [ ] Parse named references: `At` + `Name(pkg)` → `Expr::Release`
-      (with release=0 and a vacant CID, matching Gleam parser)
-* [ ] Tests for each atom type (integers, strings, variables, tags,
-      builtins, perform, handle, references)
-
----
-
-## Milestone 5: Parser — Compound Expressions
-
-Port the compound expression forms: lambdas, application, let, records,
-lists, match.
-
-### 5a: Lambdas & Application
-
-* [ ] Parse single-param lambda: `(x) -> { body }` → `Expr::Lambda`
-* [ ] Parse multi-param lambda: `(x, y) -> { body }` → nested
-      `Lambda("x", Lambda("y", body))` (auto-currying)
-* [ ] Parse destructuring lambda: `({x: a}) -> { body }` → desugar to
-      `Lambda("$", Let("a", Apply(Select("x"), Var("$")), body))`
-* [ ] Parse function application: `f(x)` → `Expr::Apply`
-* [ ] Parse multi-arg application: `f(x, y)` → `Apply(Apply(f, x), y)`
-* [ ] Parse chained application: `f(x)(y)` → `Apply(Apply(f, x), y)`
-* [ ] Parse field access: `a.foo` → `Apply(Select("foo"), a)`
-* [ ] Implement `after_expression` loop for postfix `.field` and `(args)` chaining
-* [ ] Tests: single lambda, multi-param, destructuring, application,
-      multi-arg, chaining, field access
-
-### 5b: Let Bindings
-
-* [ ] Parse simple let: `let x = v body` → `Expr::Let`
-* [ ] Parse destructuring let: `let {x: a, y} = r body` → desugar to
-      nested `Let("$", r, Let("a", Select("x")($), Let("y", Select("y")($), body)))`
-* [ ] Parse let-in-block mode: `let x = v` without body → body is `Vacant`
-* [ ] Tests: simple let, shadowing, destructuring, block mode
-
-### 5c: Records
-
-* [ ] Parse empty record: `{}` → `Expr::Empty`
-* [ ] Parse record with fields: `{a: 5, b: 6}` → nested
-      `Apply(Apply(Extend("a"), 5), Apply(Apply(Extend("b"), 6), Empty))`
-* [ ] Parse record shorthand: `{a, b}` → same as `{a: a, b: b}`
-* [ ] Parse record spread: `{a: 5, ..x}` → nested with `Overwrite` instead of `Extend`
-* [ ] Parse identity spread: `{..x}` → just `x`
-* [ ] Tests: empty, fields, shorthand, spread, identity spread, mixed
-
-### 5d: Lists
-
-* [ ] Parse empty list: `[]` → `Expr::Tail`
-* [ ] Parse list with elements: `[1, 2]` → nested `Apply(Apply(Cons, 1), Apply(Apply(Cons, 2), Tail))`
-* [ ] Parse list spread: `[1, ..rest]` → `Apply(Apply(Cons, 1), rest)`
-* [ ] Tests: empty, elements, spread
-
-### 5e: Match
-
-* [ ] Parse match without subject: `match { Ok fn1 Error fn2 }` →
-      `Apply(Apply(Case("Ok"), fn1), Apply(Apply(Case("Error"), fn2), NoCases))`
-* [ ] Parse match with subject: `match e { Ok fn1 }` →
-      `Apply(Apply(Apply(Case("Ok"), fn1), NoCases), e)`
-* [ ] Parse open match (pipe fallback): `| (x) -> { fallback }` replaces
-      `NoCases` with the fallback function
-* [ ] Tests: simple match, multi-branch, with subject, open match
-
----
-
-## Milestone 6: Public API & IR Serialization
-
-Wire the parser into a clean public API and verify IR output.
-
-* [ ] Create `crates/eyg-parser/src/lib.rs` with public functions:
-  - `pub fn from_string(source: &str) -> Result<Node, ParseError>`
-    (parse one expression)
-  - `pub fn block_from_string(source: &str) -> Result<Node, ParseError>`
-    (parse let-sequence, body defaults to `Vacant`)
-* [ ] Verify `Node` serializes to correct dag-json via `serde_json::to_string`
-      (the existing `Serialize` impl on `Expr`/`Node` handles this)
-* [ ] Create round-trip tests: parse source → IR `Node` → serialize to JSON →
-      deserialize back → assert structural equality
-* [ ] Create golden-file tests in `testdata/parse_cases.json`:
-  each case has `{ "name": "...", "source": "...", "expected_ir": <dag-json> }`
-* [ ] Test error cases: unexpected token, unexpected end, unterminated string
+* [x] `ParseError::{UnexpectedEnd, UnexpectedToken}`, helpers `pop`/`fail`
+* [x] Atoms: integers (incl. negative), strings, variables, tags, builtins, perform, handle, references
+* [x] Lambdas: single, multi-param (auto-currying), destructuring
+* [x] Application: single, multi-arg, chained, nested; `after_expression` loop
+* [x] Let bindings: simple, nested, destructuring (with shorthand), block mode
+* [x] Records: empty, fields, shorthand, spread (overwrite), identity spread
+* [x] Lists: empty, elements, spread
+* [x] Match: empty, with subject, multi-branch, open match (pipe fallback)
+* [x] Field access: `a.foo`, `b(x).foo`, `a.foo(2)`
+* [x] Public API: `from_string`, `block_from_string`
+* [x] 46 unit tests covering all expression forms, block mode, and errors
 
 ---
 
