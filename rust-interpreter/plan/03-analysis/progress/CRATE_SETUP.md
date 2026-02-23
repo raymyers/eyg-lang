@@ -1,12 +1,23 @@
-# Milestone 1: Crate Setup — Complete
+# Milestones 1-4: Crate Setup through Unification — Complete
 
-Created `crates/eyg-analysis` with:
-- `Cargo.toml`: depends on `eyg-ir`, dev-depends on `eyg-parser`
-- `src/lib.rs`: module declarations for `types`, `binding`, `unify`, `error`, `debug`, `infer`, `builtins`
-- Stub `.rs` files for each module (empty/comment-only so it compiles)
+## Milestone 1: Crate Setup ✅
+Created `crates/eyg-analysis` with all module stubs. Added to workspace.
 
-Workspace updated:
-- Added `"crates/eyg-analysis"` to `[workspace].members`
-- Added `eyg-analysis = { path = "crates/eyg-analysis" }` to root `[dependencies]`
+## Milestone 2: Types & Errors ✅
+- `types.rs`: `Type<V>` enum with 13 variants, `Mono`/`Poly` aliases, convenience constructors
+- `error.rs`: `Reason` enum with 9 variants
 
-Verified: `make check` passes — 98 tests green, clippy clean.
+## Milestone 3: Bindings ✅
+- `binding.rs`: `Bindings` store, `resolve`, `generalize` (renamed from `gen` — reserved keyword in Rust 2024), `instantiate`
+
+## Milestone 4: Unification ✅
+- `unify.rs`: worklist-based unification, `rewrite_row`, `rewrite_effect`, `occurs_and_levels`
+
+## Current State
+142 tests total, clippy clean. Remaining stub modules: `debug.rs`, `infer.rs`, `builtins.rs`.
+
+## Next Steps
+- Milestone 5: Debug/Display — pretty-printing types and errors
+- Milestone 6: Inference engine core forms (Variable, Lambda, Apply, Let, literals)
+- Milestone 7: Data structure forms (records, lists, unions, match)
+- Milestone 8: Effects & builtins (Perform, Handle, Builtin table)
