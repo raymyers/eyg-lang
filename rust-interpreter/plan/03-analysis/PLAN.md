@@ -165,30 +165,32 @@ rewriting.
 
 ---
 
-## Milestone 5: Debug / Display
+## Milestone 5: Debug / Display ✅
+
+Progress: [progress/DEBUG_DISPLAY.md](progress/DEBUG_DISPLAY.md)
 
 Port `type_/binding/debug.gleam` — human-readable rendering of types, effects,
 and errors.
 
-* [ ] `crates/eyg-analysis/src/debug.rs` with:
+* [x] `crates/eyg-analysis/src/debug.rs` with:
   - `pub fn render_mono(type_: &Mono) -> String`
   - `pub fn render_effects(eff: &Mono) -> String`
   - `pub fn render_reason(reason: &Reason) -> String`
-* [ ] Function rendering: multi-arg functions collapse
+* [x] Function rendering: multi-arg functions collapse
       `Fun(a, e1, Fun(b, e2, ret))` → `(a, b) -> ret`, with `<effect>` after
       each arg if effect is non-Empty
-* [ ] Row rendering: `RowExtend("x", T, tail)` → `x: T, ...` with `..N` for
+* [x] Row rendering: `RowExtend("x", T, tail)` → `x: T, ...` with `..N` for
       open tails
-* [ ] Effect rendering: `EffectExtend("Log", (String, Unit), tail)` →
+* [x] Effect rendering: `EffectExtend("Log", (String, Unit), tail)` →
       `Log(↑String ↓{})`, comma-separated, `..N` for open tails
-* [ ] Tests mirroring `debug_test.gleam`:
+* [x] Tests mirroring `debug_test.gleam`:
   - `pure_function` → `"(Integer) -> String"`
   - `multiple_argument_function` → `"(Integer, Integer) -> String"`
   - `open_function` → `"(Integer <..1>) -> String"`
   - `closed_effectful_function` → `"(Integer <Abort(↑String ↓{}), Count(↑{} ↓Integer)>) -> String"`
   - `open_effectful_function` → `"(Integer <Abort(↑String ↓{}), ..2>) -> String"`
   - `polymorphic_effect` → `"((String <..0>) -> String, Integer <..0>) -> String"`
-* [ ] Implement `Display` for `Reason` via `render_reason`
+* [x] Implement `Display` for `Reason` via `render_reason`
 
 ---
 
