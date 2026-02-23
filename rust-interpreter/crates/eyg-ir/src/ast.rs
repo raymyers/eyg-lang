@@ -81,7 +81,7 @@ pub enum Expr {
     #[serde(rename = "x")]
     Binary {
         #[serde(rename = "v")]
-        #[serde(deserialize_with = "crate::ir::dag_json::deserialize_dag_binary")]
+        #[serde(deserialize_with = "crate::dag_json::deserialize_dag_binary")]
         value: Vec<u8>,
     },
 
@@ -179,7 +179,7 @@ pub enum Expr {
     #[serde(rename = "#")]
     Reference {
         #[serde(rename = "l")]
-        #[serde(deserialize_with = "crate::ir::dag_json::deserialize_dag_cid")]
+        #[serde(deserialize_with = "crate::dag_json::deserialize_dag_cid")]
         identifier: String,
     },
 
@@ -191,7 +191,7 @@ pub enum Expr {
         #[serde(rename = "r")]
         release: i64,
         #[serde(rename = "l")]
-        #[serde(deserialize_with = "crate::ir::dag_json::deserialize_dag_cid")]
+        #[serde(deserialize_with = "crate::dag_json::deserialize_dag_cid")]
         identifier: String,
     },
 }

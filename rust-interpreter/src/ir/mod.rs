@@ -1,6 +1,5 @@
-// IR module - re-exports
-pub mod ast;
-pub mod dag_json;
-
-pub use ast::{Expr, Node};
+// IR module - re-exports from eyg-ir crate
+pub use eyg_ir::ast;
+pub use eyg_ir::dag_json;
+pub use eyg_ir::{Expr, Node};
 

@@ -43,20 +43,22 @@ Reference sources:
 
 ---
 
-## Milestone 1: Workspace & Crate Setup
+## Milestone 1: Workspace & Crate Setup ✅
 
-* [ ] Convert `rust-interpreter/` to a Cargo workspace with members:
+Progress: [progress/WORKSPACE_SETUP.md](progress/WORKSPACE_SETUP.md)
+
+* [x] Convert `rust-interpreter/` to a Cargo workspace with members:
   - `crates/eyg-ir` — shared IR types (extracted from current `src/ir/`)
   - `crates/eyg-parser` — new parser crate
   - root crate — CLI binary (`eyg-run`) + interpreter lib
-* [ ] Move `src/ir/ast.rs`, `src/ir/dag_json.rs`, `src/ir/mod.rs` into
+* [x] Move `src/ir/ast.rs`, `src/ir/dag_json.rs`, `src/ir/mod.rs` into
       `crates/eyg-ir/src/` and update `pub use` paths
-* [ ] Root `Cargo.toml` gains `[workspace]` section and `eyg-ir` + `eyg-parser`
+* [x] Root `Cargo.toml` gains `[workspace]` section and `eyg-ir` + `eyg-parser`
       as path dependencies
-* [ ] `crates/eyg-parser/Cargo.toml` depends on `eyg-ir`
-* [ ] Root crate depends on `eyg-ir` (for `Node`, `Expr`) and `eyg-parser`
-* [ ] Verify `make check` still passes — all 26 existing tests green, clippy clean
-* [ ] Update import paths in `src/main.rs`, `src/interpreter/`, and `tests/`
+* [x] `crates/eyg-parser/Cargo.toml` depends on `eyg-ir`
+* [x] Root crate depends on `eyg-ir` (for `Node`, `Expr`) and `eyg-parser`
+* [x] Verify `make check` still passes — all 26 existing tests green, clippy clean
+* [x] Update import paths in `src/main.rs`, `src/interpreter/`, and `tests/`
 
 ---
 

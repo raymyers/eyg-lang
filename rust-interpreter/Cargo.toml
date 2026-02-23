@@ -1,3 +1,6 @@
+[workspace]
+members = ["crates/eyg-ir", "crates/eyg-parser"]
+
 [package]
 name = "rust-interpreter"
 version = "0.1.0"
@@ -8,6 +11,8 @@ name = "eyg-run"
 path = "src/main.rs"
 
 [dependencies]
+eyg-ir = { path = "crates/eyg-ir" }
+eyg-parser = { path = "crates/eyg-parser" }
 base64 = "0.22.1"
 clap = { version = "4.5.60", features = ["derive"] }
 im = "15.1.0"
