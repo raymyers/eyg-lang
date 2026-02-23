@@ -129,14 +129,14 @@ Port `type_/binding.gleam` — the type variable store and poly/mono operations.
 
 ---
 
-## Milestone 4: Unification
+## Milestone 4: Unification ✅
 
 Port `type_/binding/unify.gleam` — worklist-based unification with row
 rewriting.
 
-* [ ] `crates/eyg-analysis/src/unify.rs` —
+* [x] `crates/eyg-analysis/src/unify.rs` —
       `pub fn unify(t1: &Mono, t2: &Mono, level: usize, bindings: &mut Bindings) -> Result<(), Reason>`
-* [ ] Worklist-based `do_unify` (iterative loop over pairs to unify):
+* [x] Worklist-based `do_unify` (iterative loop over pairs to unify):
   - Same `Var(i) == Var(j)` → skip
   - Either side `Bound(t)` → substitute and retry
   - One side `Var(i)` with `Unbound` → occurs check + level adjustment, then bind
@@ -146,22 +146,22 @@ rewriting.
   - `RowExtend` vs anything → `rewrite_row`
   - `EffectExtend` vs anything → `rewrite_effect`
   - Otherwise → `TypeMismatch`
-* [ ] `occurs_and_levels(i, level, types, bindings)` — recursive occurs
-      check that also adjusts unbound variable levels via `min(l, level)`
-* [ ] `rewrite_row(label, type_, level, bindings, check)` — find matching
+* [x] `occurs_and_levels(i, level, types, bindings)` — iterative occurs
+      check that also adjusts unbound variable levels via `min(l, level)`;
+      added `set_unbound(id, level)` to `Bindings`
+* [x] `rewrite_row(label, type_, level, bindings, check)` — find matching
       label in row, rewrite tail; handle same-tail guard (`SameTail` error);
       handle unbound var tail (create fresh row extension)
-* [ ] `rewrite_effect(label, type_, level, bindings, check)` — same logic
+* [x] `rewrite_effect(label, type_, level, bindings, check)` — same logic
       for `EffectExtend` chains with `(lift, reply)` pairs
-* [ ] Tests mirroring `unify_test.gleam`:
+* [x] Tests mirroring `unify_test.gleam`:
   - `binding_types_in_tail_position_get_resolved` — unify open record vs
     closed record, expect `MissingRow("init")`
   - `rows_with_the_same_common_tail_dont_unify` — two `RowExtend` sharing
     a tail var, expect error (no infinite loop)
   - `effects_with_the_same_common_tail_dont_unify` — two `EffectExtend`
     sharing a tail var, expect error
-* [ ] Additional unit tests: unify identical types, unify `Var` with concrete,
-      occurs-check failure (`Recursive` error), row rewriting with multiple labels
+* [x] Additional unit tests: 17 unify tests (142 total), clippy clean
 
 ---
 

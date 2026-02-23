@@ -43,6 +43,10 @@ impl Bindings {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    pub fn set_unbound(&mut self, id: usize, level: usize) {
+        self.0[id] = Binding::Unbound(level);
+    }
 }
 
 impl Default for Bindings {
