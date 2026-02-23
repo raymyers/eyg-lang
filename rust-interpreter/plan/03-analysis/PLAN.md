@@ -104,31 +104,28 @@ Port `type_/isomorphic.gleam` and `type_/binding/error.gleam`.
 
 ---
 
-## Milestone 3: Binding Operations
+## Milestone 3: Binding Operations ✅
 
 Port `type_/binding.gleam` — the type variable store and poly/mono operations.
 
-* [ ] `crates/eyg-analysis/src/binding.rs` — `Binding` enum:
+* [x] `crates/eyg-analysis/src/binding.rs` — `Binding` enum:
       `Bound(Mono)` | `Unbound(usize)` (level)
-* [ ] `Bindings` newtype wrapping `Vec<Binding>` with methods:
+* [x] `Bindings` newtype wrapping `Vec<Binding>` with methods:
   - `new() -> Self`
-  - `fresh_mono(level) -> (Mono, &mut Self)` — push `Unbound(level)`, return `Var(id)`
-  - `fresh_poly(level) -> (Poly, &mut Self)` — push `Unbound(level)`, return `Var((false, id))`
+  - `fresh_mono(level) -> Mono` — push `Unbound(level)`, return `Var(id)`
+  - `fresh_poly(level) -> Poly` — push `Unbound(level)`, return `Var((false, id))`
   - `bind(id, Mono)` — set `bindings[id] = Bound(mono)`
   - `get(id) -> &Binding`
-* [ ] `resolve(type_: &Mono, bindings: &Bindings) -> Mono` — chase `Bound`
+* [x] `resolve(type_: &Mono, bindings: &Bindings) -> Mono` — chase `Bound`
       links to ground type, recursing through all `Type` variants
-* [ ] `gen(type_: &Mono, level: usize, bindings: &Bindings) -> Poly` —
+* [x] `generalize(type_: &Mono, level: usize, bindings: &Bindings) -> Poly` —
+      (renamed from `gen` — reserved keyword in Rust 2024 edition)
       generalize: `Unbound(l)` with `l > level` becomes `Var((true, id))`,
       otherwise `Var((false, id))`; recurse through structure
-* [ ] `instantiate(poly: &Poly, level: usize, bindings: &mut Bindings) -> Mono`
+* [x] `instantiate(poly: &Poly, level: usize, bindings: &mut Bindings) -> Mono`
       — replace each quantified `Var((true, id))` with a fresh mono var,
       using a local `HashMap<usize, Mono>` for sharing
-* [ ] Unit tests:
-  - `fresh_mono` returns sequential IDs
-  - `resolve` chases one-step and multi-step bindings
-  - `gen` marks variables above level as quantified
-  - `instantiate` replaces quantified vars with fresh, preserves free vars
+* [x] 14 unit tests (125 total), clippy clean
 
 ---
 
