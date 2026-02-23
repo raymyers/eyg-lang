@@ -130,20 +130,22 @@ Progress: [progress/CLI_INTEGRATION.md](progress/CLI_INTEGRATION.md)
 
 ---
 
-## Milestone 8: End-to-End & Regression Tests
+## Milestone 8: End-to-End & Regression Tests ✅
 
-* [ ] CLI integration tests for `--parse-ir`:
+Progress: [progress/DATA_DRIVEN_TESTS.md](progress/DATA_DRIVEN_TESTS.md)
+
+* [x] CLI integration tests for `--parse-ir`:
   - Parse a simple expression, assert stdout is valid dag-json
   - Parse error input, assert exit 1 with error on stderr
-* [ ] CLI integration tests for `--parse-exec`:
+* [x] CLI integration tests for `--parse-exec`:
   - Execute a parsed program, assert correct stdout
   - Test with effect-producing programs (Log)
-* [ ] CLI integration tests for default Log handler:
+* [x] CLI integration tests for default Log handler:
   - `perform Log("hi")` prints `"hi"` to stderr, exits 0
   - Chained: `let x = perform Log("a") perform Log("b")` logs both
-* [ ] Verify existing 26 interpreter tests still pass unchanged
-* [ ] Port representative parser tests from `packages/gleam_parser/test/`:
-  - All 16 parser test cases as data-driven fixtures
-  - All 8 lexer test cases
-* [ ] Edge cases: empty input, only whitespace, only comments,
-      deeply nested expressions, large integers
+* [x] Verify existing 26 interpreter tests still pass unchanged
+* [x] Port representative parser tests from `packages/gleam_parser/test/`:
+  - All 22 parser test functions as 46 data-driven fixtures in `testdata/parse_cases.json`
+  - All 8 lexer test functions as 13 data-driven fixtures in `testdata/lex_cases.json`
+* [x] Edge cases: empty input, only whitespace, only comments,
+      large integers (in `testdata/parse_error_cases.json` + `parse_cases.json`)

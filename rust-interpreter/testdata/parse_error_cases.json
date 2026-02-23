@@ -1,0 +1,6 @@
+[
+  {"name": "empty_input", "source": "", "error": "unexpected end"},
+  {"name": "whitespace_only", "source": "   ", "error": "unexpected end"},
+  {"name": "comment_only", "source": "// just a comment", "error": "unexpected end"},
+  {"name": "unexpected_token", "source": "!!bad", "error": "unexpected token"}
+]

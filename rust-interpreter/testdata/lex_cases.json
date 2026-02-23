@@ -1,0 +1,43 @@
+[
+  {"name": "grouping_parens", "source": "()",
+   "expected": [["LeftParen", 0], ["RightParen", 1]]},
+  {"name": "grouping_braces", "source": "{}",
+   "expected": [["LeftBrace", 0], ["RightBrace", 1]]},
+  {"name": "grouping_squares", "source": "[]",
+   "expected": [["LeftSquare", 0], ["RightSquare", 1]]},
+
+  {"name": "punctuation", "source": "=->,.:!",
+   "expected": [["Equal", 0], ["RightArrow", 1], ["Comma", 3], ["Dot", 4], ["Colon", 5], ["Bang", 6]]},
+
+  {"name": "keywords", "source": "let match perform deep handle",
+   "expected": [["Let", 0], ["Match", 4], ["Perform", 10], ["Deep", 18], ["Handle", 23]],
+   "note": "whitespace tokens filtered by drop_whitespace"},
+
+  {"name": "strings", "source": "\"\"\"hello\"\"\\\\\"",
+   "expected": [["String:", 0], ["String:hello", 2], ["String:\\", 9]],
+   "note": "String tokens include value after colon"},
+
+  {"name": "numbers", "source": "1 01 1000 -5",
+   "expected": [["Integer:1", 0], ["Integer:01", 2], ["Integer:1000", 5], ["Minus", 10], ["Integer:5", 11]],
+   "note": "whitespace filtered; minus is separate token"},
+
+  {"name": "names", "source": "alice x1 _",
+   "expected": [["Name:alice", 0], ["Name:x1", 6], ["Name:_", 9]],
+   "note": "whitespace filtered"},
+
+  {"name": "uppernames", "source": "Ok MyThing A1",
+   "expected": [["Uppername:Ok", 0], ["Uppername:MyThing", 3], ["Uppername:A1", 11]],
+   "note": "whitespace filtered"},
+
+  {"name": "call_lower", "source": "alice(1)",
+   "expected": [["Name:alice", 0], ["LeftParen", 5], ["Integer:1", 6], ["RightParen", 7]]},
+  {"name": "call_upper", "source": "Ok(1)",
+   "expected": [["Uppername:Ok", 0], ["LeftParen", 2], ["Integer:1", 3], ["RightParen", 4]]},
+
+  {"name": "unexpected_char", "source": "`",
+   "expected": [["UnexpectedGrapheme:`", 0]]},
+  {"name": "unterminated_string", "source": "\"ab",
+   "expected": [["UnterminatedString:ab", 0]]},
+  {"name": "unterminated_string_escape", "source": "\"xy\\",
+   "expected": [["UnterminatedString:xy\\", 0]]}
+]
