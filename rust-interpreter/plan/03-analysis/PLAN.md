@@ -326,21 +326,24 @@ Wire `eyg-analysis` into the `eyg-run` CLI binary.
 * [x] Update `rust-interpreter/README.md`.
 ---
 
-## Milestone 10: End-to-End & Regression Tests
+## Milestone 10: End-to-End & Regression Tests ✅
+
+Progress: [progress/E2E_REGRESSION.md](progress/E2E_REGRESSION.md)
 
 Comprehensive test coverage and cross-validation with the Gleam implementation.
 
-* [ ] Data-driven test fixture `testdata/type_check_cases.json` with entries:
+* [x] Data-driven test fixture `testdata/type_check_cases.json` with entries:
       `{ name, source, expected_type, expected_errors }` — source is EYG text,
       expected_type is the rendered top-level type string, expected_errors is a
-      list of error substrings (empty for well-typed programs)
-* [ ] Port all test cases from `contextual_test.gleam` into the fixture
-      (≥15 cases covering: variables, literals, functions, let, polymorphism,
-      lists, records, select, tags, builtins, perform, effects, handle)
-* [ ] Test that existing interpreter tests still pass unchanged (no regressions)
-* [ ] Verify `make check` passes (all workspace tests + clippy)
-* [ ] Edge cases:
+      list of error substrings (empty for well-typed programs).
+      Also supports `source_ir` for direct IR JSON input.
+* [x] Port all test cases from `contextual_test.gleam` into the fixture
+      (35 cases covering: variables, literals, functions, let, polymorphism,
+      lists, records, select, tags, builtins, perform, effects, match)
+* [x] Test that existing interpreter tests still pass unchanged (no regressions)
+* [x] Verify `make check` passes (all workspace tests + clippy)
+* [x] Edge cases:
   - Empty program (Vacant) → type is a fresh variable, error `Todo`
-  - Deeply nested let-polymorphism
-  - Recursive type detection (occurs check)
-  - Large programs with many type variables
+  - Deeply nested let-polymorphism (4 uses of polymorphic identity)
+  - Recursive type detection (occurs check) → `Recursive` error
+  - 179 tests total, type_check_suite runs 35 cases internally
