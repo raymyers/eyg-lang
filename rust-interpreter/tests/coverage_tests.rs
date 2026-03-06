@@ -1,2177 +1,786 @@
-// Comprehensive tests targeting coverage gaps across the interpreter
-use rust_interpreter::interpreter::break_reason::BreakReason;
-use rust_interpreter::interpreter::builtin;
-use rust_interpreter::interpreter::cast;
-use rust_interpreter::interpreter::expression;
-use rust_interpreter::interpreter::state::{Builtin, Control, Env, Stack};
-use rust_interpreter::interpreter::value::{self, Switch, Value};
-use rust_interpreter::interpreter::value_json;
-use rust_interpreter::ir::ast::{self, Expr, Node};
+// Tests for the Rust interpreter, organized by behavior rather than module.
+//
+// Spec-based evaluation suites live in evaluation_suite.rs (95 fixtures).
+// These tests cover behaviors NOT in the spec suites: error scenarios,
+// serialization invariants, the `call` public API, type error quality,
+// and end-to-end programs exercising multiple interpreter features.
 
-use im;
+use rust_interpreter::interpreter::break_reason::BreakReason;
+use rust_interpreter::interpreter::expression;
+
+use rust_interpreter::interpreter::value::{Switch, Value};
+use rust_interpreter::interpreter::value_json;
+use rust_interpreter::ir::ast::{Expr, Node};
+
 use std::rc::Rc;
 
-fn empty_env() -> Env {
-    Env {
-        scope: im::Vector::new(),
-        references: im::HashMap::new(),
-        builtins: im::HashMap::new(),
+/// Execute an EYG expression through the full interpreter
+fn run(expr: Expr) -> Result<Rc<Value>, BreakReason> {
+    expression::execute(Node(expr, ()), im::Vector::new())
+        .map_err(|debug| debug.0)
+}
+
+/// Build: (\label -> body) argument
+fn apply(func: Expr, argument: Expr) -> Expr {
+    Expr::Apply {
+        func: Box::new(Node(func, ())),
+        argument: Box::new(Node(argument, ())),
     }
 }
 
-fn empty_stack() -> Stack {
-    Stack::Empty(im::HashMap::new())
+/// Build: let label = definition in body
+fn let_in(label: &str, definition: Expr, body: Expr) -> Expr {
+    Expr::Let {
+        label: label.into(),
+        definition: Box::new(Node(definition, ())),
+        body: Box::new(Node(body, ())),
+    }
 }
 
-/// Extract the value from a successful StepReturn
-fn extract_val(
-    result: Result<(Control, Env, Stack), Box<(BreakReason, (), Env, Stack)>>,
-) -> Rc<Value> {
-    let (control, _, _) = result.expect("expected Ok");
-    match control {
-        Control::Val(v) => v,
-        _ => panic!("expected Val control"),
+/// Build: \label -> body
+fn lambda(label: &str, body: Expr) -> Expr {
+    Expr::Lambda {
+        label: label.into(),
+        body: Box::new(Node(body, ())),
+    }
+}
+
+fn var(name: &str) -> Expr {
+    Expr::Variable { label: name.into() }
+}
+fn int(n: i64) -> Expr {
+    Expr::Integer { value: n }
+}
+fn str_lit(s: &str) -> Expr {
+    Expr::String { value: s.into() }
+}
+fn builtin(name: &str) -> Expr {
+    Expr::Builtin { identifier: name.into() }
+}
+
+/// Call a 2-arg builtin: builtin arg1 arg2
+fn call2(name: &str, a: Expr, b: Expr) -> Expr {
+    apply(apply(builtin(name), a), b)
+}
+
+/// Call a 1-arg builtin: builtin arg
+fn call1(name: &str, a: Expr) -> Expr {
+    apply(builtin(name), a)
+}
+
+// ============================================================================
+// End-to-end programs: closures, recursion, data structures
+// ============================================================================
+
+#[test]
+fn closure_captures_outer_variable() {
+    // let x = 10 in let f = \y -> int_add x y in f 5
+    // Expected: 15
+    let program = let_in(
+        "x",
+        int(10),
+        let_in(
+            "f",
+            lambda("y", call2("int_add", var("x"), var("y"))),
+            apply(var("f"), int(5)),
+        ),
+    );
+    let v = run(program).unwrap();
+    assert!(matches!(v.as_ref(), Value::Integer(15)));
+}
+
+#[test]
+fn higher_order_function() {
+    // let apply_twice = \f -> \x -> f (f x)
+    // let inc = \n -> int_add n 1
+    // apply_twice inc 3
+    // Expected: 5
+    let program = let_in(
+        "apply_twice",
+        lambda("f", lambda("x", apply(var("f"), apply(var("f"), var("x"))))),
+        let_in(
+            "inc",
+            lambda("n", call2("int_add", var("n"), int(1))),
+            apply(apply(var("apply_twice"), var("inc")), int(3)),
+        ),
+    );
+    let v = run(program).unwrap();
+    assert!(matches!(v.as_ref(), Value::Integer(5)));
+}
+
+#[test]
+fn build_and_select_nested_record() {
+    // let r = (+y) 20 ((+x) 10 {})
+    // .x r
+    // Expected: 10
+    let build_inner = apply(apply(Expr::Extend { label: "x".into() }, int(10)), Expr::Empty);
+    let build_outer = apply(apply(Expr::Extend { label: "y".into() }, int(20)), build_inner);
+    let program = let_in(
+        "r",
+        build_outer,
+        apply(Expr::Select { label: "x".into() }, var("r")),
+    );
+    let v = run(program).unwrap();
+    assert!(matches!(v.as_ref(), Value::Integer(10)));
+}
+
+#[test]
+fn cons_multi_element_list() {
+    // cons 1 (cons 2 (cons 3 []))
+    let list = apply(
+        apply(Expr::Cons, int(1)),
+        apply(apply(Expr::Cons, int(2)), apply(apply(Expr::Cons, int(3)), Expr::Tail)),
+    );
+    let v = run(list).unwrap();
+    match v.as_ref() {
+        Value::LinkedList(items) => {
+            assert_eq!(items.len(), 3);
+            assert!(matches!(items[0].as_ref(), Value::Integer(1)));
+            assert!(matches!(items[1].as_ref(), Value::Integer(2)));
+            assert!(matches!(items[2].as_ref(), Value::Integer(3)));
+        }
+        other => panic!("expected 3-element list, got {other}"),
+    }
+}
+
+#[test]
+fn match_chain_two_cases_with_fallthrough() {
+    // case "A" (\v -> v) (case "B" (\v -> int_add v 100) nocases)
+    // applied to B(7) -> 107
+    let inner_case = apply(
+        apply(
+            Expr::Case { label: "B".into() },
+            lambda("v", call2("int_add", var("v"), int(100))),
+        ),
+        Expr::NoCases,
+    );
+    let outer_case = apply(
+        apply(
+            Expr::Case { label: "A".into() },
+            lambda("v", var("v")),
+        ),
+        inner_case,
+    );
+    let tagged_b = apply(Expr::Tag { label: "B".into() }, int(7));
+    let v = run(apply(outer_case, tagged_b)).unwrap();
+    assert!(matches!(v.as_ref(), Value::Integer(107)));
+}
+
+#[test]
+fn string_pipeline() {
+    // string_uppercase (string_replace "hello world" "world" "rust")
+    // Expected: "HELLO RUST"
+    let replaced = apply(
+        apply(
+            apply(builtin("string_replace"), str_lit("hello world")),
+            str_lit("world"),
+        ),
+        str_lit("rust"),
+    );
+    let program = call1("string_uppercase", replaced);
+    let v = run(program).unwrap();
+    assert!(matches!(v.as_ref(), Value::Str(s) if s == "HELLO RUST"));
+}
+
+#[test]
+fn int_to_string_then_parse_roundtrip() {
+    // int_parse (int_to_string -42)
+    // Expected: Ok(-42)
+    let program = call1("int_parse", call1("int_to_string", int(-42)));
+    let v = run(program).unwrap();
+    match v.as_ref() {
+        Value::Tagged { label, value } => {
+            assert_eq!(label, "Ok");
+            assert!(matches!(value.as_ref(), Value::Integer(-42)));
+        }
+        other => panic!("expected Ok(-42), got {other}"),
+    }
+}
+
+#[test]
+fn string_to_binary_and_back() {
+    // string_from_binary (string_to_binary "café")
+    // Expected: Ok("café")
+    let program = call1("string_from_binary", call1("string_to_binary", str_lit("café")));
+    let v = run(program).unwrap();
+    match v.as_ref() {
+        Value::Tagged { label, value } => {
+            assert_eq!(label, "Ok");
+            assert!(matches!(value.as_ref(), Value::Str(s) if s == "café"));
+        }
+        other => panic!("expected Ok(\"café\"), got {other}"),
     }
 }
 
 // ============================================================================
-// break_reason::Display tests (0% -> ~100%)
+// Error scenarios not covered by spec suites
 // ============================================================================
-mod break_reason_display {
-    use super::*;
 
-    #[test]
-    fn not_a_function() {
-        let br = BreakReason::NotAFunction(Box::new(Value::Integer(42)));
-        assert_eq!(format!("{br}"), "Not a function: 42");
+#[test]
+fn calling_integer_is_not_a_function() {
+    let result = run(apply(int(42), int(1)));
+    match result.unwrap_err() {
+        BreakReason::NotAFunction(v) => assert!(matches!(*v, Value::Integer(42))),
+        other => panic!("expected NotAFunction, got {other}"),
     }
+}
 
-    #[test]
-    fn undefined_variable() {
-        let br = BreakReason::UndefinedVariable("x".into());
-        assert_eq!(format!("{br}"), "Undefined variable: x");
+#[test]
+fn undefined_reference_names_the_cid() {
+    let result = run(Expr::Reference { identifier: "bafyabc123".into() });
+    match result.unwrap_err() {
+        BreakReason::UndefinedReference(cid) => assert_eq!(cid, "bafyabc123"),
+        other => panic!("expected UndefinedReference, got {other}"),
     }
+}
 
-    #[test]
-    fn undefined_builtin() {
-        let br = BreakReason::UndefinedBuiltin("foo".into());
-        assert_eq!(format!("{br}"), "Undefined builtin: foo");
+#[test]
+fn undefined_release_includes_package_info() {
+    let result = run(Expr::Release {
+        package: "mypkg".into(),
+        release: 3,
+        identifier: "bafycid".into(),
+    });
+    match result.unwrap_err() {
+        BreakReason::UndefinedRelease { package, release, cid } => {
+            assert_eq!(package, "mypkg");
+            assert_eq!(release, 3);
+            assert_eq!(cid, "bafycid");
+        }
+        other => panic!("expected UndefinedRelease, got {other}"),
     }
+}
 
-    #[test]
-    fn undefined_reference() {
-        let br = BreakReason::UndefinedReference("abc123".into());
-        assert_eq!(format!("{br}"), "Undefined reference: abc123");
+#[test]
+fn select_missing_field_names_the_field() {
+    let result = run(apply(Expr::Select { label: "missing".into() }, Expr::Empty));
+    match result.unwrap_err() {
+        BreakReason::MissingField(f) => assert_eq!(f, "missing"),
+        other => panic!("expected MissingField, got {other}"),
     }
+}
 
-    #[test]
-    fn undefined_release() {
-        let br = BreakReason::UndefinedRelease {
+#[test]
+fn overwrite_missing_field_names_the_field() {
+    let ow = apply(Expr::Overwrite { label: "nope".into() }, int(1));
+    let result = run(apply(ow, Expr::Empty));
+    match result.unwrap_err() {
+        BreakReason::MissingField(f) => assert_eq!(f, "nope"),
+        other => panic!("expected MissingField, got {other}"),
+    }
+}
+
+#[test]
+fn nocases_applied_gives_no_match() {
+    let tagged = apply(Expr::Tag { label: "X".into() }, int(1));
+    let result = run(apply(Expr::NoCases, tagged));
+    assert!(matches!(result.unwrap_err(), BreakReason::NoMatch(_)));
+}
+
+#[test]
+fn perform_without_handler_gives_unhandled_effect() {
+    let result = run(apply(Expr::Perform { label: "Ask".into() }, str_lit("question")));
+    match result.unwrap_err() {
+        BreakReason::UnhandledEffect(label, _) => assert_eq!(label, "Ask"),
+        other => panic!("expected UnhandledEffect, got {other}"),
+    }
+}
+
+#[test]
+fn vacant_is_an_error() {
+    assert!(matches!(run(Expr::Vacant).unwrap_err(), BreakReason::Vacant));
+}
+
+// ============================================================================
+// Type error quality: errors tell you what type was expected
+// ============================================================================
+
+#[test]
+fn type_error_on_int_add_says_expected_integer() {
+    // int_add "not a number" 1 -> IncorrectTerm { expected: "Integer" }
+    let result = run(call2("int_add", str_lit("nope"), int(1)));
+    match result.unwrap_err() {
+        BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "Integer"),
+        other => panic!("expected IncorrectTerm, got {other}"),
+    }
+}
+
+#[test]
+fn type_error_on_string_append_says_expected_string() {
+    let result = run(call2("string_append", int(5), str_lit("x")));
+    match result.unwrap_err() {
+        BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "String"),
+        other => panic!("expected IncorrectTerm, got {other}"),
+    }
+}
+
+#[test]
+fn type_error_on_list_pop_says_expected_list() {
+    let result = run(call1("list_pop", int(5)));
+    match result.unwrap_err() {
+        BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "List"),
+        other => panic!("expected IncorrectTerm, got {other}"),
+    }
+}
+
+#[test]
+fn type_error_on_binary_from_integers_says_expected_list() {
+    let result = run(call1("binary_from_integers", int(5)));
+    match result.unwrap_err() {
+        BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "List"),
+        other => panic!("expected IncorrectTerm, got {other}"),
+    }
+}
+
+#[test]
+fn never_builtin_always_errors() {
+    let result = run(call1("never", int(42)));
+    match result.unwrap_err() {
+        BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "Never"),
+        other => panic!("expected IncorrectTerm, got {other}"),
+    }
+}
+
+// ============================================================================
+// expression::call public API
+// ============================================================================
+
+#[test]
+fn call_api_applies_function_to_args() {
+    let tag = Rc::new(Value::Partial(Switch::Tag("Ok".into()), vec![]));
+    let result = expression::call(tag, vec![(Rc::new(Value::Integer(42)), ())]);
+    match result.unwrap().as_ref() {
+        Value::Tagged { label, value } => {
+            assert_eq!(label, "Ok");
+            assert!(matches!(value.as_ref(), Value::Integer(42)));
+        }
+        other => panic!("expected Tagged, got {other}"),
+    }
+}
+
+#[test]
+fn call_api_select_from_record() {
+    let select = Rc::new(Value::Partial(Switch::Select("x".into()), vec![]));
+    let mut fields = im::HashMap::new();
+    fields.insert("x".to_string(), Rc::new(Value::Integer(10)));
+    let result = expression::call(select, vec![(Rc::new(Value::Record(fields)), ())]);
+    assert!(matches!(result.unwrap().as_ref(), Value::Integer(10)));
+}
+
+#[test]
+fn call_api_non_function_errors() {
+    let result = expression::call(
+        Rc::new(Value::Integer(42)),
+        vec![(Rc::new(Value::Integer(1)), ())],
+    );
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// IR serialization roundtrips (real invariant: serialize then deserialize = identity)
+// ============================================================================
+
+#[test]
+fn roundtrip_integer() {
+    let n = Node(Expr::Integer { value: 42 }, ());
+    let json = serde_json::to_string(&n).unwrap();
+    assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), n);
+}
+
+#[test]
+fn roundtrip_string() {
+    let n = Node(Expr::String { value: "hello".into() }, ());
+    let json = serde_json::to_string(&n).unwrap();
+    assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), n);
+}
+
+#[test]
+fn roundtrip_lambda() {
+    let n = Node(
+        Expr::Lambda {
+            label: "x".into(),
+            body: Box::new(Node(Expr::Variable { label: "x".into() }, ())),
+        },
+        (),
+    );
+    let json = serde_json::to_string(&n).unwrap();
+    assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), n);
+}
+
+#[test]
+fn roundtrip_binary() {
+    let n = Node(Expr::Binary { value: vec![0, 127, 255] }, ());
+    let json = serde_json::to_value(&n).unwrap();
+    assert_eq!(serde_json::from_value::<Node>(json).unwrap(), n);
+}
+
+#[test]
+fn roundtrip_empty_binary() {
+    let n = Node(Expr::Binary { value: vec![] }, ());
+    let json = serde_json::to_value(&n).unwrap();
+    assert_eq!(serde_json::from_value::<Node>(json).unwrap(), n);
+}
+
+#[test]
+fn roundtrip_reference() {
+    let n = Node(Expr::Reference { identifier: "bafytest".into() }, ());
+    let json = serde_json::to_string(&n).unwrap();
+    assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), n);
+}
+
+#[test]
+fn roundtrip_release() {
+    let n = Node(
+        Expr::Release {
             package: "mypkg".into(),
-            release: 3,
-            cid: "cidxyz".into(),
-        };
-        assert_eq!(format!("{br}"), "Undefined release: mypkg/3 (cidxyz)");
-    }
-
-    #[test]
-    fn vacant() {
-        assert_eq!(format!("{}", BreakReason::Vacant), "Vacant");
-    }
-
-    #[test]
-    fn no_match() {
-        let br = BreakReason::NoMatch(Box::new(Value::Str("hi".into())));
-        assert_eq!(format!("{br}"), "No match for: \"hi\"");
-    }
-
-    #[test]
-    fn unhandled_effect() {
-        let br = BreakReason::UnhandledEffect("Log".into(), Box::new(Value::Integer(1)));
-        assert_eq!(format!("{br}"), "Unhandled effect 'Log' with value: 1");
-    }
-
-    #[test]
-    fn incorrect_term() {
-        let br = BreakReason::IncorrectTerm {
-            expected: "Integer".into(),
-            got: Box::new(Value::Str("nope".into())),
-        };
-        assert_eq!(format!("{br}"), "Incorrect term: expected Integer, got \"nope\"");
-    }
-
-    #[test]
-    fn missing_field() {
-        let br = BreakReason::MissingField("name".into());
-        assert_eq!(format!("{br}"), "Missing field: name");
-    }
-}
-
-// ============================================================================
-// value::Display tests (covers all Value variants + display_partial)
-// ============================================================================
-mod value_display {
-    use super::*;
-
-    #[test]
-    fn display_integer() {
-        assert_eq!(format!("{}", Value::Integer(42)), "42");
-        assert_eq!(format!("{}", Value::Integer(-7)), "-7");
-    }
-
-    #[test]
-    fn display_string() {
-        assert_eq!(format!("{}", Value::Str("hello".into())), "\"hello\"");
-    }
-
-    #[test]
-    fn display_binary_empty() {
-        assert_eq!(format!("{}", Value::Binary(vec![])), "<<>>");
-    }
-
-    #[test]
-    fn display_binary_single() {
-        assert_eq!(format!("{}", Value::Binary(vec![65])), "<<65>>");
-    }
-
-    #[test]
-    fn display_binary_multiple() {
-        assert_eq!(format!("{}", Value::Binary(vec![1, 2, 3])), "<<1, 2, 3>>");
-    }
-
-    #[test]
-    fn display_binary_negative_cast() {
-        // 200u8 as i8 is -56
-        assert_eq!(format!("{}", Value::Binary(vec![200])), "<<-56>>");
-    }
-
-    #[test]
-    fn display_linked_list_empty() {
-        assert_eq!(format!("{}", Value::LinkedList(vec![])), "[]");
-    }
-
-    #[test]
-    fn display_linked_list_items() {
-        let items = vec![
-            Rc::new(Value::Integer(1)),
-            Rc::new(Value::Integer(2)),
-            Rc::new(Value::Integer(3)),
-        ];
-        assert_eq!(format!("{}", Value::LinkedList(items)), "[1, 2, 3]");
-    }
-
-    #[test]
-    fn display_record_empty() {
-        assert_eq!(format!("{}", Value::Record(im::HashMap::new())), "{}");
-    }
-
-    #[test]
-    fn display_record_fields() {
-        let mut fields = im::HashMap::new();
-        fields.insert("x".to_string(), Rc::new(Value::Integer(10)));
-        let display = format!("{}", Value::Record(fields));
-        assert!(display.starts_with('{'));
-        assert!(display.ends_with('}'));
-        assert!(display.contains("x: 10"));
-    }
-
-    #[test]
-    fn display_record_multiple_fields() {
-        let mut fields = im::HashMap::new();
-        fields.insert("a".to_string(), Rc::new(Value::Integer(1)));
-        fields.insert("b".to_string(), Rc::new(Value::Integer(2)));
-        let display = format!("{}", Value::Record(fields));
-        assert!(display.contains("a: 1"));
-        assert!(display.contains("b: 2"));
-        assert!(display.contains(", "));
-    }
-
-    #[test]
-    fn display_tagged() {
-        let v = Value::Tagged {
-            label: "Ok".into(),
-            value: Rc::new(Value::Integer(5)),
-        };
-        assert_eq!(format!("{v}"), "Ok(5)");
-    }
-
-    #[test]
-    fn display_closure() {
-        let v = Value::Closure {
-            param: "x".into(),
-            body: Box::new(Node(Expr::Variable { label: "x".into() }, ())),
-            env: im::Vector::new(),
-        };
-        assert_eq!(format!("{v}"), "(x) -> { ... }");
-    }
-
-    // display_partial coverage
-    #[test]
-    fn display_partial_cons_no_args() {
-        let v = Value::Partial(Switch::Cons, vec![]);
-        assert_eq!(format!("{v}"), "cons");
-    }
-
-    #[test]
-    fn display_partial_cons_with_args() {
-        let v = Value::Partial(Switch::Cons, vec![Rc::new(Value::Integer(1))]);
-        assert_eq!(format!("{v}"), "cons(1)");
-    }
-
-    #[test]
-    fn display_partial_extend_no_args() {
-        let v = Value::Partial(Switch::Extend("name".into()), vec![]);
-        assert_eq!(format!("{v}"), "+name");
-    }
-
-    #[test]
-    fn display_partial_extend_with_args() {
-        let v = Value::Partial(
-            Switch::Extend("name".into()),
-            vec![Rc::new(Value::Str("alice".into()))],
-        );
-        assert_eq!(format!("{v}"), "+name(\"alice\")");
-    }
-
-    #[test]
-    fn display_partial_select() {
-        let v = Value::Partial(Switch::Select("age".into()), vec![]);
-        assert_eq!(format!("{v}"), ".age");
-    }
-
-    #[test]
-    fn display_partial_overwrite() {
-        let v = Value::Partial(Switch::Overwrite("age".into()), vec![]);
-        assert_eq!(format!("{v}"), ":=age");
-    }
-
-    #[test]
-    fn display_partial_tag_no_args() {
-        let v = Value::Partial(Switch::Tag("Ok".into()), vec![]);
-        assert_eq!(format!("{v}"), "Ok");
-    }
-
-    #[test]
-    fn display_partial_tag_with_args() {
-        let v = Value::Partial(Switch::Tag("Ok".into()), vec![Rc::new(Value::Integer(1))]);
-        assert_eq!(format!("{v}"), "Ok(1)");
-    }
-
-    #[test]
-    fn display_partial_match() {
-        let v = Value::Partial(Switch::Match("Some".into()), vec![]);
-        assert_eq!(format!("{v}"), "case Some");
-    }
-
-    #[test]
-    fn display_partial_no_cases() {
-        let v = Value::Partial(Switch::NoCases, vec![]);
-        assert_eq!(format!("{v}"), "nocases");
-    }
-
-    #[test]
-    fn display_partial_perform() {
-        let v = Value::Partial(Switch::Perform("Log".into()), vec![]);
-        assert_eq!(format!("{v}"), "^Log");
-    }
-
-    #[test]
-    fn display_partial_handle_no_args() {
-        let v = Value::Partial(Switch::Handle("Log".into()), vec![]);
-        assert_eq!(format!("{v}"), "deep Log");
-    }
-
-    #[test]
-    fn display_partial_handle_with_args() {
-        let v = Value::Partial(
-            Switch::Handle("Log".into()),
-            vec![Rc::new(Value::Integer(0))],
-        );
-        assert_eq!(format!("{v}"), "deep Log(0)");
-    }
-
-    #[test]
-    fn display_partial_resume() {
-        let ctx = (vec![], Env {
-            scope: im::Vector::new(),
-            references: im::HashMap::new(),
-            builtins: im::HashMap::new(),
-        });
-        let v = Value::Partial(Switch::Resume(ctx), vec![]);
-        assert_eq!(format!("{v}"), "resume");
-    }
-
-    #[test]
-    fn display_partial_builtin() {
-        let v = Value::Partial(
-            Switch::Builtin("int_add".into()),
-            vec![Rc::new(Value::Integer(3))],
-        );
-        assert_eq!(format!("{v}"), "Defunc int_add (3)");
-    }
-
-    #[test]
-    fn display_partial_builtin_multi_args() {
-        let v = Value::Partial(
-            Switch::Builtin("string_replace".into()),
-            vec![
-                Rc::new(Value::Str("a".into())),
-                Rc::new(Value::Str("b".into())),
-            ],
-        );
-        assert_eq!(format!("{v}"), "Defunc string_replace (\"a\", \"b\")");
-    }
-}
-
-// ============================================================================
-// value::equals tests
-// ============================================================================
-mod value_equals {
-    use super::*;
-
-    #[test]
-    fn binary_equal() {
-        let a = Value::Binary(vec![1, 2, 3]);
-        let b = Value::Binary(vec![1, 2, 3]);
-        assert!(a.equals(&b));
-    }
-
-    #[test]
-    fn binary_not_equal() {
-        let a = Value::Binary(vec![1, 2]);
-        let b = Value::Binary(vec![1, 3]);
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn list_equal() {
-        let a = Value::LinkedList(vec![Rc::new(Value::Integer(1)), Rc::new(Value::Integer(2))]);
-        let b = Value::LinkedList(vec![Rc::new(Value::Integer(1)), Rc::new(Value::Integer(2))]);
-        assert!(a.equals(&b));
-    }
-
-    #[test]
-    fn list_not_equal_length() {
-        let a = Value::LinkedList(vec![Rc::new(Value::Integer(1))]);
-        let b = Value::LinkedList(vec![Rc::new(Value::Integer(1)), Rc::new(Value::Integer(2))]);
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn list_not_equal_values() {
-        let a = Value::LinkedList(vec![Rc::new(Value::Integer(1))]);
-        let b = Value::LinkedList(vec![Rc::new(Value::Integer(2))]);
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn record_equal() {
-        let mut fa = im::HashMap::new();
-        fa.insert("x".to_string(), Rc::new(Value::Integer(1)));
-        let mut fb = im::HashMap::new();
-        fb.insert("x".to_string(), Rc::new(Value::Integer(1)));
-        assert!(Value::Record(fa).equals(&Value::Record(fb)));
-    }
-
-    #[test]
-    fn record_not_equal_different_key() {
-        let mut fa = im::HashMap::new();
-        fa.insert("x".to_string(), Rc::new(Value::Integer(1)));
-        let mut fb = im::HashMap::new();
-        fb.insert("y".to_string(), Rc::new(Value::Integer(1)));
-        assert!(!Value::Record(fa).equals(&Value::Record(fb)));
-    }
-
-    #[test]
-    fn record_not_equal_different_value() {
-        let mut fa = im::HashMap::new();
-        fa.insert("x".to_string(), Rc::new(Value::Integer(1)));
-        let mut fb = im::HashMap::new();
-        fb.insert("x".to_string(), Rc::new(Value::Integer(2)));
-        assert!(!Value::Record(fa).equals(&Value::Record(fb)));
-    }
-
-    #[test]
-    fn record_not_equal_different_size() {
-        let mut fa = im::HashMap::new();
-        fa.insert("x".to_string(), Rc::new(Value::Integer(1)));
-        let fb = im::HashMap::new();
-        assert!(!Value::Record(fa).equals(&Value::Record(fb)));
-    }
-
-    #[test]
-    fn tagged_equal() {
-        let a = Value::Tagged {
-            label: "Ok".into(),
-            value: Rc::new(Value::Integer(1)),
-        };
-        let b = Value::Tagged {
-            label: "Ok".into(),
-            value: Rc::new(Value::Integer(1)),
-        };
-        assert!(a.equals(&b));
-    }
-
-    #[test]
-    fn tagged_not_equal_label() {
-        let a = Value::Tagged {
-            label: "Ok".into(),
-            value: Rc::new(Value::Integer(1)),
-        };
-        let b = Value::Tagged {
-            label: "Err".into(),
-            value: Rc::new(Value::Integer(1)),
-        };
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn tagged_not_equal_value() {
-        let a = Value::Tagged {
-            label: "Ok".into(),
-            value: Rc::new(Value::Integer(1)),
-        };
-        let b = Value::Tagged {
-            label: "Ok".into(),
-            value: Rc::new(Value::Integer(2)),
-        };
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn closure_equal_same_structure() {
-        let body = Box::new(Node(Expr::Variable { label: "x".into() }, ()));
-        let a = Value::Closure {
-            param: "x".into(),
-            body: body.clone(),
-            env: im::Vector::new(),
-        };
-        let b = Value::Closure {
-            param: "x".into(),
-            body: body,
-            env: im::Vector::new(),
-        };
-        assert!(a.equals(&b));
-    }
-
-    #[test]
-    fn closure_not_equal_different_param() {
-        let body = Box::new(Node(Expr::Variable { label: "x".into() }, ()));
-        let a = Value::Closure {
-            param: "x".into(),
-            body: body.clone(),
-            env: im::Vector::new(),
-        };
-        let b = Value::Closure {
-            param: "y".into(),
-            body: body,
-            env: im::Vector::new(),
-        };
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn partial_equal() {
-        let a = Value::Partial(Switch::Cons, vec![Rc::new(Value::Integer(1))]);
-        let b = Value::Partial(Switch::Cons, vec![Rc::new(Value::Integer(1))]);
-        assert!(a.equals(&b));
-    }
-
-    #[test]
-    fn partial_not_equal_switch() {
-        let a = Value::Partial(Switch::Cons, vec![]);
-        let b = Value::Partial(Switch::NoCases, vec![]);
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn partial_not_equal_args() {
-        let a = Value::Partial(Switch::Cons, vec![Rc::new(Value::Integer(1))]);
-        let b = Value::Partial(Switch::Cons, vec![Rc::new(Value::Integer(2))]);
-        assert!(!a.equals(&b));
-    }
-
-    #[test]
-    fn mixed_types_not_equal() {
-        assert!(!Value::Integer(1).equals(&Value::Str("1".into())));
-        assert!(!Value::Binary(vec![]).equals(&Value::LinkedList(vec![])));
-    }
-
-    // switch_equals coverage
-    #[test]
-    fn switch_equals_all_variants() {
-        // Test via Value::Partial equals
-        let cases: Vec<(Switch, Switch, bool)> = vec![
-            (Switch::Cons, Switch::Cons, true),
-            (Switch::Extend("a".into()), Switch::Extend("a".into()), true),
-            (Switch::Extend("a".into()), Switch::Extend("b".into()), false),
-            (Switch::Overwrite("a".into()), Switch::Overwrite("a".into()), true),
-            (Switch::Overwrite("a".into()), Switch::Overwrite("b".into()), false),
-            (Switch::Select("a".into()), Switch::Select("a".into()), true),
-            (Switch::Select("a".into()), Switch::Select("b".into()), false),
-            (Switch::Tag("a".into()), Switch::Tag("a".into()), true),
-            (Switch::Tag("a".into()), Switch::Tag("b".into()), false),
-            (Switch::Match("a".into()), Switch::Match("a".into()), true),
-            (Switch::Match("a".into()), Switch::Match("b".into()), false),
-            (Switch::NoCases, Switch::NoCases, true),
-            (Switch::Perform("a".into()), Switch::Perform("a".into()), true),
-            (Switch::Perform("a".into()), Switch::Perform("b".into()), false),
-            (Switch::Handle("a".into()), Switch::Handle("a".into()), true),
-            (Switch::Handle("a".into()), Switch::Handle("b".into()), false),
-            (Switch::Builtin("a".into()), Switch::Builtin("a".into()), true),
-            (Switch::Builtin("a".into()), Switch::Builtin("b".into()), false),
-            // Resume is always false
-            (
-                Switch::Resume((vec![], empty_env())),
-                Switch::Resume((vec![], empty_env())),
-                false,
-            ),
-            // Mixed types
-            (Switch::Cons, Switch::NoCases, false),
-        ];
-        for (s1, s2, expected) in cases {
-            let a = Value::Partial(s1, vec![]);
-            let b = Value::Partial(s2, vec![]);
-            assert_eq!(a.equals(&b), expected);
-        }
-    }
-}
-
-// ============================================================================
-// value helper functions
-// ============================================================================
-mod value_helpers {
-    use super::*;
-
-    #[test]
-    fn unit_is_empty_record() {
-        match value::unit() {
-            Value::Record(fields) => assert!(fields.is_empty()),
-            _ => panic!("unit should be empty record"),
-        }
-    }
-
-    #[test]
-    fn true_value() {
-        match value::true_value() {
-            Value::Tagged { label, .. } => assert_eq!(label, "True"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn false_value() {
-        match value::false_value() {
-            Value::Tagged { label, .. } => assert_eq!(label, "False"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn bool_value_true() {
-        match value::bool_value(true) {
-            Value::Tagged { label, .. } => assert_eq!(label, "True"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn bool_value_false() {
-        match value::bool_value(false) {
-            Value::Tagged { label, .. } => assert_eq!(label, "False"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn ok_value() {
-        match value::ok(Value::Integer(5)) {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Ok");
-                assert!(matches!(value.as_ref(), Value::Integer(5)));
-            }
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn error_value() {
-        match value::error(Value::Str("oops".into())) {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Error");
-                assert!(matches!(value.as_ref(), Value::Str(s) if s == "oops"));
-            }
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn some_value() {
-        match value::some(Value::Integer(10)) {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Some");
-                assert!(matches!(value.as_ref(), Value::Integer(10)));
-            }
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn none_value() {
-        match value::none() {
-            Value::Tagged { label, .. } => assert_eq!(label, "None"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-}
-
-// ============================================================================
-// cast tests (error paths)
-// ============================================================================
-mod cast_tests {
-    use super::*;
-
-    #[test]
-    fn as_integer_ok() {
-        assert_eq!(cast::as_integer(&Value::Integer(42)).unwrap(), 42);
-    }
-
-    #[test]
-    fn as_integer_err() {
-        let result = cast::as_integer(&Value::Str("nope".into()));
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "Integer"),
-            _ => panic!("wrong error"),
-        }
-    }
-
-    #[test]
-    fn as_string_ok() {
-        assert_eq!(cast::as_string(&Value::Str("hi".into())).unwrap(), "hi");
-    }
-
-    #[test]
-    fn as_string_err() {
-        let result = cast::as_string(&Value::Integer(5));
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "String"),
-            _ => panic!("wrong error"),
-        }
-    }
-
-    #[test]
-    fn as_binary_ok() {
-        assert_eq!(cast::as_binary(&Value::Binary(vec![1, 2])).unwrap(), &[1, 2]);
-    }
-
-    #[test]
-    fn as_binary_err() {
-        let result = cast::as_binary(&Value::Integer(5));
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "Binary"),
-            _ => panic!("wrong error"),
-        }
-    }
-
-    #[test]
-    fn as_list_ok() {
-        let v = Value::LinkedList(vec![Rc::new(Value::Integer(1))]);
-        let result = cast::as_list(&v).unwrap();
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn as_list_err() {
-        let result = cast::as_list(&Value::Integer(5));
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "List"),
-            _ => panic!("wrong error"),
-        }
-    }
-
-    #[test]
-    fn as_record_ok() {
-        let v = Value::Record(im::HashMap::new());
-        assert!(cast::as_record(&v).is_ok());
-    }
-
-    #[test]
-    fn as_record_err() {
-        let result = cast::as_record(&Value::Integer(5));
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "Record"),
-            _ => panic!("wrong error"),
-        }
-    }
-
-    #[test]
-    fn as_tagged_ok() {
-        let v = Value::Tagged {
-            label: "Ok".into(),
-            value: Rc::new(Value::Integer(1)),
-        };
-        let (label, _) = cast::as_tagged(&v).unwrap();
-        assert_eq!(label, "Ok");
-    }
-
-    #[test]
-    fn as_tagged_err() {
-        let result = cast::as_tagged(&Value::Integer(5));
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "Tagged"),
-            _ => panic!("wrong error"),
-        }
-    }
-}
-
-// ============================================================================
-// builtin tests (untested functions)
-// ============================================================================
-mod builtin_tests {
-    use super::*;
-
-    #[test]
-    fn never_returns_error() {
-        let v = Rc::new(Value::Integer(42));
-        let result = builtin::never(&v, (), empty_env(), empty_stack());
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        match &debug.0 {
-            BreakReason::IncorrectTerm { expected, .. } => assert_eq!(expected, "Never"),
-            _ => panic!("expected IncorrectTerm"),
-        }
-    }
-
-    #[test]
-    fn int_compare_less() {
-        let v = extract_val(builtin::int_compare(
-            &Rc::new(Value::Integer(1)),
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "Lt"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn int_compare_equal() {
-        let v = extract_val(builtin::int_compare(
-            &Rc::new(Value::Integer(3)),
-            &Rc::new(Value::Integer(3)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "Eq"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn int_compare_greater() {
-        let v = extract_val(builtin::int_compare(
-            &Rc::new(Value::Integer(10)),
-            &Rc::new(Value::Integer(3)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "Gt"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn int_compare_type_error() {
-        let result = builtin::int_compare(
-            &Rc::new(Value::Str("nope".into())),
-            &Rc::new(Value::Integer(3)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_absolute() {
-        let v = extract_val(builtin::int_absolute(
-            &Rc::new(Value::Integer(-7)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Integer(7)));
-    }
-
-    #[test]
-    fn int_absolute_positive() {
-        let v = extract_val(builtin::int_absolute(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Integer(5)));
-    }
-
-    #[test]
-    fn int_absolute_type_error() {
-        let result = builtin::int_absolute(
-            &Rc::new(Value::Str("x".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_parse_ok() {
-        let v = extract_val(builtin::int_parse(
-            &Rc::new(Value::Str("42".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Ok");
-                assert!(matches!(value.as_ref(), Value::Integer(42)));
-            }
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn int_parse_error() {
-        let v = extract_val(builtin::int_parse(
-            &Rc::new(Value::Str("abc".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "Error"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn int_parse_type_error() {
-        let result = builtin::int_parse(
-            &Rc::new(Value::Integer(42)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_to_string() {
-        let v = extract_val(builtin::int_to_string(
-            &Rc::new(Value::Integer(42)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Str(s) if s == "42"));
-    }
-
-    #[test]
-    fn int_to_string_type_error() {
-        let result = builtin::int_to_string(
-            &Rc::new(Value::Str("x".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_split_basic() {
-        let v = extract_val(builtin::string_split(
-            &Rc::new(Value::Str("a,b,c".into())),
-            &Rc::new(Value::Str(",".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Record(fields) => {
-                let head = fields.get("head").unwrap();
-                assert!(matches!(head.as_ref(), Value::Str(s) if s == "a"));
-                let tail = fields.get("tail").unwrap();
-                match tail.as_ref() {
-                    Value::LinkedList(items) => assert_eq!(items.len(), 2),
-                    _ => panic!("expected list tail"),
-                }
-            }
-            _ => panic!("expected Record"),
-        }
-    }
-
-    #[test]
-    fn string_split_empty_delimiter() {
-        let v = extract_val(builtin::string_split(
-            &Rc::new(Value::Str("abc".into())),
-            &Rc::new(Value::Str("".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Record(fields) => {
-                let head = fields.get("head").unwrap();
-                assert!(matches!(head.as_ref(), Value::Str(s) if s == "a"));
-            }
-            _ => panic!("expected Record"),
-        }
-    }
-
-    #[test]
-    fn string_split_type_error() {
-        let result = builtin::string_split(
-            &Rc::new(Value::Integer(5)),
-            &Rc::new(Value::Str(",".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_split_once_found() {
-        let v = extract_val(builtin::string_split_once(
-            &Rc::new(Value::Str("hello-world-test".into())),
-            &Rc::new(Value::Str("-".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Ok");
-                match value.as_ref() {
-                    Value::Record(fields) => {
-                        let pre = fields.get("pre").unwrap();
-                        assert!(matches!(pre.as_ref(), Value::Str(s) if s == "hello"));
-                        let post = fields.get("post").unwrap();
-                        assert!(matches!(post.as_ref(), Value::Str(s) if s == "world-test"));
-                    }
-                    _ => panic!("expected Record"),
-                }
-            }
-            _ => panic!("expected Tagged Ok"),
-        }
-    }
-
-    #[test]
-    fn string_split_once_not_found() {
-        let v = extract_val(builtin::string_split_once(
-            &Rc::new(Value::Str("hello".into())),
-            &Rc::new(Value::Str("-".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "Error"),
-            _ => panic!("expected Tagged Error"),
-        }
-    }
-
-    #[test]
-    fn string_split_once_type_error() {
-        let result = builtin::string_split_once(
-            &Rc::new(Value::Integer(5)),
-            &Rc::new(Value::Str(",".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_replace() {
-        let v = extract_val(builtin::string_replace(
-            &Rc::new(Value::Str("hello world".into())),
-            &Rc::new(Value::Str("world".into())),
-            &Rc::new(Value::Str("rust".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Str(s) if s == "hello rust"));
-    }
-
-    #[test]
-    fn string_replace_type_error() {
-        let result = builtin::string_replace(
-            &Rc::new(Value::Integer(5)),
-            &Rc::new(Value::Str("a".into())),
-            &Rc::new(Value::Str("b".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_uppercase() {
-        let v = extract_val(builtin::string_uppercase(
-            &Rc::new(Value::Str("hello".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Str(s) if s == "HELLO"));
-    }
-
-    #[test]
-    fn string_uppercase_type_error() {
-        let result = builtin::string_uppercase(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_lowercase() {
-        let v = extract_val(builtin::string_lowercase(
-            &Rc::new(Value::Str("HELLO".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Str(s) if s == "hello"));
-    }
-
-    #[test]
-    fn string_lowercase_type_error() {
-        let result = builtin::string_lowercase(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_starts_with_true() {
-        let v = extract_val(builtin::string_starts_with(
-            &Rc::new(Value::Str("hello world".into())),
-            &Rc::new(Value::Str("hello".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "True"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn string_starts_with_false() {
-        let v = extract_val(builtin::string_starts_with(
-            &Rc::new(Value::Str("hello".into())),
-            &Rc::new(Value::Str("world".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "False"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn string_starts_with_type_error() {
-        let result = builtin::string_starts_with(
-            &Rc::new(Value::Integer(5)),
-            &Rc::new(Value::Str("a".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_ends_with_true() {
-        let v = extract_val(builtin::string_ends_with(
-            &Rc::new(Value::Str("hello world".into())),
-            &Rc::new(Value::Str("world".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "True"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn string_ends_with_false() {
-        let v = extract_val(builtin::string_ends_with(
-            &Rc::new(Value::Str("hello".into())),
-            &Rc::new(Value::Str("world".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "False"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn string_ends_with_type_error() {
-        let result = builtin::string_ends_with(
-            &Rc::new(Value::Integer(5)),
-            &Rc::new(Value::Str("a".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_length_ascii() {
-        let v = extract_val(builtin::string_length(
-            &Rc::new(Value::Str("hello".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Integer(5)));
-    }
-
-    #[test]
-    fn string_length_unicode() {
-        // "é" is one grapheme cluster
-        let v = extract_val(builtin::string_length(
-            &Rc::new(Value::Str("café".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Integer(4)));
-    }
-
-    #[test]
-    fn string_length_type_error() {
-        let result = builtin::string_length(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_to_binary() {
-        let v = extract_val(builtin::string_to_binary(
-            &Rc::new(Value::Str("AB".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Binary(b) if b == &vec![65, 66]));
-    }
-
-    #[test]
-    fn string_to_binary_type_error() {
-        let result = builtin::string_to_binary(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_from_binary_ok() {
-        let v = extract_val(builtin::string_from_binary(
-            &Rc::new(Value::Binary(vec![72, 105])),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Ok");
-                assert!(matches!(value.as_ref(), Value::Str(s) if s == "Hi"));
-            }
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn string_from_binary_invalid_utf8() {
-        let v = extract_val(builtin::string_from_binary(
-            &Rc::new(Value::Binary(vec![0xFF, 0xFE])),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "Error"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn string_from_binary_type_error() {
-        let result = builtin::string_from_binary(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn binary_from_integers_basic() {
-        let items = vec![
-            Rc::new(Value::Integer(65)),
-            Rc::new(Value::Integer(66)),
-            Rc::new(Value::Integer(67)),
-        ];
-        let v = extract_val(builtin::binary_from_integers(
-            &Rc::new(Value::LinkedList(items)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Binary(b) if b == &vec![65, 66, 67]));
-    }
-
-    #[test]
-    fn binary_from_integers_empty() {
-        let v = extract_val(builtin::binary_from_integers(
-            &Rc::new(Value::LinkedList(vec![])),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        assert!(matches!(v.as_ref(), Value::Binary(b) if b.is_empty()));
-    }
-
-    #[test]
-    fn binary_from_integers_type_error() {
-        let result = builtin::binary_from_integers(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn list_pop_nonempty() {
-        let items = vec![
-            Rc::new(Value::Integer(1)),
-            Rc::new(Value::Integer(2)),
-            Rc::new(Value::Integer(3)),
-        ];
-        let v = extract_val(builtin::list_pop(
-            &Rc::new(Value::LinkedList(items)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Ok");
-                match value.as_ref() {
-                    Value::Record(fields) => {
-                        let head = fields.get("head").unwrap();
-                        assert!(matches!(head.as_ref(), Value::Integer(1)));
-                        let tail = fields.get("tail").unwrap();
-                        match tail.as_ref() {
-                            Value::LinkedList(rest) => assert_eq!(rest.len(), 2),
-                            _ => panic!("expected list tail"),
-                        }
-                    }
-                    _ => panic!("expected Record"),
-                }
-            }
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn list_pop_empty() {
-        let v = extract_val(builtin::list_pop(
-            &Rc::new(Value::LinkedList(vec![])),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "Error"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn list_pop_type_error() {
-        let result = builtin::list_pop(
-            &Rc::new(Value::Integer(5)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn equal_false() {
-        let v = extract_val(builtin::equal(
-            &Rc::new(Value::Integer(1)),
-            &Rc::new(Value::Integer(2)),
-            (),
-            empty_env(),
-            empty_stack(),
-        ));
-        match v.as_ref() {
-            Value::Tagged { label, .. } => assert_eq!(label, "False"),
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    // Type error on second arg for int_add/subtract/multiply/divide
-    #[test]
-    fn int_add_type_error_first() {
-        let result = builtin::int_add(
-            &Rc::new(Value::Str("x".into())),
-            &Rc::new(Value::Integer(1)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_add_type_error_second() {
-        let result = builtin::int_add(
-            &Rc::new(Value::Integer(1)),
-            &Rc::new(Value::Str("x".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_subtract_type_error() {
-        let result = builtin::int_subtract(
-            &Rc::new(Value::Str("x".into())),
-            &Rc::new(Value::Integer(1)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_multiply_type_error() {
-        let result = builtin::int_multiply(
-            &Rc::new(Value::Str("x".into())),
-            &Rc::new(Value::Integer(1)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_divide_type_error() {
-        let result = builtin::int_divide(
-            &Rc::new(Value::Str("x".into())),
-            &Rc::new(Value::Integer(1)),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn string_append_type_error() {
-        let result = builtin::string_append(
-            &Rc::new(Value::Integer(5)),
-            &Rc::new(Value::Str("x".into())),
-            (),
-            empty_env(),
-            empty_stack(),
-        );
-        assert!(result.is_err());
-    }
-}
-
-// ============================================================================
-// AST tests
-// ============================================================================
-mod ast_tests {
-    use super::*;
-
-    #[test]
-    fn node_helper() {
-        let n = ast::node(Expr::Integer { value: 42 });
-        assert_eq!(n, Node(Expr::Integer { value: 42 }, ()));
-    }
-
-    #[test]
-    fn node_serialize_roundtrip_integer() {
-        let n = Node(Expr::Integer { value: 42 }, ());
-        let json = serde_json::to_string(&n).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, n);
-    }
-
-    #[test]
-    fn node_serialize_variable() {
-        let n = Node(Expr::Variable { label: "x".into() }, ());
-        let json = serde_json::to_string(&n).unwrap();
-        assert!(json.contains("\"0\":\"v\""));
-        assert!(json.contains("\"l\":\"x\""));
-    }
-
-    #[test]
-    fn node_serialize_string() {
-        let n = Node(Expr::String { value: "hello".into() }, ());
-        let json = serde_json::to_string(&n).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, n);
-    }
-
-    #[test]
-    fn node_serialize_lambda() {
-        let body = Box::new(Node(Expr::Variable { label: "x".into() }, ()));
-        let n = Node(
-            Expr::Lambda {
-                label: "x".into(),
-                body,
-            },
-            (),
-        );
-        let json = serde_json::to_string(&n).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, n);
-    }
-
-    #[test]
-    fn node_serialize_tail() {
-        let n = Node(Expr::Tail, ());
-        let json = serde_json::to_string(&n).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, n);
-    }
-
-    #[test]
-    fn node_serialize_binary() {
-        let n = Node(Expr::Binary { value: vec![1, 2, 3] }, ());
-        let json = serde_json::to_string(&n).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, n);
-    }
-
-    #[test]
-    fn node_serialize_reference() {
-        let n = Node(
-            Expr::Reference {
-                identifier: "bafytest".into(),
-            },
-            (),
-        );
-        let json = serde_json::to_string(&n).unwrap();
-        assert!(json.contains("bafytest"));
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, n);
-    }
-
-    #[test]
-    fn node_serialize_release() {
-        let n = Node(
-            Expr::Release {
-                package: "mypkg".into(),
-                release: 1,
-                identifier: "bafyrelease".into(),
-            },
-            (),
-        );
-        let json = serde_json::to_string(&n).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, n);
-    }
-}
-
-// ============================================================================
-// dag_json serialization tests
-// ============================================================================
-mod dag_json_tests {
-    use super::*;
-
-    #[test]
-    fn serialize_deserialize_binary() {
-        let n = Node(Expr::Binary { value: vec![0, 127, 255] }, ());
-        let json = serde_json::to_value(&n).unwrap();
-        let deserialized: Node = serde_json::from_value(json).unwrap();
-        match &deserialized.0 {
-            Expr::Binary { value } => assert_eq!(value, &vec![0, 127, 255]),
-            _ => panic!("expected Binary"),
-        }
-    }
-
-    #[test]
-    fn serialize_deserialize_cid() {
-        let n = Node(
-            Expr::Reference {
-                identifier: "bafyreib4e2q".into(),
-            },
-            (),
-        );
-        let json = serde_json::to_value(&n).unwrap();
-        let deserialized: Node = serde_json::from_value(json).unwrap();
-        match &deserialized.0 {
-            Expr::Reference { identifier } => assert_eq!(identifier, "bafyreib4e2q"),
-            _ => panic!("expected Reference"),
-        }
-    }
-
-    #[test]
-    fn serialize_deserialize_empty_binary() {
-        let n = Node(Expr::Binary { value: vec![] }, ());
-        let json = serde_json::to_value(&n).unwrap();
-        let deserialized: Node = serde_json::from_value(json).unwrap();
-        match &deserialized.0 {
-            Expr::Binary { value } => assert!(value.is_empty()),
-            _ => panic!("expected Binary"),
-        }
-    }
-}
-
-// ============================================================================
-// expression::call tests
-// ============================================================================
-mod expression_tests {
-    use super::*;
-
-    #[test]
-    fn call_tag_function() {
-        let f = Rc::new(Value::Partial(Switch::Tag("Ok".into()), vec![]));
-        let args = vec![(Rc::new(Value::Integer(42)), ())];
-        let result = expression::call(f, args);
-        assert!(result.is_ok());
-        let val = result.unwrap();
-        match val.as_ref() {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Ok");
-                assert!(matches!(value.as_ref(), Value::Integer(42)));
-            }
-            _ => panic!("expected Tagged"),
-        }
-    }
-
-    #[test]
-    fn call_select_function() {
-        let f = Rc::new(Value::Partial(Switch::Select("x".into()), vec![]));
-        let mut fields = im::HashMap::new();
-        fields.insert("x".to_string(), Rc::new(Value::Integer(10)));
-        let args = vec![(Rc::new(Value::Record(fields)), ())];
-        let result = expression::call(f, args);
-        assert!(result.is_ok());
-        let val = result.unwrap();
-        assert!(matches!(val.as_ref(), Value::Integer(10)));
-    }
-
-    #[test]
-    fn call_not_a_function() {
-        let f = Rc::new(Value::Integer(42));
-        let args = vec![(Rc::new(Value::Integer(1)), ())];
-        let result = expression::call(f, args);
-        assert!(result.is_err());
-    }
-}
-
-// ============================================================================
-// state tests (Env, Builtin Debug, edge cases)
-// ============================================================================
-mod state_tests {
-    use super::*;
-
-    #[test]
-    fn env_empty() {
-        let env = Env::empty();
-        assert!(env.scope.is_empty());
-        assert!(env.references.is_empty());
-        assert!(env.builtins.is_empty());
-    }
-
-    #[test]
-    fn env_extend_and_lookup() {
-        let env = Env::empty();
-        let env2 = env.extend("x".to_string(), Rc::new(Value::Integer(42)));
-        assert!(matches!(
-            env2.lookup("x").unwrap().as_ref(),
-            Value::Integer(42)
-        ));
-        assert!(env2.lookup("y").is_none());
-    }
-
-    #[test]
-    fn env_extend_shadows() {
-        let env = Env::empty();
-        let env2 = env.extend("x".to_string(), Rc::new(Value::Integer(1)));
-        let env3 = env2.extend("x".to_string(), Rc::new(Value::Integer(2)));
-        assert!(matches!(
-            env3.lookup("x").unwrap().as_ref(),
-            Value::Integer(2)
-        ));
-    }
-
-    #[test]
-    fn builtin_debug_display() {
-        fn dummy1(_: &Rc<Value>, _: (), _: Env, _: Stack) -> rust_interpreter::interpreter::state::StepReturn {
-            unimplemented!()
-        }
-        fn dummy2(_: &Rc<Value>, _: &Rc<Value>, _: (), _: Env, _: Stack) -> rust_interpreter::interpreter::state::StepReturn {
-            unimplemented!()
-        }
-        fn dummy3(_: &Rc<Value>, _: &Rc<Value>, _: &Rc<Value>, _: (), _: Env, _: Stack) -> rust_interpreter::interpreter::state::StepReturn {
-            unimplemented!()
-        }
-        fn dummy4(_: &Rc<Value>, _: &Rc<Value>, _: &Rc<Value>, _: &Rc<Value>, _: (), _: Env, _: Stack) -> rust_interpreter::interpreter::state::StepReturn {
-            unimplemented!()
-        }
-
-        assert_eq!(format!("{:?}", Builtin::Arity1(dummy1)), "Builtin::Arity1(...)");
-        assert_eq!(format!("{:?}", Builtin::Arity2(dummy2)), "Builtin::Arity2(...)");
-        assert_eq!(format!("{:?}", Builtin::Arity3(dummy3)), "Builtin::Arity3(...)");
-        assert_eq!(format!("{:?}", Builtin::Arity4(dummy4)), "Builtin::Arity4(...)");
-    }
-}
-
-// ============================================================================
-// Interpreter integration tests (eval paths through state.rs)
-// ============================================================================
-mod eval_integration {
-    use super::*;
-
-    fn run_expr(expr: Expr) -> Result<Rc<Value>, Box<(BreakReason, (), Env, Stack)>> {
-        expression::execute(Node(expr, ()), im::Vector::new())
-    }
-
-    #[test]
-    fn eval_integer() {
-        let v = run_expr(Expr::Integer { value: 42 }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Integer(42)));
-    }
-
-    #[test]
-    fn eval_string() {
-        let v = run_expr(Expr::String { value: "hi".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Str(s) if s == "hi"));
-    }
-
-    #[test]
-    fn eval_binary() {
-        let v = run_expr(Expr::Binary { value: vec![1, 2] }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Binary(b) if b == &vec![1, 2]));
-    }
-
-    #[test]
-    fn eval_tail() {
-        let v = run_expr(Expr::Tail).unwrap();
-        assert!(matches!(v.as_ref(), Value::LinkedList(items) if items.is_empty()));
-    }
-
-    #[test]
-    fn eval_empty() {
-        let v = run_expr(Expr::Empty).unwrap();
-        assert!(matches!(v.as_ref(), Value::Record(fields) if fields.is_empty()));
-    }
-
-    #[test]
-    fn eval_cons() {
-        let v = run_expr(Expr::Cons).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Cons, args) if args.is_empty()));
-    }
-
-    #[test]
-    fn eval_vacant() {
-        let result = run_expr(Expr::Vacant);
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(debug.0, BreakReason::Vacant));
-    }
-
-    #[test]
-    fn eval_undefined_variable() {
-        let result = run_expr(Expr::Variable { label: "x".into() });
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(&debug.0, BreakReason::UndefinedVariable(v) if v == "x"));
-    }
-
-    #[test]
-    fn eval_undefined_builtin() {
-        let result = run_expr(Expr::Builtin { identifier: "nonexistent".into() });
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(&debug.0, BreakReason::UndefinedBuiltin(v) if v == "nonexistent"));
-    }
-
-    #[test]
-    fn eval_undefined_reference() {
-        let result = run_expr(Expr::Reference { identifier: "bafyxxx".into() });
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(&debug.0, BreakReason::UndefinedReference(v) if v == "bafyxxx"));
-    }
-
-    #[test]
-    fn eval_undefined_release() {
-        let result = run_expr(Expr::Release {
-            package: "pkg".into(),
             release: 1,
-            identifier: "cid".into(),
-        });
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(
-            &debug.0,
-            BreakReason::UndefinedRelease { package, release, cid }
-            if package == "pkg" && *release == 1 && cid == "cid"
-        ));
-    }
+            identifier: "bafycid".into(),
+        },
+        (),
+    );
+    let json = serde_json::to_string(&n).unwrap();
+    assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), n);
+}
 
-    #[test]
-    fn eval_select() {
-        let v = run_expr(Expr::Select { label: "x".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Select(_), _)));
-    }
+#[test]
+fn roundtrip_tail() {
+    let n = Node(Expr::Tail, ());
+    let json = serde_json::to_string(&n).unwrap();
+    assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), n);
+}
 
-    #[test]
-    fn eval_tag() {
-        let v = run_expr(Expr::Tag { label: "Ok".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Tag(_), _)));
-    }
+// ============================================================================
+// value_json deserialization (behavior: JSON -> runtime Value)
+// ============================================================================
 
-    #[test]
-    fn eval_perform() {
-        let v = run_expr(Expr::Perform { label: "Log".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Perform(_), _)));
-    }
+#[test]
+fn deserialize_json_binary() {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([1, 2, 3]);
+    let json = serde_json::json!({"binary": {"/": {"bytes": encoded}}});
+    assert!(matches!(value_json::deserialize_value(&json), Value::Binary(b) if b == vec![1, 2, 3]));
+}
 
-    #[test]
-    fn eval_extend() {
-        let v = run_expr(Expr::Extend { label: "x".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Extend(_), _)));
-    }
-
-    #[test]
-    fn eval_overwrite() {
-        let v = run_expr(Expr::Overwrite { label: "x".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Overwrite(_), _)));
-    }
-
-    #[test]
-    fn eval_case() {
-        let v = run_expr(Expr::Case { label: "Ok".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Match(_), _)));
-    }
-
-    #[test]
-    fn eval_no_cases() {
-        let v = run_expr(Expr::NoCases).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::NoCases, _)));
-    }
-
-    #[test]
-    fn eval_handle() {
-        let v = run_expr(Expr::Handle { label: "Log".into() }).unwrap();
-        assert!(matches!(v.as_ref(), Value::Partial(Switch::Handle(_), _)));
-    }
-
-    #[test]
-    fn eval_lambda_and_apply() {
-        // (\x -> x) 42
-        let id_fn = Expr::Lambda {
-            label: "x".into(),
-            body: Box::new(Node(Expr::Variable { label: "x".into() }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(id_fn, ())),
-            argument: Box::new(Node(Expr::Integer { value: 42 }, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        assert!(matches!(v.as_ref(), Value::Integer(42)));
-    }
-
-    #[test]
-    fn eval_let_binding() {
-        // let x = 10 in x
-        let letexpr = Expr::Let {
-            label: "x".into(),
-            definition: Box::new(Node(Expr::Integer { value: 10 }, ())),
-            body: Box::new(Node(Expr::Variable { label: "x".into() }, ())),
-        };
-        let v = run_expr(letexpr).unwrap();
-        assert!(matches!(v.as_ref(), Value::Integer(10)));
-    }
-
-    #[test]
-    fn eval_apply_not_a_function() {
-        // 42 applied to 1
-        let apply = Expr::Apply {
-            func: Box::new(Node(Expr::Integer { value: 42 }, ())),
-            argument: Box::new(Node(Expr::Integer { value: 1 }, ())),
-        };
-        let result = run_expr(apply);
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(debug.0, BreakReason::NotAFunction(_)));
-    }
-
-    #[test]
-    fn eval_no_cases_applied() {
-        // NoCases applied to a tagged value -> NoMatch
-        let apply = Expr::Apply {
-            func: Box::new(Node(Expr::NoCases, ())),
-            argument: Box::new(Node(
-                Expr::Apply {
-                    func: Box::new(Node(Expr::Tag { label: "X".into() }, ())),
-                    argument: Box::new(Node(Expr::Integer { value: 1 }, ())),
-                },
-                (),
-            )),
-        };
-        let result = run_expr(apply);
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(debug.0, BreakReason::NoMatch(_)));
-    }
-
-    #[test]
-    fn eval_select_missing_field() {
-        // .missing applied to {}
-        let apply = Expr::Apply {
-            func: Box::new(Node(Expr::Select { label: "missing".into() }, ())),
-            argument: Box::new(Node(Expr::Empty, ())),
-        };
-        let result = run_expr(apply);
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(&debug.0, BreakReason::MissingField(f) if f == "missing"));
-    }
-
-    #[test]
-    fn eval_overwrite_missing_field() {
-        // (:=missing) applied to a value then to {}
-        // overwrite takes value then record
-        let ow = Expr::Overwrite { label: "missing".into() };
-        // (:=missing "val") {}
-        let partial_apply = Expr::Apply {
-            func: Box::new(Node(ow, ())),
-            argument: Box::new(Node(Expr::String { value: "val".into() }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(partial_apply, ())),
-            argument: Box::new(Node(Expr::Empty, ())),
-        };
-        let result = run_expr(apply);
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(&debug.0, BreakReason::MissingField(f) if f == "missing"));
-    }
-
-    #[test]
-    fn eval_perform_unhandled() {
-        // (perform "Log") "hello"
-        let apply = Expr::Apply {
-            func: Box::new(Node(Expr::Perform { label: "Log".into() }, ())),
-            argument: Box::new(Node(Expr::String { value: "hello".into() }, ())),
-        };
-        let result = run_expr(apply);
-        assert!(result.is_err());
-        let debug = result.unwrap_err();
-        assert!(matches!(&debug.0, BreakReason::UnhandledEffect(l, _) if l == "Log"));
-    }
-
-    #[test]
-    fn eval_cons_builds_list() {
-        // cons 1 []
-        let cons_1 = Expr::Apply {
-            func: Box::new(Node(Expr::Cons, ())),
-            argument: Box::new(Node(Expr::Integer { value: 1 }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(cons_1, ())),
-            argument: Box::new(Node(Expr::Tail, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        match v.as_ref() {
-            Value::LinkedList(items) => {
-                assert_eq!(items.len(), 1);
-                assert!(matches!(items[0].as_ref(), Value::Integer(1)));
-            }
-            _ => panic!("expected LinkedList"),
+#[test]
+fn deserialize_json_list() {
+    let json = serde_json::json!({"list": [{"integer": 1}, {"integer": 2}]});
+    match value_json::deserialize_value(&json) {
+        Value::LinkedList(items) => {
+            assert_eq!(items.len(), 2);
+            assert!(matches!(items[0].as_ref(), Value::Integer(1)));
+            assert!(matches!(items[1].as_ref(), Value::Integer(2)));
         }
+        other => panic!("expected list, got {other:?}"),
     }
+}
 
-    #[test]
-    fn eval_extend_builds_record() {
-        // (+x) 42 {}
-        let ext = Expr::Extend { label: "x".into() };
-        let partial = Expr::Apply {
-            func: Box::new(Node(ext, ())),
-            argument: Box::new(Node(Expr::Integer { value: 42 }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(partial, ())),
-            argument: Box::new(Node(Expr::Empty, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        match v.as_ref() {
-            Value::Record(fields) => {
-                let x = fields.get("x").unwrap();
-                assert!(matches!(x.as_ref(), Value::Integer(42)));
-            }
-            _ => panic!("expected Record"),
+#[test]
+fn deserialize_json_record() {
+    let json = serde_json::json!({"record": {"x": {"integer": 1}, "y": {"string": "hi"}}});
+    match value_json::deserialize_value(&json) {
+        Value::Record(fields) => {
+            assert!(matches!(fields.get("x").unwrap().as_ref(), Value::Integer(1)));
+            assert!(matches!(fields.get("y").unwrap().as_ref(), Value::Str(s) if s == "hi"));
         }
+        other => panic!("expected record, got {other:?}"),
     }
+}
 
-    #[test]
-    fn eval_overwrite_existing_field() {
-        // Build {x: 1}, then overwrite x with 2
-        let build_record = Expr::Apply {
-            func: Box::new(Node(
-                Expr::Apply {
-                    func: Box::new(Node(Expr::Extend { label: "x".into() }, ())),
-                    argument: Box::new(Node(Expr::Integer { value: 1 }, ())),
-                },
-                (),
-            )),
-            argument: Box::new(Node(Expr::Empty, ())),
-        };
-        let ow_partial = Expr::Apply {
-            func: Box::new(Node(Expr::Overwrite { label: "x".into() }, ())),
-            argument: Box::new(Node(Expr::Integer { value: 2 }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(ow_partial, ())),
-            argument: Box::new(Node(build_record, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        match v.as_ref() {
-            Value::Record(fields) => {
-                let x = fields.get("x").unwrap();
-                assert!(matches!(x.as_ref(), Value::Integer(2)));
-            }
-            _ => panic!("expected Record"),
+#[test]
+fn deserialize_json_tagged() {
+    let json = serde_json::json!({"tagged": {"label": "Ok", "value": {"integer": 42}}});
+    match value_json::deserialize_value(&json) {
+        Value::Tagged { label, value } => {
+            assert_eq!(label, "Ok");
+            assert!(matches!(value.as_ref(), Value::Integer(42)));
         }
+        other => panic!("expected tagged, got {other:?}"),
     }
+}
 
-    #[test]
-    fn eval_match_correct_branch() {
-        // case "Ok" (\v -> v) (\_ -> 0) applied to Ok(42)
-        let id_fn = Expr::Lambda {
-            label: "v".into(),
-            body: Box::new(Node(Expr::Variable { label: "v".into() }, ())),
-        };
-        let otherwise = Expr::Lambda {
-            label: "_".into(),
-            body: Box::new(Node(Expr::Integer { value: 0 }, ())),
-        };
-        let case_partial1 = Expr::Apply {
-            func: Box::new(Node(Expr::Case { label: "Ok".into() }, ())),
-            argument: Box::new(Node(id_fn, ())),
-        };
-        let case_partial2 = Expr::Apply {
-            func: Box::new(Node(case_partial1, ())),
-            argument: Box::new(Node(otherwise, ())),
-        };
-        let tagged = Expr::Apply {
-            func: Box::new(Node(Expr::Tag { label: "Ok".into() }, ())),
-            argument: Box::new(Node(Expr::Integer { value: 42 }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(case_partial2, ())),
-            argument: Box::new(Node(tagged, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        assert!(matches!(v.as_ref(), Value::Integer(42)));
+#[test]
+#[should_panic(expected = "Unknown value type")]
+fn deserialize_json_unknown_type_panics() {
+    value_json::deserialize_value(&serde_json::json!({"garbage": true}));
+}
+
+// ============================================================================
+// Equality on complex types (exercises Value::equals through the `equal` builtin)
+// ============================================================================
+
+#[test]
+fn equal_lists_are_equal() {
+    // equal (cons 1 (cons 2 [])) (cons 1 (cons 2 []))
+    let mk_list = || {
+        apply(
+            apply(Expr::Cons, int(1)),
+            apply(apply(Expr::Cons, int(2)), Expr::Tail),
+        )
+    };
+    let program = call2("equal", mk_list(), mk_list());
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "True"),
+        other => panic!("expected True, got {other}"),
     }
+}
 
-    #[test]
-    fn eval_match_otherwise_branch() {
-        // case "Ok" (\v -> v) (\_ -> 0) applied to Err(99)
-        let id_fn = Expr::Lambda {
-            label: "v".into(),
-            body: Box::new(Node(Expr::Variable { label: "v".into() }, ())),
-        };
-        let otherwise = Expr::Lambda {
-            label: "_".into(),
-            body: Box::new(Node(Expr::Integer { value: 0 }, ())),
-        };
-        let case_partial1 = Expr::Apply {
-            func: Box::new(Node(Expr::Case { label: "Ok".into() }, ())),
-            argument: Box::new(Node(id_fn, ())),
-        };
-        let case_partial2 = Expr::Apply {
-            func: Box::new(Node(case_partial1, ())),
-            argument: Box::new(Node(otherwise, ())),
-        };
-        let tagged = Expr::Apply {
-            func: Box::new(Node(Expr::Tag { label: "Err".into() }, ())),
-            argument: Box::new(Node(Expr::Integer { value: 99 }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(case_partial2, ())),
-            argument: Box::new(Node(tagged, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        assert!(matches!(v.as_ref(), Value::Integer(0)));
+#[test]
+fn different_lists_are_not_equal() {
+    let list_a = apply(apply(Expr::Cons, int(1)), Expr::Tail);
+    let list_b = apply(apply(Expr::Cons, int(2)), Expr::Tail);
+    let program = call2("equal", list_a, list_b);
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "False"),
+        other => panic!("expected False, got {other}"),
     }
+}
 
-    #[test]
-    fn eval_builtin_via_expression() {
-        // int_add 3 4
-        let add_3 = Expr::Apply {
-            func: Box::new(Node(Expr::Builtin { identifier: "int_add".into() }, ())),
-            argument: Box::new(Node(Expr::Integer { value: 3 }, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(add_3, ())),
-            argument: Box::new(Node(Expr::Integer { value: 4 }, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        assert!(matches!(v.as_ref(), Value::Integer(7)));
+#[test]
+fn equal_records_are_equal() {
+    let mk_rec = || apply(apply(Expr::Extend { label: "x".into() }, int(1)), Expr::Empty);
+    let program = call2("equal", mk_rec(), mk_rec());
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "True"),
+        other => panic!("expected True, got {other}"),
     }
+}
 
-    #[test]
-    fn eval_select_field() {
-        // .x applied to {x: 10}
-        let build_record = Expr::Apply {
-            func: Box::new(Node(
-                Expr::Apply {
-                    func: Box::new(Node(Expr::Extend { label: "x".into() }, ())),
-                    argument: Box::new(Node(Expr::Integer { value: 10 }, ())),
-                },
-                (),
-            )),
-            argument: Box::new(Node(Expr::Empty, ())),
-        };
-        let apply = Expr::Apply {
-            func: Box::new(Node(Expr::Select { label: "x".into() }, ())),
-            argument: Box::new(Node(build_record, ())),
-        };
-        let v = run_expr(apply).unwrap();
-        assert!(matches!(v.as_ref(), Value::Integer(10)));
+#[test]
+fn different_records_are_not_equal() {
+    let rec_a = apply(apply(Expr::Extend { label: "x".into() }, int(1)), Expr::Empty);
+    let rec_b = apply(apply(Expr::Extend { label: "x".into() }, int(2)), Expr::Empty);
+    let program = call2("equal", rec_a, rec_b);
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "False"),
+        other => panic!("expected False, got {other}"),
+    }
+}
+
+#[test]
+fn equal_tagged_values_are_equal() {
+    let mk_tagged = || apply(Expr::Tag { label: "Ok".into() }, int(42));
+    let program = call2("equal", mk_tagged(), mk_tagged());
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "True"),
+        other => panic!("expected True, got {other}"),
+    }
+}
+
+#[test]
+fn different_tagged_labels_not_equal() {
+    let a = apply(Expr::Tag { label: "Ok".into() }, int(1));
+    let b = apply(Expr::Tag { label: "Err".into() }, int(1));
+    let program = call2("equal", a, b);
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "False"),
+        other => panic!("expected False, got {other}"),
+    }
+}
+
+#[test]
+fn different_types_not_equal() {
+    // equal 1 "1" -> False
+    let program = call2("equal", int(1), str_lit("1"));
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "False"),
+        other => panic!("expected False, got {other}"),
+    }
+}
+
+#[test]
+fn equal_binaries_are_equal() {
+    let a = Expr::Binary { value: vec![1, 2, 3] };
+    let b = Expr::Binary { value: vec![1, 2, 3] };
+    let program = call2("equal", a, b);
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "True"),
+        other => panic!("expected True, got {other}"),
     }
 }
 
 // ============================================================================
-// value_json tests (edge cases)
+// Additional end-to-end: overwrite existing field, list_pop, int_absolute
 // ============================================================================
-mod value_json_tests {
-    use super::*;
 
-    #[test]
-    fn deserialize_binary_value() {
-        use base64::Engine;
-        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&[1, 2, 3]);
-        let json: serde_json::Value = serde_json::json!({
-            "binary": {"/": {"bytes": encoded}}
-        });
-        let v = value_json::deserialize_value(&json);
-        assert!(matches!(v, Value::Binary(b) if b == vec![1, 2, 3]));
-    }
-
-    #[test]
-    fn deserialize_list_value() {
-        let json: serde_json::Value = serde_json::json!({
-            "list": [{"integer": 1}, {"integer": 2}]
-        });
-        let v = value_json::deserialize_value(&json);
-        match v {
-            Value::LinkedList(items) => assert_eq!(items.len(), 2),
-            _ => panic!("expected LinkedList"),
+#[test]
+fn overwrite_changes_existing_field() {
+    // let r = (+x) 1 {} in (:=x) 99 r
+    // Expected: record with x=99
+    let build = apply(apply(Expr::Extend { label: "x".into() }, int(1)), Expr::Empty);
+    let program = let_in(
+        "r",
+        build,
+        apply(
+            apply(Expr::Overwrite { label: "x".into() }, int(99)),
+            var("r"),
+        ),
+    );
+    let v = run(program).unwrap();
+    match v.as_ref() {
+        Value::Record(fields) => {
+            assert!(matches!(fields.get("x").unwrap().as_ref(), Value::Integer(99)));
         }
+        other => panic!("expected record, got {other}"),
     }
+}
 
-    #[test]
-    fn deserialize_record_value() {
-        let json: serde_json::Value = serde_json::json!({
-            "record": {"x": {"integer": 1}, "y": {"string": "hi"}}
-        });
-        let v = value_json::deserialize_value(&json);
-        match v {
-            Value::Record(fields) => {
-                assert_eq!(fields.len(), 2);
-                assert!(matches!(fields.get("x").unwrap().as_ref(), Value::Integer(1)));
-                assert!(matches!(fields.get("y").unwrap().as_ref(), Value::Str(s) if s == "hi"));
+#[test]
+fn list_pop_returns_head_and_tail() {
+    // list_pop (cons 10 (cons 20 []))
+    // Expected: Ok({head: 10, tail: [20]})
+    let list = apply(
+        apply(Expr::Cons, int(10)),
+        apply(apply(Expr::Cons, int(20)), Expr::Tail),
+    );
+    let program = call1("list_pop", list);
+    let v = run(program).unwrap();
+    match v.as_ref() {
+        Value::Tagged { label, value } => {
+            assert_eq!(label, "Ok");
+            match value.as_ref() {
+                Value::Record(fields) => {
+                    assert!(matches!(fields.get("head").unwrap().as_ref(), Value::Integer(10)));
+                    match fields.get("tail").unwrap().as_ref() {
+                        Value::LinkedList(rest) => {
+                            assert_eq!(rest.len(), 1);
+                            assert!(matches!(rest[0].as_ref(), Value::Integer(20)));
+                        }
+                        other => panic!("expected list tail, got {other}"),
+                    }
+                }
+                other => panic!("expected record, got {other}"),
             }
-            _ => panic!("expected Record"),
         }
+        other => panic!("expected Ok, got {other}"),
     }
+}
 
-    #[test]
-    fn deserialize_tagged_value() {
-        let json: serde_json::Value = serde_json::json!({
-            "tagged": {"label": "Ok", "value": {"integer": 42}}
-        });
-        let v = value_json::deserialize_value(&json);
-        match v {
-            Value::Tagged { label, value } => {
-                assert_eq!(label, "Ok");
-                assert!(matches!(value.as_ref(), Value::Integer(42)));
+#[test]
+fn list_pop_empty_returns_error() {
+    let program = call1("list_pop", Expr::Tail);
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "Error"),
+        other => panic!("expected Error, got {other}"),
+    }
+}
+
+#[test]
+fn int_absolute_of_negative() {
+    let program = call1("int_absolute", int(-7));
+    assert!(matches!(run(program).unwrap().as_ref(), Value::Integer(7)));
+}
+
+#[test]
+fn string_split_returns_head_and_tail() {
+    // string_split "a,b,c" ","
+    let program = call2("string_split", str_lit("a,b,c"), str_lit(","));
+    let v = run(program).unwrap();
+    match v.as_ref() {
+        Value::Record(fields) => {
+            assert!(matches!(fields.get("head").unwrap().as_ref(), Value::Str(s) if s == "a"));
+            match fields.get("tail").unwrap().as_ref() {
+                Value::LinkedList(items) => assert_eq!(items.len(), 2),
+                other => panic!("expected list, got {other}"),
             }
-            _ => panic!("expected Tagged"),
         }
+        other => panic!("expected record, got {other}"),
     }
+}
 
-    #[test]
-    #[should_panic(expected = "Unknown value type")]
-    fn deserialize_unknown_value() {
-        let json: serde_json::Value = serde_json::json!({"unknown": true});
-        value_json::deserialize_value(&json);
+#[test]
+fn string_split_once_returns_pre_and_post() {
+    let program = call2("string_split_once", str_lit("hello-world"), str_lit("-"));
+    let v = run(program).unwrap();
+    match v.as_ref() {
+        Value::Tagged { label, value } => {
+            assert_eq!(label, "Ok");
+            match value.as_ref() {
+                Value::Record(fields) => {
+                    assert!(matches!(fields.get("pre").unwrap().as_ref(), Value::Str(s) if s == "hello"));
+                    assert!(matches!(fields.get("post").unwrap().as_ref(), Value::Str(s) if s == "world"));
+                }
+                other => panic!("expected record, got {other}"),
+            }
+        }
+        other => panic!("expected Ok, got {other}"),
+    }
+}
+
+#[test]
+fn string_length_counts_grapheme_clusters() {
+    // "café" has 4 graphemes even though é might be multi-byte
+    let program = call1("string_length", str_lit("café"));
+    assert!(matches!(run(program).unwrap().as_ref(), Value::Integer(4)));
+}
+
+#[test]
+fn binary_from_integers_creates_correct_bytes() {
+    // binary_from_integers (cons 65 (cons 66 []))
+    let list = apply(
+        apply(Expr::Cons, int(65)),
+        apply(apply(Expr::Cons, int(66)), Expr::Tail),
+    );
+    let program = call1("binary_from_integers", list);
+    assert!(matches!(run(program).unwrap().as_ref(), Value::Binary(b) if b == &vec![65, 66]));
+}
+
+#[test]
+fn int_compare_returns_ordering() {
+    // int_compare 1 5 -> Lt
+    match run(call2("int_compare", int(1), int(5))).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "Lt"),
+        other => panic!("expected Lt, got {other}"),
+    }
+    // int_compare 5 5 -> Eq
+    match run(call2("int_compare", int(5), int(5))).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "Eq"),
+        other => panic!("expected Eq, got {other}"),
+    }
+    // int_compare 5 1 -> Gt
+    match run(call2("int_compare", int(5), int(1))).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "Gt"),
+        other => panic!("expected Gt, got {other}"),
+    }
+}
+
+#[test]
+fn string_starts_with_and_ends_with() {
+    match run(call2("string_starts_with", str_lit("hello"), str_lit("hel"))).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "True"),
+        other => panic!("expected True, got {other}"),
+    }
+    match run(call2("string_ends_with", str_lit("hello"), str_lit("llo"))).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "True"),
+        other => panic!("expected True, got {other}"),
+    }
+}
+
+#[test]
+fn string_lowercase_and_uppercase() {
+    match run(call1("string_lowercase", str_lit("HELLO"))).unwrap().as_ref() {
+        Value::Str(s) => assert_eq!(s, "hello"),
+        other => panic!("expected string, got {other}"),
+    }
+    match run(call1("string_uppercase", str_lit("hello"))).unwrap().as_ref() {
+        Value::Str(s) => assert_eq!(s, "HELLO"),
+        other => panic!("expected string, got {other}"),
+    }
+}
+
+#[test]
+fn string_from_binary_with_invalid_utf8_returns_error() {
+    let bad_bytes = Expr::Binary { value: vec![0xFF, 0xFE] };
+    let program = call1("string_from_binary", bad_bytes);
+    match run(program).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "Error"),
+        other => panic!("expected Error, got {other}"),
+    }
+}
+
+#[test]
+fn int_parse_invalid_string_returns_error() {
+    match run(call1("int_parse", str_lit("not_a_number"))).unwrap().as_ref() {
+        Value::Tagged { label, .. } => assert_eq!(label, "Error"),
+        other => panic!("expected Error, got {other}"),
     }
 }
