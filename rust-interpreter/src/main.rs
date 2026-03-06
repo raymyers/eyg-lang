@@ -1,6 +1,4 @@
-use clap::{Parser, ValueEnum};
-use eyg_analysis::debug as type_debug;
-use eyg_analysis::infer::{self, Context};
+use clap::Parser;
 use rust_interpreter::interpreter::{
     break_reason::BreakReason, expression, value, value_json,
 };
@@ -11,33 +9,12 @@ use std::fs;
 use std::process;
 use std::rc::Rc;
 
-#[derive(ValueEnum, Clone, Debug, Default)]
-enum InputFormat {
-    /// dag-json IR format (default)
-    #[default]
-    Ir,
-    /// EYG source text
-    Eyg,
-}
-
 #[derive(Parser, Debug)]
 #[command(name = "eyg-run")]
 #[command(about = "EYG Rust Interpreter - Execute EYG programs", long_about = None)]
 struct Args {
-    /// Path to EYG program file
+    /// Path to EYG program file (dag-json IR)
     file: String,
-
-    /// Input format: ir (dag-json, default) or eyg (source text)
-    #[arg(long = "in", default_value = "ir")]
-    input_format: InputFormat,
-
-    /// Dump parsed IR as dag-json instead of executing
-    #[arg(long)]
-    dump_ir: bool,
-
-    /// Type-check the program and print the inferred type
-    #[arg(long)]
-    type_check: bool,
 
     /// Path to JSON file containing effect handlers
     #[arg(long)]
@@ -62,12 +39,12 @@ fn read_file(path: &str) -> String {
     }
 }
 
-fn parse_source(path: &str) -> Node {
-    let source = read_file(path);
-    match eyg_parser::from_string(&source) {
-        Ok(node) => node,
+fn load_node(path: &str) -> Node {
+    let contents = read_file(path);
+    match serde_json::from_str(&contents) {
+        Ok(n) => n,
         Err(e) => {
-            eprintln!("Parse error: {}", e);
+            eprintln!("Error parsing JSON: {}", e);
             process::exit(1);
         }
     }
@@ -88,7 +65,6 @@ fn load_effects(path: &str) -> Vec<EffectHandler> {
 fn run(node: Node, effect_handlers: &[EffectHandler]) {
     let mut result = expression::execute(node, im::Vector::new());
 
-    // Handle explicit effect handlers first
     for handler in effect_handlers {
         match &result {
             Err(debug) => {
@@ -147,64 +123,9 @@ fn run(node: Node, effect_handlers: &[EffectHandler]) {
     }
 }
 
-fn load_node(path: &str, format: &InputFormat) -> Node {
-    match format {
-        InputFormat::Eyg => parse_source(path),
-        InputFormat::Ir => {
-            let contents = read_file(path);
-            match serde_json::from_str(&contents) {
-                Ok(n) => n,
-                Err(e) => {
-                    eprintln!("Error parsing JSON: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-    }
-}
-
-fn type_check(node: &Node) {
-    let context = Context::unpure();
-    let analysis = infer::check(context, node);
-    let top_type = analysis.type_of();
-    let type_str = type_debug::render_mono(&top_type);
-
-    let errors: Vec<_> = analysis
-        .annotations
-        .iter()
-        .filter_map(|info| info.result.as_ref().err())
-        .collect();
-
-    if errors.is_empty() {
-        println!("{}", type_str);
-    } else {
-        for reason in &errors {
-            eprintln!("Type error: {}", type_debug::render_reason(reason));
-        }
-        println!("{}", type_str);
-        process::exit(1);
-    }
-}
-
 fn main() {
     let args = Args::parse();
-    let node = load_node(&args.file, &args.input_format);
-
-    if args.dump_ir {
-        match serde_json::to_string(&node) {
-            Ok(json) => println!("{}", json),
-            Err(e) => {
-                eprintln!("Error serializing to JSON: {}", e);
-                process::exit(1);
-            }
-        }
-        return;
-    }
-
-    if args.type_check {
-        type_check(&node);
-        return;
-    }
+    let node = load_node(&args.file);
 
     let handlers = args
         .effects

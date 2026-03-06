@@ -1,8 +1,8 @@
 # EYG Rust Interpreter
 
-A Rust port of the EYG interpreter and type-checker. Reads EYG programs as
-dag-json IR or `.eyg` source, executes them using a CPS evaluator, and
-optionally type-checks with Algorithm J + levels.
+A Rust implementation of the [EYG](https://eyg.run) interpreter.
+Reads EYG programs encoded as dag-json IR and executes them using a
+continuation-passing-style (CPS) evaluator with persistent environments.
 
 ## Build
 
@@ -13,40 +13,62 @@ cargo build --release
 ## Usage
 
 ```sh
-# Execute dag-json IR (default)
+# Execute a dag-json IR program
 eyg-run program.json
 
-# Execute EYG source
-eyg-run --in eyg program.eyg
-
-# Parse EYG source and dump dag-json IR
-eyg-run --in eyg --dump-ir program.eyg
-
-# Type-check a program (prints inferred type)
-eyg-run --type-check program.json
-eyg-run --in eyg --type-check program.eyg
-
-# Execute with effect handlers
+# Execute with explicit effect handlers
 eyg-run program.json --effects handlers.json
 ```
 
-### Input Formats
+The `Log` effect is handled automatically — log messages are printed to stderr,
+and execution continues with a unit reply.
 
-- `--in ir` (default): dag-json encoded IR tree
-- `--in eyg`: EYG source text
+### Effect Handlers
 
-### Modes
+Provide a JSON array of handler objects:
 
-- **Execute** (default): run the program, print result to stdout
-- `--dump-ir`: parse and emit dag-json IR to stdout
-- `--type-check`: infer and print the top-level type; errors go to stderr (exit 1)
+```json
+[
+  { "label": "Ask", "lift": {}, "reply": { "string": "yes" } }
+]
+```
+
+Each handler matches one `perform` in order. The `reply` value is
+deserialized and fed back to the continuation.
+
+## Project Layout
+
+```
+src/
+  main.rs              CLI entry point (eyg-run)
+  lib.rs               Library root
+  interpreter/         CPS interpreter engine
+    expression.rs        execute / resume / step
+    state.rs             continuation & stack types
+    value.rs             runtime values (Integer, String, Tagged, Record, …)
+    builtin.rs           built-in functions (arithmetic, strings, lists, …)
+    break_reason.rs      error / unhandled-effect variants
+    cast.rs              value → concrete type helpers
+    value_json.rs        JSON ↔ Value round-trip
+    env.rs               environment helpers
+  ir/
+    mod.rs             Re-exports from eyg-ir crate
+crates/
+  eyg-ir/              Shared IR types (Node, Expr, dag-json serde)
+tests/                 Integration & unit tests
+testdata/              Fixture files for effect-handler tests
+```
 
 ## Development
 
 ```sh
-make check   # cargo test + clippy
-make test    # cargo test
-make lint    # cargo clippy -- -D warnings
+make check   # cargo test --workspace + cargo clippy
+make test    # cargo test --workspace
+make lint    # cargo clippy --workspace -- -D warnings
 ```
 
-Tests run the shared spec suites from `spec/evaluation/` (core, builtins, effects) and `spec/ir_suite.json`.
+Tests cover:
+- **evaluation_suite** — shared spec suites from `spec/evaluation/` (core, builtins, effects)
+- **ir_suite** — IR round-trip from `spec/ir_suite.json`
+- **builtin_tests** — unit tests for built-in functions
+- **cli_tests** — end-to-end CLI integration tests
