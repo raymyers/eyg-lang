@@ -1,5 +1,6 @@
 import Eyg.Interpreter.State
 import Eyg.Ir.Cid
+import Eyg.Semantics.FunctionalBigStep
 import Lean.Data.Json
 
 /-!
@@ -258,25 +259,47 @@ def runIrSuiteJson (file : String) (j : Json) : Nat × Nat × Nat × List String
 
 /-! ## Runner -/
 
-/-- Run a fixture: execute, fold effect replies through `resume`, compare. -/
-def runFixture (fx : Fixture) : Bool :=
-  let final := fx.effects.foldl (init := execute fx.source []) fun ret (label, lift, reply) =>
+/-- The interpreter's final outcome for a fixture: execute, then fold the effect
+replies through `resume` (the M6 harness protocol). -/
+def interpFinal (fx : Fixture) : Except (Debug Unit) (Value Unit) :=
+  fx.effects.foldl (init := execute fx.source []) fun ret (label, lift, reply) =>
     match ret with
     | .error (.UnhandledEffect l v, _, env, k) =>
         if l == label && v == lift then resume reply env k else ret
     | _ => ret
-  match final, fx.expected with
+
+/-- Run a fixture: execute, fold effect replies through `resume`, compare. -/
+def runFixture (fx : Fixture) : Bool :=
+  match interpFinal fx, fx.expected with
   | .ok got, .ok exp => got == exp
   | .error (reason, _, _, _), .error exp => reason == exp
   | _, _ => false
 
-/-- Decode + run one suite file, returning `(passed, total, failureNames)`. -/
-def runSuiteJson (file : String) (j : Json) : Nat × Nat × List String := Id.run do
+/-- Fuel large enough to finish every spec fixture's longest segment. -/
+def fbsFuel : Nat := 1000000
+
+/-- Cross-check (Milestone S1): the functional big-step `Semantics.run`, driven
+through the *same* effect oracle, reaches the same outcome as the M6 interpreter
+harness — same value, same crash reason, or same unhandled effect at the
+boundary. A concrete instance of the S5 bridge theorem, checked on every
+fixture. -/
+def fbsAgreesInterp (fx : Fixture) : Bool :=
+  match Semantics.run fbsFuel (Semantics.Config.initial fx.source) fx.effects, interpFinal fx with
+  | .done (.value gv), .ok iv => gv == iv
+  | .done (.crash gr), .error (ir, _, _, _) => gr == ir
+  | .effect op lift _, .error (.UnhandledEffect l v, _, _, _) => op == l && lift == v
+  | _, _ => false
+
+/-- Decode + run one suite file, returning `(passed, fbsAgreed, total,
+failureNames)`. `fbsAgreed` counts fixtures where the functional big-step
+semantics matches the interpreter (Milestone S1 cross-check). -/
+def runSuiteJson (file : String) (j : Json) : Nat × Nat × Nat × List String := Id.run do
   let mut passed := 0
+  let mut fbsAgreed := 0
   let mut total := 0
   let mut fails : List String := []
   match j.getArr? with
-  | .error e => return (0, 1, [s!"{file}: not a JSON array: {e}"])
+  | .error e => return (0, 0, 1, [s!"{file}: not a JSON array: {e}"])
   | .ok arr =>
     for fxJson in arr do
       total := total + 1
@@ -287,13 +310,16 @@ def runSuiteJson (file : String) (j : Json) : Nat × Nat × List String := Id.ru
       | .ok fx =>
           if runFixture fx then passed := passed + 1
           else fails := fails ++ [s!"{file}: {fx.name}"]
-  return (passed, total, fails)
+          if fbsAgreesInterp fx then fbsAgreed := fbsAgreed + 1
+          else fails := fails ++ [s!"{file}: {fx.name}: FBS≠interpreter"]
+  return (passed, fbsAgreed, total, fails)
 
 def suiteFiles : List String := ["core_suite.json", "builtins_suite.json", "effects_suite.json"]
 
 def run : IO UInt32 := do
   let dir := "../spec/evaluation/"
   let mut passed := 0
+  let mut fbsAgreed := 0
   let mut total := 0
   let mut fails : List String := []
   for file in suiteFiles do
@@ -301,9 +327,11 @@ def run : IO UInt32 := do
     match Json.parse contents with
     | .error e => fails := fails ++ [s!"{file}: JSON parse error: {e}"]; total := total + 1
     | .ok j =>
-        let (p, t, fs) := runSuiteJson file j
-        passed := passed + p; total := total + t; fails := fails ++ fs
+        let (p, fbs, t, fs) := runSuiteJson file j
+        passed := passed + p; fbsAgreed := fbsAgreed + fbs; total := total + t
+        fails := fails ++ fs
   IO.println s!"spec evaluation: {passed}/{total} fixtures passed"
+  IO.println s!"FBS≡interpreter: {fbsAgreed}/{total} fixtures agree"
   for f in fails do IO.println s!"  FAIL {f}"
   -- IR suite: structural round-trip and CIDv1-string equality
   let irContents ← IO.FS.readFile "../spec/ir_suite.json"
@@ -318,7 +346,8 @@ def run : IO UInt32 := do
       irPassed := p; irCid := c; irTotal := t; irFails := fs
   IO.println s!"ir round-trip: {irPassed}/{irTotal} | CID match: {irCid}/{irTotal}"
   for f in irFails do IO.println s!"  FAIL {f}"
-  if passed == total ∧ total > 0 ∧ irPassed == irTotal ∧ irCid == irTotal ∧ irTotal > 0
+  if passed == total ∧ fbsAgreed == total ∧ total > 0
+      ∧ irPassed == irTotal ∧ irCid == irTotal ∧ irTotal > 0
     then pure 0 else pure 1
 
 end Eyg.Spec

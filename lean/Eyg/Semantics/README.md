@@ -61,7 +61,9 @@ middle ground").
 
 * **S0 — frame & scope:** done. `Config`, `Label`, `Outcome` fixed
   (`Basic.lean`); Label shape decided; model mapped onto cslib (this file).
-* **S1 — functional big-step:** `eval`/`run` executable and cross-checked
-  against `execute` (`FunctionalBigStep.lean`). Remaining: `eval_mono`,
-  full fixture cross-check, the agreement proof (currently a stub).
+* **S1 — functional big-step:** `eval`/`run` executable
+  (`FunctionalBigStep.lean`); fuel-monotonicity proved (`eval_mono`,
+  `eval_timeout_antitone`); `FBS≡interpreter` cross-checked on all 104 spec
+  fixtures via `lake exe spec`. Remaining: the general agreement *proof*
+  (`eval_agrees_execute_value`, currently a stub — Milestone S5).
 * **S2–S6:** see `lean/plan/eyg-semantics.md`.

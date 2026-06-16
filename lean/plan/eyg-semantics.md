@@ -105,8 +105,10 @@ rules with the interpreter.
 - [x] `run : Config → oracle → Result` iterates resumptions against a list of
       `(label, lift, reply)` replies (mirrors the spec harness's effect-folding);
       `#guard`ed on a resume-through-`Get` example.
-- [ ] Cross-check: on every `spec/` fixture, `run` agrees with the M6
-      interpreter harness.
+- [x] Cross-check: on every `spec/` fixture, `run` agrees with the M6
+      interpreter harness. Wired into `lake exe spec` (`fbsAgreesInterp`,
+      `interpFinal`); reports `FBS≡interpreter: 104/104` and fails the run on any
+      disagreement. A concrete instance of the S5 bridge over the whole suite.
 
 ## Milestone S2 — The EYG LTS in cslib
 
