@@ -154,4 +154,85 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
       · simp only [reduce1Run, reduceApply] at hr
         exact hsat hv harg hrest hr
 
+/-! ## Effect safety for the pure core: no `.perform`
+
+A well-typed pure-core state never reduces via `.perform`: that move only arises
+when a `Partial (Perform l) []` value is applied, but no `HasTypeV` rule types a
+`Perform` partial, so a well-typed function value (`canonical_arrow`) is never one.
+`reduceCallBuiltin` likewise never performs. -/
+
+theorem reduceCallBuiltin_ne_perform [BEq m] {key : String} {applied : List (Value m)}
+    {ann : m} {env : Env m} {k : Stack m} {op : String} {lift : Value m}
+    {envP : Env m} {kP : Stack m} :
+    reduceCallBuiltin key applied ann env k ≠ .perform op lift envP kP := by
+  intro h
+  unfold reduceCallBuiltin at h
+  repeat' split at h
+  all_goals simp_all
+
+/-- A well-typed function value never `reduceCall`s to a `.perform`. -/
+theorem reduceCall_ne_perform [BEq m] {f arg : Value m} {ann : m} {env : Env m} {k : Stack m}
+    {a e r : Ty} {op : String} {lift : Value m} {envP : Env m} {kP : Stack m}
+    (hf : HasTypeV f (.fun a e r)) :
+    reduceCall f arg ann env k ≠ .perform op lift envP kP := by
+  intro h
+  rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+  · exact absurd h (by simp [reduceCall])
+  · rw [show reduceCall (.Partial (.Builtin id) applied) arg ann env k
+        = reduceCallBuiltin id (applied ++ [arg]) ann env k from rfl] at h
+    exact reduceCallBuiltin_ne_perform h
+
+/-- A well-typed state's `reduce1Run` is never `.perform` (pure-core effect safety). -/
+theorem not_perform [BEq m] {cfg : Config m} {τ ε : Ty}
+    {op : String} {lift : Value m} {envP : Env m} {kP : Stack m}
+    (hwf : MStateWf (.run cfg) τ ε)
+    (h : reduce1Run cfg = .perform op lift envP kP) : False := by
+  obtain ⟨c, env, k⟩ := cfg
+  cases c with
+  | E e =>
+      -- `reduceEval` only yields `.tau`/`.done`
+      obtain ⟨expr, ann⟩ := e
+      cases expr <;> simp only [reduce1Run, reduceEval] at h <;>
+        first | exact absurd h (by simp) | (split at h <;> exact absurd h (by simp))
+  | V v =>
+      cases k with
+      | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
+      | cons kontann rest =>
+          obtain ⟨kont, ann⟩ := kontann
+          obtain ⟨τin, hv, hst⟩ := mStateWf_V hwf
+          cases hst with
+          | trace hrest => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | arg _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | applyf hf _ =>
+              simp only [reduce1Run, reduceApply] at h
+              exact reduceCall_ne_perform hf h
+          | callwith _ _ =>
+              simp only [reduce1Run, reduceApply] at h
+              exact reduceCall_ne_perform hv h
+
+/-! ## Preservation -/
+
+/-- **Preservation**: a well-typed state stays well-typed under `Reduce` (modulo
+the T6 builtin-application obligation `hsat`). `reply` is vacuous (`wait` states
+are untyped); `perform` is impossible (`not_perform`); `tau` splits into the
+`.E`/`.V` cases. -/
+theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
+    {s s' : MState m} {μ : Label m} {τ ε : Ty}
+    (hwf : MStateWf s τ ε) (hr : Reduce s μ s') : MStateWf s' τ ε := by
+  cases hr with
+  | tau h =>
+      rename_i cfg cfg'
+      obtain ⟨c, env, k⟩ := cfg
+      cases c with
+      | E e => exact preservation_E hwf h
+      | V v =>
+          cases k with
+          | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
+          | cons kontann rest =>
+              obtain ⟨kont, ann⟩ := kontann
+              exact preservation_V hsat hwf h
+  | perform h => exact (not_perform hwf h).elim
+  | reply => exact hwf.elim
+
 end Eyg.Types
