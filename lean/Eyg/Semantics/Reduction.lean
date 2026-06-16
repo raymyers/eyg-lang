@@ -32,10 +32,12 @@ The escape hatch is the identity
 
 (`apply` on an `Apply f` frame *is* `call f x`). So every internal `call f x` is
 re-expressed as an explicit intermediate machine state `(.V x, env, Apply f ::
-k)`. With that, the only remaining recursions are `doPerform`/`move`, which are
-**structural on the stack list** — already total `def`s. Hence the entire one-step
-relation is a single non-recursive, total, *transparent* function `reduce1Run :
-Config → ReduceStep`, and `Reduce` is defined from it. Two payoffs:
+k)`. With that, the only remaining recursions are the stack walk and `move`, both
+**structural on the stack list** — total `def`s (`doPerformR` is the transparent
+total twin of the interpreter's `partial def doPerform`; `move` was already total).
+Hence the entire one-step relation is a single non-recursive, total, *transparent*
+function `reduce1Run : Config → ReduceStep`, and `Reduce` is defined from it. Two
+payoffs:
 
 * **Determinism is `rfl`** (a function has one output) — no 25-case proof.
 * **Inversion is `cases h : reduce1Run cfg`** — it *computes*, exposing the
@@ -78,7 +80,7 @@ inductive ReduceStep (m : Type) where
 `reducePerform` transcribe `eval`/`apply`/`call`/`callBuiltin`/`deep`/`perform`
 from `State.lean`, with each internal `call f x` replaced by an `Apply`-frame
 intermediate state. None of them is recursive (only the structural
-`doPerform`/`move`/`recordGet`/`Builtin.run` helpers are called), so they are
+`doPerformR`/`move`/`recordGet`/`Builtin.run` helpers are called), so they are
 ordinary total `def`s — no `mutual`, no `partial`. -/
 
 /-- Install a deep handler (`state.deep`): re-expressed as the intermediate state
@@ -88,12 +90,34 @@ def reduceDeep (label : String) (handler exec : Value m) (ann : m)
   .tau (.V unit, env,
     (Kontinue.Apply exec env, ann) :: (Kontinue.Delimit label handler env false, ann) :: k)
 
+/-- Transparent, **total** twin of the interpreter's `partial def doPerform`
+(`State.lean`): walk the stack to the nearest matching `Delimit`, capturing the
+traversed prefix as the resumption. **Structural recursion on the stack `k`** (it
+is decreasing in every recursive call and `partial` was unnecessary), so the
+entire `Reduce` path is kernel-transparent — the opaque `partial def doPerform`
+no longer appears in `reduce1Run`, which is what lets T5 reason about the
+`.perform` effect boundary at the kernel level (the effect analog of the T0
+substrate fix). Cross-checked executably against the interpreter on the fixtures
+(the `evalR`/`runR` `#guard` battery exercises the perform/handle paths). -/
+def doPerformR (label : String) (arg : Value m) (iEnv : Env m) :
+    Stack m → List (Kontinue m × m) → Return m
+  | (.Delimit l h e shallow, mt) :: rest, acc =>
+      if l == label then
+        let acc := if shallow then acc else (Kontinue.Delimit label h e false, mt) :: acc
+        let resume : Value m := .Partial (.Resume acc iEnv) []
+        let k := (Kontinue.CallWith arg e, mt) :: (Kontinue.CallWith resume e, mt) :: rest
+        .ok (.V h, e, k)
+      else
+        doPerformR label arg iEnv rest ((Kontinue.Delimit l h e shallow, mt) :: acc)
+  | (kont, mt) :: rest, acc => doPerformR label arg iEnv rest ((kont, mt) :: acc)
+  | [], _ => .error (.UnhandledEffect label arg)
+
 /-- Perform an effect (`state.perform` = `doPerform … []`). A handled effect
 finds its `Delimit` and resumes (a `tau` loop); an unhandled one reaches the
-boundary and suspends (`perform`). `doPerform` only ever errors with
+boundary and suspends (`perform`). `doPerformR` only ever errors with
 `UnhandledEffect`, so the last arm is dead. -/
 def reducePerform (label : String) (arg : Value m) (env : Env m) (k : Stack m) : ReduceStep m :=
-  match doPerform label arg env k [] with
+  match doPerformR label arg env k [] with
   | .ok (c, e, k') => .tau (c, e, k')
   | .error (.UnhandledEffect op lift) => .perform op lift env k
   | .error e => .done (.crash e)

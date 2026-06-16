@@ -439,6 +439,21 @@ This is the milestone with no direct mechanization precedent — see the fork be
       row head — the inverse, for `Handle`). Axiom-free; the row machinery the effect
       safety statement and the `Handle` discharge both need, built before the harder
       `Perform`/`Handle`/frame-typing work so that layer is isolated.
+- [x] **Transparent effect boundary** (`Reduction.lean` `doPerformR`, T5b) — the
+      *effect analog of the T0 substrate fix*. **FINDING:** the `Reduce` path's
+      `reducePerform` was still calling the interpreter's **opaque `partial def
+      doPerform`**, so any kernel reasoning about the `.perform` boundary (effect
+      safety: emitted `op ∈ ε`; `wait` typing) was blocked exactly as the original
+      `step` opacity blocked preservation (the T0 wall, reappearing for effects).
+      `doPerform` is, however, **structurally decreasing on the stack `k`** (the
+      `partial` was unnecessary), so it is now mirrored by a total transparent twin
+      `doPerformR : … → Stack → acc → Return` that `reduce1Run` uses instead. The
+      `.perform`/`Resume` reduction is therefore kernel-transparent and a preservation
+      proof can `cases`/unfold the stack walk. Validated executably: `lake build`
+      green and `lake exe spec` 104/104 (the `evalR`/`runR` `#guard` battery exercises
+      the perform/handle fixtures, so the twin is behaviourally identical to the
+      interpreter's `doPerform`). This was a prerequisite the plan had not surfaced;
+      the direct-frame-typing route (fork (a)) is now unblocked.
 - [ ] **Un-pin the effect row.** Add typing rules `Perform` (singleton-row arrow
       `Fun(a, EffectExtend(l,(a,b),Empty), b)` — Koka's "operation as Var" trick,
       `references/algebraic-effects-handlers-soundness.md` §2) and `Handle`
