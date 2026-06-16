@@ -205,27 +205,35 @@ relational CEK step `Reduce`, a `Reduce`-based fueled evaluator `evalR` and beha
 set `BehaviorsR`, and an executable cross-check that `Reduce` agrees with the opaque
 `step`/`eval`. A progress note records the decision.
 
-- [ ] `inductive Reduce : MState m → Label m → MState m → Prop` with one **explicit,
-      reducible** constructor per reduction rule (var lookup, lambda→closure, apply
+- [x] `inductive Reduce : MState m → Label m → MState m → Prop` with **transparent,
+      reducible** rules covering every reduction (var lookup, lambda→closure, apply
       push/pop, let, the `Switch` primitives `Cons`/`Extend`/`Overwrite`/`Select`/
       `Tag`/`Match`/`NoCases`, `Perform`, `Handle`/`Delimit`, `Resume`, builtin
       saturation), transcribed from `state.gleam` / the Lean `step` arms. Pure
       moves carry `.tau`; the effect boundary emits `.perform`; resuming a `wait`
-      emits `.reply` (the `Label` discipline of `Step`). Environment-based — no
-      substitution. *(Why a relation, not a function: preservation must `cases` on
-      each rule; an opaque `def step` blocks that — `references/abstract-machine-
-      type-soundness.md` §6.)*
-- [ ] **`Reduce`-based observable layer** so the soundness theorem has a transparent
-      target: `evalR : Nat → MState m → ResultR` (structural on fuel, over `Reduce`)
-      and `BehaviorsR : MState m → Set Behavior` (mirror S4 `Behaviors` but over
-      `Reduce`). These, not the opaque `eval`/`Behaviors`, are what T7 concludes about.
-- [ ] **`Reduce` is deterministic** and total in the untyped sense (every state is a
-      crash/value terminal or has a `Reduce` move). Re-derive `progress`/`not_stuck`
-      for `Reduce` (cheap; transcribe `Lts.progress`).
-- [ ] **Executable agreement** `Red ≈ step`: a `lake exe spec` check that one `Reduce`
-      step matches one opaque `step` move on every fixture (S5-style bridge);
-      report `Reduce≡step: N/N`. This is the *only* link to the shipped interpreter,
-      and it is by design not a kernel theorem (opaque `partial def`).
+      emits `.reply`. Environment-based — no substitution. **DELIVERED** in
+      `Eyg/Semantics/Reduction.lean` via a single transparent *function*
+      `reduce1Run : Config → ReduceStep` (each internal `call f x` re-expressed as
+      an intermediate `Apply`-frame state, so no `partial` recursion survives);
+      `Reduce` is defined from it. ⇒ determinism is `rfl` and inversion is
+      `cases h : reduce1Run cfg`. **Deviation:** `Reduce` is finer-grained than
+      `step` (a `Match`/`fix`/`deep` move = two `Reduce` steps), so agreement is at
+      the observable-outcome level, not one-step-to-one-step — see
+      `progress/2026-06-16-T0-transparent-reduce-substrate.md`.
+- [~] **`Reduce`-based observable layer**: `evalR : Nat → Config m → Result`
+      (fuel-structural, reuses FBS `Result`) **DELIVERED** (+ `runR` for an effect
+      oracle). `BehaviorsR : Config m → Set Behavior` (the `MTr`-over-`Reduce`
+      mirror of S4 `Behaviors`) is **deferred** to the next T0 slice — it is what
+      T7 concludes about.
+- [x] **`Reduce` is deterministic** (`reduce_run_det`) and total in the untyped
+      sense (`progressR`: every state is a crash/value terminal or has a `Reduce`
+      move). Both green, axioms clean.
+- [~] **Executable agreement** `Reduce ≈ step`: enforced at **build time** via
+      `#guard`s comparing `evalR`/`runR` outcomes to FBS `eval`/`run` on the
+      fixture battery (a failure fails `lake build`). The dedicated `lake exe spec`
+      `Reduce≡step: N/N` reporting line is **deferred** (mechanical; mirror
+      `fbsAgreesInterp`). This is by design not a kernel theorem (opaque
+      `partial def`).
 
 ## Milestone T1 — Type language & row equivalence
 
