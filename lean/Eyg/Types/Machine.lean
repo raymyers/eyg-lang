@@ -113,6 +113,17 @@ theorem stackWf_move {m : Type} {acc k : Stack m} {σin σmid ε τ : Ty}
     StackWf (move acc k) σin ε τ := by
   rw [move_eq]; exact stackWf_append hseg hk
 
+/-- **Resume composition across effect discharge** (the corrected keystone). The
+`StackSegWf` analogue of `stackWf_move`: feeding a reply into `move acc k` is well-typed
+even when the captured `acc` contains the re-pushed `Delimit` (deep handler), because
+`StackSegWf` tracks the per-endpoint rows. This is what types `Resume`'s `move frames k`
+successor in the full `Handle` slice. -/
+theorem stackSeg_move {m : Type} {acc k : Stack m} {σin εin σmid εmid σout εout : Ty}
+    (hseg : StackSegWf acc.reverse σin εin σmid εmid)
+    (hk : StackSegWf k σmid εmid σout εout) :
+    StackSegWf (move acc k) σin εin σout εout := by
+  rw [move_eq]; exact stackSeg_append hseg hk
+
 /-- A machine state is well-typed at answer type `τ` and effect row `ε`: the
 control yields an intermediate `τin` that the stack carries to `τ`. A `wait op env
 k` state (suspended performing `op`, awaiting a reply) is typed by **effect safety**
