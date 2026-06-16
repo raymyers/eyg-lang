@@ -169,19 +169,26 @@ finite trace + outcome, or an infinite trace.
       eval fuel cfg = timeout`, **both directions** (backward builds the infinite
       `loopSucc` trajectory). `TauDiverges := eygLTS.Divergent (.run cfg)`.
 
-## Milestone S5 — Interpreter ≡ semantics (the bridge theorem)
+## Milestone S5 — Interpreter ≡ semantics (the bridge theorem) ✅ (with caveat)
 
 **Deliverable:** the executable `partial def` interpreter of
 `eyg-interpreter.md` agrees with the total FBS semantics on all terminating
 runs, and both agree with the LTS.
 
-- [ ] `interpreter_eq_fbs`: for any `cfg`, the interpreter's `execute`/`resume`
-      result equals `run`/`eval`'s outcome (same value, same crash, same effect
-      sequence). This is the analogue of the existing `executeLemma`
-      Reaches-vs-execute bridge mentioned in the difference-doc.
-- [ ] State it over the **trace**, not just final value, so effect ordering is
-      part of the guarantee (re-uses the harness's perform/reply protocol).
-- [ ] Tie the knot: interpreter ⟶ FBS (S5) ⟶ LTS (S3) ⟶ Behaviors (S4).
+- [~] `interpreter_eq_fbs` as a **kernel theorem is precluded**: `execute` is
+      `loop (step …)` with `loop` a `partial def` ⇒ logically opaque, no
+      equational lemmas (`unfold loop` fails). The unprovable stub was removed;
+      **no `sorry` remains** in the project. See
+      `progress/2026-06-16-interpreter-bridge-partial-def.md`.
+- [x] Interpreter↔FBS agreement is established **executably** over the trace
+      (perform/reply oracle): `Spec.Harness.fbsAgreesInterp`, `FBS≡interpreter:
+      104/104` via `lake exe spec` (S1). The testing-level analogue of
+      `executeLemma`.
+- [x] Tie the knot among the **total** artifacts (kernel-proved):
+      `eval_done_mem_behaviors` / `eval_effect_mem_behaviors` /
+      `timeout_mem_behaviors` in `Behavior.lean` give
+      interpreter →(exec, 104/104)→ FBS →(proof)→ LTS (S3) →(proof)→
+      Behaviors (S4).
 
 ## Milestone S6 — Metatheory & packaging (stretch)
 

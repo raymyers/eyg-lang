@@ -203,16 +203,21 @@ private def factOf (n : Int) : Tree.Node Unit :=
     [("Get", unit, .Integer 5)]).value? == some (.Integer 15)
 end
 
-/-! ## Agreement with the interpreter (statement; proof in S5)
+/-! ## Agreement with the interpreter (Milestone S5)
 
-The value direction of `interpreter_eq_fbs`: whatever the unbounded interpreter
-`execute` returns as a value, the fueled `eval` reaches with *some* fuel. The
-full bridge (crashes and effect traces, both directions) is Milestone S5; this
-stub pins the shape. -/
-theorem eval_agrees_execute_value [BEq m]
-    (exp : Tree.Node m) (scope : Scope m) (v : Value m)
-    (h : execute exp scope = .ok v) :
-    ∃ fuel, eval fuel (Config.initial exp scope) = .done (.value v) := by
-  sorry
+We would like `interpreter_eq_fbs`: whatever the unbounded `execute` returns,
+the fueled `eval` reaches with some fuel. This **cannot be a kernel theorem**:
+`execute` is `loop (step …)`, and `loop` is a `partial def`, which Lean compiles
+to a logically *opaque* constant with no equational lemmas (even `unfold loop`
+fails). So a hypothesis `execute exp scope = .ok v` carries no decomposable
+information, and the bridge is unprovable *as stated over `loop`*.
+
+The interpreter↔FBS agreement is therefore established **executably**: the spec
+harness's `fbsAgreesInterp` runs `run` (this FBS) and `execute`/`resume` (the
+interpreter) through the same effect oracle and checks they agree — on all 104
+spec fixtures (`lake exe spec` ⇒ `FBS≡interpreter: 104/104`). The *proof-level*
+knot is tied among the total artifacts instead: `eval` ⟷ `eygLTS`
+(`Correspondence.lean`, S3) ⟷ `Behaviors` (`Behavior.lean`, S4). See
+`plan/progress/2026-06-16-interpreter-bridge-partial-def.md`. -/
 
 end Eyg.Semantics

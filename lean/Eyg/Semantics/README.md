@@ -81,4 +81,9 @@ middle ground").
   (terminating trace+outcome, or divergent ω-trace); `outcome_unique`;
   `tauDiverges_iff_timeout` (both directions — internal divergence ⟺ `eval`
   times out at every fuel).
-* **S5–S6:** see `lean/plan/eyg-semantics.md`.
+* **S5 — interpreter ≡ semantics:** a kernel `interpreter_eq_fbs` is precluded
+  (the interpreter's `loop` is a `partial def` ⇒ opaque). Agreement is
+  established *executably* (`FBS≡interpreter: 104/104` via `lake exe spec`) and
+  the proof-level knot ties the **total** artifacts: `eval` → `Behaviors`
+  (`eval_done_mem_behaviors` &c.) → LTS. No `sorry` in the project.
+* **S6 (stretch):** see `lean/plan/eyg-semantics.md`.

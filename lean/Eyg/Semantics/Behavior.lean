@@ -157,4 +157,40 @@ theorem tauDiverges_iff_timeout {m : Type} [BEq m] {cfg : Config m} :
     TauDiverges cfg ↔ ∀ fuel, eval fuel cfg = .timeout :=
   ⟨fun hd fuel => tauDiverges_imp_timeout fuel cfg hd, timeout_imp_tauDiverges⟩
 
+/-! ## Tying the knot (Milestone S5)
+
+The total artifacts compose: every `eval` result is realized as a member of
+`Behaviors`. Combined with the *executable* `FBS ≡ interpreter` cross-check (the
+spec harness, S1), this closes the loop from the running interpreter through the
+fueled semantics to the LTS-level observable behaviour — without ever touching
+the opaque `partial def loop` (see `FunctionalBigStep.lean` §S5). -/
+
+/-- A terminating `eval` is an observable terminating behaviour. -/
+theorem eval_done_mem_behaviors {m : Type} [BEq m] {cfg : Config m} {o : Outcome m}
+    (h : ∃ fuel, eval fuel cfg = .done o) :
+    ∃ trace, Behavior.terminates trace o ∈ Behaviors cfg := by
+  obtain ⟨c, e, k⟩ := cfg
+  obtain ⟨fuel, hf⟩ := h
+  obtain ⟨trace, s', hmtr, hout, _⟩ := eval_sound_done fuel c e k o hf
+  exact ⟨trace, s', hmtr, hout⟩
+
+/-- A suspended `eval` (unhandled effect) is an observable run reaching the
+matching `wait` state. -/
+theorem eval_effect_mem_behaviors {m : Type} [BEq m] {cfg : Config m}
+    {op : String} {lift : Value m} {resume : Value m → Config m}
+    (h : ∃ fuel, eval fuel cfg = .effect op lift resume) :
+    ∃ trace envP kP, eygLTS.MTr (.run cfg) trace (.wait op envP kP) ∧
+      Label.observable trace = [Label.perform op lift] := by
+  obtain ⟨c, e, k⟩ := cfg
+  obtain ⟨fuel, hf⟩ := h
+  obtain ⟨trace, envP, kP, hmtr, _, hobs⟩ := eval_sound_effect fuel c e k op lift resume hf
+  exact ⟨trace, envP, kP, hmtr, hobs⟩
+
+/-- An always-timing-out `eval` is an observable divergent behaviour. -/
+theorem timeout_mem_behaviors {m : Type} [BEq m] {cfg : Config m}
+    (h : ∀ fuel, eval fuel cfg = .timeout) :
+    ∃ μs, Behavior.diverges μs ∈ Behaviors cfg := by
+  obtain ⟨ss, μs, hω, hs0, _⟩ := timeout_imp_tauDiverges h
+  exact ⟨μs, ss, hω, hs0⟩
+
 end Eyg.Semantics
