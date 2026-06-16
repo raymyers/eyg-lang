@@ -474,15 +474,28 @@ This is the milestone with no direct mechanization precedent — see the fork be
       `propext`/`Classical.choice`/`Quot.sound`; `lake exe spec` 104/104; a sanity
       `example` types `perform "Log" "hi" : unit ! ⟨Log:(String,unit)⟩`.
 - [~] **Type `Handle`.** ⚙ **Design worked out** in
-      `progress/2026-06-16-T5-handle-design.md`. **Keystone DELIVERED ahead of the
-      cascade** (T5d, `Eyg/Types/Machine.lean`): the `Resume` continuation typing needs
-      *no new judgment* — `StackWf` is already a stack-**segment** typing (its `nil` is
-      the identity transformer), so `stackWf_append` (compose two segments) + `move_eq`
-      (`move acc k = acc.reverse ++ k`) give `stackWf_move : StackWf acc.reverse σin ε
-      σmid → StackWf k σmid ε τ → StackWf (move acc k) σin ε τ` — exactly what types
-      `Resume`'s `move frames k` successor. Axioms `propext` only. This was the
-      highest-risk piece (continuation typing); it composes cleanly, so the rest of
-      `Handle` is wiring. Remaining: the `handle` scheme; the `Delimit`
+      `progress/2026-06-16-T5-handle-design.md`. **Continuation keystone DELIVERED**
+      (T5d', `Eyg/Types/Runtime.lean`): `StackSegWf seg σin εin σout εout` (a segment
+      typing tracking *both* endpoint type+row) + `stackSeg_append` (compose two
+      segments end-to-end). This **corrects** the first T5d attempt
+      (`stackWf_move`/`stackWf_append`, `Machine.lean`): those assume a *uniform*
+      ambient row and so cannot compose across the row-discharging `Delimit` frame —
+      `StackSegWf` tracks the per-endpoint rows and *does* (axioms `propext`). It is
+      what types `Resume`'s captured `move acc k` continuation in the wiring below.
+      (`StackSegWf` is standalone now; it joins the `HasTypeV` mutual block when
+      `partialResume` references it — `stackSeg_append` re-proves by `induction seg` +
+      `cases hseg`, which mutual inductives support.) The `handle` scheme abbrevs
+      (`kontTy`/`handlerTy`/`execTy`/`handleTy`) are in `Typing.lean`.
+      **Remaining cascade** (one atomic unit — `StackWf.delimit` breaks every
+      `cases hst` site at once): `StackWf.delimit` + the mixed
+      `StackSegWf ++ StackWf → StackWf` lemma; `HasType.handle` + `inv_handle` +
+      `hasType_expr_form` arm (+ `rcases` bumps); `HasTypeV.partialHandleNil`/
+      `partialHandleOne`/`partialResume` (+ `conv`/`canonical_arrow`); the
+      **dispatch lemma** (`stackWf_doPerformR_unhandled` → handled-`.tau`-vs-escape,
+      with effect-safety *through* non-matching `Delimit`s — the one hard proof left,
+      §5 of the note); `delimit` cases at the 4 `cases hst` sites; and
+      preservation/progress for `reduceDeep` / `Delimit`-pop / handled-`perform` /
+      `Resume`. Remaining beyond the keystone: the `handle` scheme; the `Delimit`
       answer-type-transformer frame that discharges `l`; the `Resume` reified-
       continuation typing as a stack-*segment* transformer `reply ⇒ ret`; the
       generalization of `stackWf_doPerformR_unhandled` to a handled-`.tau`-vs-escape
