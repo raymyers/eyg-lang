@@ -373,11 +373,12 @@ T6 obligation.
 
 **Deliverable:** extend the T3 files with structured data; re-green the theorems.
 
-- [~] Add typing rules (primitive schemes from T2) for the data nodes. **`Empty`/
+- [x] Add typing rules (primitive schemes from T2) for the data nodes. **`Empty`/
       `Tail` DELIVERED** (T4a) — value-producing, threaded green through the whole
       pipeline (`HasType.tail/empty`, `HasTypeV.listNil/recordNil`, `inv_tail/empty`,
       `preservation_E`/`progress` cases). **`Cons`/`Tag`/`Case`/`NoCases`/`Select`/
-      `Extend` DELIVERED; only `Overwrite` remains (T4b)** — they produce `Partial`s and
+      `Extend`/`Overwrite` ALL DELIVERED — the full data fragment is done** — they
+      produce `Partial`s and
       do the operation in `reduceCall`, so they need: (1) per-operator `HasType` rules
       (instantiate the `cons()/extend()/select()/…` schemes); (2) operator-`Partial`
       and result-value (`LinkedList`/`Record`/`Tagged`) `HasTypeV` cases; (3)
@@ -388,13 +389,15 @@ T6 obligation.
       reconciliation** (T1 deferred item) for `Extend`/`Select`/`Overwrite`. Suggested
       order: `Cons` (lists, no rows) → `Tag`/`Case`/`NoCases` (variants) →
       `Extend`/`Select`/`Overwrite` (records, needs the row reconciliation).
-- [~] Extend `HasTypeV` and canonical forms. **DELIVERED:** `listNil`/`listCons` +
-      `canonical_list`; `tagged` (union membership) + `partialTag`; `recordNil`.
-      **Remaining:** non-empty `Record` fields realize a record row (sorted-row
-      hinge); union-row ⇒ `.Tagged` canonical form (for `Case`).
-- [~] Extend `preservation`/`progress` with the new `Reduce` cases. **DELIVERED:**
-      the entire **list** fragment (`Cons`) and **variant** fragment (`Tag`/`Case`/
-      `NoCases`) green through `preservation`+`progress`+`soundness_value`. `Case`
+- [x] Extend `HasTypeV` and canonical forms. **DELIVERED:** `listNil`/`listCons` +
+      `canonical_list`; `tagged` (union membership) + `partialTag`; `recordNil`;
+      non-empty `Record` fields realize a record row via the lookup-based `record`
+      (`hpres`/`hmatch`) + `canonical_record`/`record_get`; union-row ⇒ `.Tagged`
+      (`canonical_union`) for `Case`.
+- [x] Extend `preservation`/`progress` with the new `Reduce` cases. **DELIVERED:**
+      the **list** (`Cons`), **variant** (`Tag`/`Case`/`NoCases`), and **record**
+      (`Select`/`Extend`/`Overwrite`) fragments — all green through
+      `preservation`+`progress`+`soundness_value`. `Case`
       (the row-reasoning crux) uses the `Eyg/Types/Row.lean` metatheory: HIT — the
       guarded (first-occurrence) `RowContains` forces the payload to type at the
       union's head; MISS — `tyEquiv_rowContains_mp` lands the tag in the tail and
@@ -413,11 +416,15 @@ T6 obligation.
       so it is duplicate-collapsing by construction — the value `{l:new}` realizes
       the type `{l:new, l:old}` because both `recordGet` views agree on the visible
       first field (`recordInsert_get_eq`) and the tail row re-types via
-      `tyEquiv_recordRow`/`tyEquiv_rowContains`. **Remaining:** `Overwrite` (same
-      shape as `Extend` but requires the field already present —
-      `recordGet fields l = some _`; `MissingField` excluded by the same `recordWf_get`
-      used for `Select`). Original finding recorded in
-      `progress/2026-06-16-T4-row-machinery-boundary.md`.
+      `tyEquiv_recordRow`/`tyEquiv_rowContains`. **`Overwrite` DELIVERED** (T4d): same
+      shape as `Extend` (`HasType.overwrite`, `partialOverwriteNil`/`partialOverwriteOne`,
+      `inv_overwrite`) but the input row already carries `l` (`{l:β|r}`), so the
+      `reduceCall` `MissingField` trap is excluded exactly like `Select` (head
+      `RowContains` ⇒ `record_get` ⇒ `recordGet fields l = some _`); the result re-types
+      at `{l:α|r}` via the same `recordInsert_get_eq/ne` + tail `RowContains.tail`
+      reasoning. **The entire T4 record/union/list data fragment is now green through
+      `preservation`+`progress`+`soundness_value`, sorry-free, axioms clean.** Original
+      finding recorded in `progress/2026-06-16-T4-row-machinery-boundary.md`.
 
 ## Milestone T5 — Slice 3: effects & handlers (the novel part)
 

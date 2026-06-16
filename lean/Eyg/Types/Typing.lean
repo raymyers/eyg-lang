@@ -100,6 +100,13 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   | extend {Γ l fieldTy row ε a} :
       HasType Γ ⟨.Extend l, a⟩ (.fun fieldTy .empty
         (.fun (.record row) .empty (.record (.rowExtend l fieldTy row)))) ε
+  /-- Record overwrite `Overwrite l`: `∀α β r. α → {l:β|r} → {l:α|r}`
+  (`overwrite(l) = pure2(q0, Record(RowExtend l q1 q2), Record(RowExtend l q0 q2))`).
+  The input record must already carry `l` (old type `β`). -/
+  | overwrite {Γ l newTy oldTy tail ε a} :
+      HasType Γ ⟨.Overwrite l, a⟩ (.fun newTy .empty
+        (.fun (.record (.rowExtend l oldTy tail)) .empty
+          (.record (.rowExtend l newTy tail)))) ε
   /-- The empty record `Empty` (`prim(Record(Empty))`). -/
   | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal

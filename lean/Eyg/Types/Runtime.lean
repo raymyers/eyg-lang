@@ -131,6 +131,18 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
       HasTypeV v fieldTy →
       Ty.TyEquiv (.fun (.record row) .empty (.record (.rowExtend label fieldTy row))) τ →
       HasTypeV (.Partial (.Extend label) [v]) τ
+  /-- `Overwrite l` with no args: `∀α β r. α → {l:β|r} → {l:α|r}`. -/
+  | partialOverwriteNil {label newTy oldTy tail τ} :
+      Ty.TyEquiv (.fun newTy .empty
+        (.fun (.record (.rowExtend label oldTy tail)) .empty
+          (.record (.rowExtend label newTy tail)))) τ →
+      HasTypeV (.Partial (.Overwrite label) []) τ
+  /-- `Overwrite l` with the new field value applied: `{l:β|r} → {l:α|r}`. -/
+  | partialOverwriteOne {label v newTy oldTy tail τ} :
+      HasTypeV v newTy →
+      Ty.TyEquiv (.fun (.record (.rowExtend label oldTy tail)) .empty
+        (.record (.rowExtend label newTy tail))) τ →
+      HasTypeV (.Partial (.Overwrite label) [v]) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -201,6 +213,8 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | partialSelect he => exact .partialSelect (he.trans heq)
   | partialExtendNil he => exact .partialExtendNil (he.trans heq)
   | partialExtendOne hvf he => exact .partialExtendOne hvf (he.trans heq)
+  | partialOverwriteNil he => exact .partialOverwriteNil (he.trans heq)
+  | partialOverwriteOne hvf he => exact .partialOverwriteOne hvf (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -319,6 +333,8 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialSelect _ => exact Or.inr ⟨_, _, rfl⟩
   | partialExtendNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialExtendOne _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialOverwriteNil _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialOverwriteOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | record _ _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
