@@ -99,14 +99,20 @@ namespace Scheme
 def mono (t : Ty) : Scheme := ⟨0, t⟩
 
 /-- Instantiate a scheme by substituting its quantified variables with `args`
-(`binding.instantiate`). A quantified `var i` (`i < arity`) becomes `args[i]`;
-any other `var` is left untouched. The declarative typing rules pick `args` with
-`args.length = arity`. -/
+(`binding.instantiate`). Only the `arity` **quantified** variables (`var i`,
+`i < arity`) are substituted with `args[i]`; any other `var` (a free variable of
+the ambient context) is left untouched. So a *monomorphic* scheme ignores `args`
+entirely — the property `EnvWf`'s polymorphic-readiness clause relies on. The
+declarative typing rules pick `args` with `args.length = arity`. -/
 def instantiate (s : Scheme) (args : List Ty) : Ty :=
-  Ty.subst (fun i => args.getD i (.var i)) s.body
+  Ty.subst (fun i => if i < s.arity then args.getD i (.var i) else .var i) s.body
 
+/-- A monomorphic scheme instantiates to its body, ignoring `args`. -/
 @[simp] theorem instantiate_mono (t : Ty) (args : List Ty) :
-    (mono t).instantiate args = Ty.subst (fun i => args.getD i (.var i)) t := rfl
+    (mono t).instantiate args = t := by
+  unfold instantiate mono
+  simp only [Nat.not_lt_zero, if_false]
+  exact Ty.subst_id t
 
 end Scheme
 
