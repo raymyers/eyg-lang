@@ -74,4 +74,7 @@ middle ground").
   The LTS state is `MState = run Config | wait op env k` (the `wait` variant is
   the suspended machine awaiting a reply — needed for separate `perform`/`reply`
   labels).
-* **S3–S6:** see `lean/plan/eyg-semantics.md`.
+* **S3 — FBS ⟷ LTS:** `Correspondence.lean`. `instDeterministic`;
+  `eval_sound_done`/`eval_sound_effect` (observable trace = emitted events);
+  `eval_complete` (silent runs); `eval_iff_mtr` characterization.
+* **S4–S6:** see `lean/plan/eyg-semantics.md`.

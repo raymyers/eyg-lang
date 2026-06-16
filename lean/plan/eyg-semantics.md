@@ -137,16 +137,20 @@ and the terminal/outcome predicates.
 **Deliverable:** the fueled interpreter and the relational LTS describe the same
 finite executions.
 
-- [ ] `eval_sound`: if `eval fuel cfg = done o` then
-      `eygLTS.MTr cfg trace cfg'` with `cfg'` terminal at outcome `o` and
-      `trace` the emitted events.
-- [ ] `eval_complete`: if `eygLTS.MTr cfg trace cfg'` (terminal) then
-      `∃ fuel, eval fuel cfg = done o`.
+- [x] `eval_sound_done` / `eval_sound_effect`: a finished `eval` (terminal
+      outcome, or suspended at an effect) is mirrored by an `eygLTS.MTr` to a
+      state with the same outcome / `wait`, and the **observable** trace is
+      exactly the emitted events (`[]` for value/crash, `[perform op lift]` for
+      an effect).
+- [x] `eval_complete`: a `tau`-only multistep to a terminal state is realized by
+      `eval` at some fuel (induction on `MTr`). Effectful runs belong to `run`,
+      not bare `eval`, so completeness is stated for silent traces.
 - [x] `Deterministic eygLTS`: `instDeterministic` in `Correspondence.lean`,
       via `cases h1 <;> cases h2 <;> simp_all` (`step` pins tau/perform; the
       label pins reply). Feeds cslib's `deterministic_imageFinite`.
-- [ ] With determinism, upgrade the two directions to a single
-      `eval_iff_mtr` characterization.
+- [x] `eval_iff_mtr`: `(∃ fuel, eval fuel cfg = done o) ↔ (silent MTr to a
+      terminal state with outcome o)`, combining sound + complete (uniqueness via
+      `instDeterministic`).
 
 ## Milestone S4 — Observable behavior: traces & divergence
 
