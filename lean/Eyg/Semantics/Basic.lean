@@ -74,9 +74,16 @@ def Label.observable (trace : List (Label m)) : List (Label m) :=
   trace.filter Label.isObservable
 
 /-- Terminal outcomes of a run. `value v` is normal termination; `crash reason`
-is a first-class observable failure (`Vacant`, `NotAFunction`, `UnhandledEffect`
-at top level, …). Non-termination is *not* an `Outcome` — it is the absence of
-any terminal config (modeled in `FunctionalBigStep`/`Behavior`). -/
+is a first-class observable failure (`Vacant`, `NotAFunction`,
+`UndefinedVariable`, …). Non-termination is *not* an `Outcome` — it is the
+absence of any terminal config (modeled in `FunctionalBigStep`/`Behavior`).
+
+`UnhandledEffect` is **not** a `crash` outcome: under the open-boundary reading
+(S7), an effect that reaches the top level *suspends* the machine awaiting a
+reply (`FunctionalBigStep` returns `.effect`, the LTS enters a `wait` state, and
+`Behavior.suspended` classifies it). A closed `execute` with no oracle projects
+that suspension to `.error UnhandledEffect`, but the semantics keeps it
+resumable rather than treating it as failure. -/
 inductive Outcome (m : Type) where
   | value (v : Value m)
   | crash (reason : Reason m)

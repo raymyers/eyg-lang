@@ -25,10 +25,21 @@ open Eyg.Interpreter
 open Eyg.Ir
 open Cslib
 
-/-- A possible observable behaviour of a configuration. -/
+/-- A possible observable behaviour of a configuration.
+
+Three shapes, matching the three ways a run can end (S7 open-boundary reading):
+a run either terminates with an `Outcome`, *suspends* at an unhandled effect it
+performs at the boundary (an open system awaiting a reply — **not** a crash), or
+diverges. -/
 inductive Behavior (m : Type) where
   /-- Terminates with a finite `trace` at `outcome`. -/
   | terminates (trace : List (Label m)) (outcome : Outcome m)
+  /-- Suspends at an unhandled effect: after `trace`, the machine performs `op`
+  with payload `lift` at the boundary and awaits a reply. This is the
+  open-boundary outcome of a top-level unhandled effect — distinct from a
+  `crash` (a closed `execute` projects it to `.error UnhandledEffect`, but the
+  semantics keeps it resumable). -/
+  | suspended (trace : List (Label m)) (op : String) (lift : Value m)
   /-- Diverges, emitting the infinite `trace`. -/
   | diverges (trace : ωSequence (Label m))
 
@@ -36,6 +47,8 @@ inductive Behavior (m : Type) where
 def Behaviors {m : Type} [BEq m] (cfg : Config m) : Set (Behavior m) :=
   fun b => match b with
   | .terminates trace o => ∃ s', eygLTS.MTr (.run cfg) trace s' ∧ s'.outcome? = some o
+  | .suspended trace op lift => ∃ envP kP, eygLTS.MTr (.run cfg) trace (.wait op envP kP) ∧
+      Label.observable trace = [Label.perform op lift]
   | .diverges μs => ∃ ss, eygLTS.ωTr ss μs ∧ ss 0 = .run cfg
 
 /-! ## Finite-behaviour determinacy
@@ -174,13 +187,15 @@ theorem eval_done_mem_behaviors {m : Type} [BEq m] {cfg : Config m} {o : Outcome
   obtain ⟨trace, s', hmtr, hout, _⟩ := eval_sound_done fuel c e k o hf
   exact ⟨trace, s', hmtr, hout⟩
 
-/-- A suspended `eval` (unhandled effect) is an observable run reaching the
-matching `wait` state. -/
+/-- A suspended `eval` (unhandled effect) is an observable **suspended**
+behaviour: the run reaches the matching `wait` state, performing `op lift` at the
+boundary. With the `Behavior.suspended` constructor (S7 open-boundary reading)
+this now genuinely concludes `… ∈ Behaviors cfg`, like its `terminates`/
+`diverges` siblings, closing the effect-case hole in the tie-the-knot chain. -/
 theorem eval_effect_mem_behaviors {m : Type} [BEq m] {cfg : Config m}
     {op : String} {lift : Value m} {resume : Value m → Config m}
     (h : ∃ fuel, eval fuel cfg = .effect op lift resume) :
-    ∃ trace envP kP, eygLTS.MTr (.run cfg) trace (.wait op envP kP) ∧
-      Label.observable trace = [Label.perform op lift] := by
+    ∃ trace, Behavior.suspended trace op lift ∈ Behaviors cfg := by
   obtain ⟨c, e, k⟩ := cfg
   obtain ⟨fuel, hf⟩ := h
   obtain ⟨trace, envP, kP, hmtr, _, hobs⟩ := eval_sound_effect fuel c e k op lift resume hf

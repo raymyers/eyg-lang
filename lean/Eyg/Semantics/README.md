@@ -24,6 +24,7 @@ constructive plan is `lean/plan/eyg-semantics.md`.
 | Step      | `Step : Config → Label → Config → Prop` | `LTS.Tr` (S2)                             |
 | Multistep | trace `List Label` between configs      | `LTS.MTr` (S2)                            |
 | Outcome   | `value v \| crash reason`               | terminal-state predicates (S2)            |
+| Suspended | unhandled `perform op lift` at boundary | `wait` state / `Behavior.suspended` (S4)  |
 | Divergence| `∀ fuel, eval fuel cfg = timeout`       | `OmegaSequence` ω-trace (S4)              |
 
 **State = the CEK machine.** The LTS state is the interpreter's machine state,
@@ -60,6 +61,19 @@ so the step relation is total. `crash` (including `Vacant`) is a first-class
 observable from day one — row typing is postponed (difference-doc §"lightweight
 middle ground").
 
+### Unhandled effects are suspensions, not crashes (open-boundary reading, S7)
+
+An effect that reaches the top level *unhandled* is **not** a crash. The
+semantics treats the effect boundary as *open*: `eval` returns a resumable
+`.effect op lift resume`, the LTS enters a `wait op env k` state that can
+`reply`, and `Behavior.suspended` classifies the run. This is what lets
+divergence observe a `perform` that never receives a `reply` (a server looping
+on effects forever). A *closed* `execute` with no oracle has nothing to reply
+with, so it projects the suspension to `.error UnhandledEffect`; the spec
+harness reconciles the two (`fbsAgreesInterp`'s `.effect ↔ .error
+UnhandledEffect` case). The docs `Basic.lean`/here therefore list
+`UnhandledEffect` under *suspension*, never under `crash`.
+
 ## Status
 
 * **S0 — frame & scope:** done. `Config`, `Label`, `Outcome` fixed
@@ -90,3 +104,9 @@ middle ground").
   (`mstate_traceEq_sim`, from determinism) and `ImageFinite`; shared-builtin spec
   satisfied by construction (FBS drives the interpreter's `Builtin.run`). Value
   relation and denotational packaging tracked as deferred (compiler on-ramp).
+* **S7 — crash / unhandled-effect coverage:** done, under the **open-boundary
+  reading**. `Behavior.suspended` classifies a top-level unhandled effect (not a
+  crash); `eval_effect_mem_behaviors` now concludes a real `Behaviors`
+  membership; `crashAgrees` `#guard`s cross-check `eval`'s crash/effect against
+  `execute`'s error. Docs (`Basic.lean`, this file) list `UnhandledEffect` under
+  *suspension*.

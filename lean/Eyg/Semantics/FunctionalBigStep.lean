@@ -201,6 +201,39 @@ private def factOf (n : Int) : Tree.Node Unit :=
     (Tree.let_ "x" (Tree.apply (Tree.perform "Get") Tree.unit)
       (Tree.add (Tree.variable_ "x") (Tree.integer 10))))
     [("Get", unit, .Integer 5)]).value? == some (.Integer 15)
+
+/-! ### Crash agreement with the interpreter (Milestone S7)
+
+The `FBS≡interpreter: 104/104` cross-check (spec harness) only exercises the
+*value* path — every spec fixture expects a `value`. These `#guard`s close that
+gap directly: on a term that crashes, `eval`'s `.crash reason` agrees with
+`execute`'s `.error reason` (same term, same reason), and on a top-level
+unhandled effect, `eval`'s `.effect` reconciles with `execute`'s `.error
+UnhandledEffect` (the open-boundary ↔ closed-`execute` projection, S7). The
+matches are self-checking: a non-crash `eval` falls through to `false`. -/
+
+/-- `eval`'s crash and `execute`'s error agree on the same term. -/
+private def crashAgrees (t : Tree.Node Unit) : Bool :=
+  match eval 1000 (Config.initial t), execute t [] with
+  | .done (.crash gr), .error (ir, _, _, _) => gr == ir
+  | _, _ => false
+
+-- unbound variable ⟶ both crash with `UndefinedVariable "z"`
+#guard crashAgrees (Tree.variable_ "z")
+-- vacant ⟶ both crash with `Vacant`
+#guard crashAgrees Tree.vacant
+-- applying a non-function ⟶ both crash with `NotAFunction`
+#guard crashAgrees (Tree.apply (Tree.integer 1) (Tree.integer 2))
+-- undefined builtin ⟶ both crash with `UndefinedBuiltin`
+#guard crashAgrees (Tree.builtin "no_such_builtin")
+
+-- top-level unhandled effect: `eval` suspends (`.effect`); `execute` (closed,
+-- no oracle) projects to `.error UnhandledEffect`. The two reconcile on op+lift
+-- — exactly `fbsAgreesInterp`'s effect case, here exercised by a `#guard`.
+#guard (match eval 1000 (Config.initial (Tree.apply (Tree.perform "Boom") (Tree.integer 1))),
+    execute (Tree.apply (Tree.perform "Boom") (Tree.integer 1)) [] with
+  | .effect op lift _, .error (.UnhandledEffect l v, _, _, _) => op == l && lift == v
+  | _, _ => false)
 end
 
 /-! ## Agreement with the interpreter (Milestone S5)
