@@ -25,3 +25,7 @@ Review the code diff from the recent commit range associated with PLAN `lean/pla
 /goal Execute `lean/plan/eyg-interpreter-STEP.md` until PLAN complete.
 
 ---
+
+/goal Execute `lean/plan/eyg-semantics-STEP.md` until PLAN complete.
+
+---

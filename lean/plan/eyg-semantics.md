@@ -69,16 +69,22 @@ From the resolved dependency (`Cslib.Foundations.Semantics.*`):
 
 ---
 
-## Milestone S0 — Frame & scope
+## Milestone S0 — Frame & scope ✅
 
 **Deliverable:** `Eyg/Semantics/README` fixing the model: `Config`, `Label`,
 `Outcome`, and which cslib structures each maps onto. Agreement that source-side
 terms are **closed, linked core terms** (`import`/`#CID` resolved by a prior
 linking phase — difference-doc §"linking").
 
-- [ ] Restate the three theorems we're aiming at (FBS↔LTS, determinism,
-      interpreter≡FBS) as named `theorem` stubs with `sorry`.
-- [ ] Decide `Label` shape (separate `perform`/`reply` vs fused) and record why.
+- [x] Model fixed in `Eyg/Semantics/Basic.lean` (`Config = Control × Env ×
+      Stack`, `Label`, `Outcome`) and `Eyg/Semantics/README.md` (cslib mapping,
+      linking assumption: reference nodes are `crash` outcomes).
+- [~] Three theorems: `eval_agrees_execute_value` stub landed in
+      `FunctionalBigStep.lean`. FBS↔LTS and `Deterministic` stubs deferred to
+      S2 (they need `Step`/`eygLTS`, which don't exist yet).
+- [x] Decide `Label` shape — **separate `perform`/`reply`** (not fused);
+      rationale recorded in `Basic.lean` and `README.md` (harness two-phase
+      protocol; divergence needs unanswered `perform`s).
 
 ## Milestone S1 — Functional big-step interpreter (total, executable)
 
@@ -86,15 +92,17 @@ linking phase — difference-doc §"linking").
 `eval : Nat → Config → Result` that terminates, `#eval`s, and shares the step
 rules with the interpreter.
 
-- [ ] `Result := done Outcome | timeout | effect (op) (lift) (resume : Value →
+- [x] `Result := done Outcome | timeout | effect (op) (lift) (resume : Value →
       Config)` — effects return a **resumption** (difference-doc §FBS), so the
       semantics is executable against an oracle/runner.
-- [ ] `eval (fuel+1) cfg` = one `step` then recurse; `eval 0 _ = timeout`.
-      Reuse `step`/`eval`/`apply`/`call`/`perform`/`deep` from `State.lean`.
+- [x] `eval (fuel+1) cfg` = one `step` then recurse; `eval 0 _ = timeout`.
+      Reuses the interpreter's `step` from `State.lean` (so all step rules are
+      shared). `#guard`s cross-check value/crash/timeout/effect cases.
 - [ ] `eval` is monotone in fuel: more fuel never changes a non-`timeout`
       result (`evalMono`). This is the workhorse lemma for everything downstream.
-- [ ] `run : Config → (trace) → Outcome` by iterating resumptions against a list
-      of replies (mirrors the spec harness's effect-folding).
+- [x] `run : Config → oracle → Result` iterates resumptions against a list of
+      `(label, lift, reply)` replies (mirrors the spec harness's effect-folding);
+      `#guard`ed on a resume-through-`Get` example.
 - [ ] Cross-check: on every `spec/` fixture, `run` agrees with the M6
       interpreter harness.
 

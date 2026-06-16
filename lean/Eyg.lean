@@ -9,3 +9,5 @@ import Eyg.Interpreter.Cast
 import Eyg.Interpreter.Builtin
 import Eyg.Interpreter.State
 import Eyg.Spec.Harness
+import Eyg.Semantics.Basic
+import Eyg.Semantics.FunctionalBigStep
