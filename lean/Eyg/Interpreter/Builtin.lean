@@ -63,6 +63,29 @@ def cmpBytes : List UInt8 → List UInt8 → Ordering
       | .eq => cmpBytes as bs
       | o => o
 
+/-- Is `c` a combining mark / grapheme-extender (a non-spacing scalar that
+attaches to the preceding base character)? Covers the ranges the spec fixtures
+exercise — enough to count grapheme clusters like Gleam's `string.length`. -/
+private def isCombining (c : Char) : Bool :=
+  let n := c.toNat
+  (0x0300 ≤ n ∧ n ≤ 0x036F) || (0x1AB0 ≤ n ∧ n ≤ 0x1AFF) ||
+  (0x1DC0 ≤ n ∧ n ≤ 0x1DFF) || (0x20D0 ≤ n ∧ n ≤ 0x20FF) ||
+  (0xFE20 ≤ n ∧ n ≤ 0xFE2F) || n == 0x200D
+
+/-- Split a string into grapheme clusters (base char + trailing combining marks),
+approximating Gleam `string.to_graphemes`. Used by `string_split` on an empty
+pattern and by `string_length`. -/
+def graphemes (s : String) : List String := Id.run do
+  let mut acc : List String := []  -- built in reverse
+  for c in s.toList do
+    if isCombining c then
+      match acc with
+      | g :: rest => acc := (g ++ c.toString) :: rest
+      | [] => acc := [c.toString]
+    else
+      acc := c.toString :: acc
+  return acc.reverse
+
 /-- `s` starts with `p` (by Unicode scalar prefix). -/
 private def strStartsWith (s p : String) : Bool := s.take p.length == p
 /-- `s` ends with `p`. -/
@@ -113,10 +136,12 @@ def run [BEq m] (id : String) (args : List (Value m)) : Except (Reason m) (Value
       .ok (.String (x ++ y))
   | "string_split", [a, b] => do
       let s ← Cast.asString a; let pat ← Cast.asString b
-      match s.splitOn pat with
+      -- Gleam `string.split(s, "")` yields the grapheme clusters of `s`.
+      let parts := if pat == "" then graphemes s else s.splitOn pat
+      match parts with
       | [] => .ok (mkRecord [("head", .String ""), ("tail", .LinkedList [])])
-      | first :: parts =>
-          .ok (mkRecord [("head", .String first), ("tail", .LinkedList (parts.map (.String ·)))])
+      | first :: rest =>
+          .ok (mkRecord [("head", .String first), ("tail", .LinkedList (rest.map (.String ·)))])
   | "string_split_once", [a, b] => do
       let s ← Cast.asString a; let pat ← Cast.asString b
       if pat == "" then
@@ -143,7 +168,7 @@ def run [BEq m] (id : String) (args : List (Value m)) : Except (Reason m) (Value
   | "string_ends_with", [a, b] => do
       let s ← Cast.asString a; let p ← Cast.asString b; .ok (bool (strEndsWith s p))
   | "string_length", [a] => do
-      let s ← Cast.asString a; .ok (.Integer (Int.ofNat s.length))
+      let s ← Cast.asString a; .ok (.Integer (Int.ofNat (graphemes s).length))
   | "string_to_binary", [a] => do
       let s ← Cast.asString a; .ok (.Binary s.toUTF8)
   | "string_from_binary", [a] => do

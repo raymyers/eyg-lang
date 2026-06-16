@@ -255,24 +255,31 @@ The interpreter core (M2–M5) is now feature-complete; the remaining milestones
 build the JSON spec harness (M6) and IR codec/CID (M7) that validate it against
 the real `spec/` fixtures.
 
-## Milestone 6 — Spec harness & evaluation suites GREEN
+## Milestone 6 — Spec harness & evaluation suites GREEN  ✅ DONE — 104/104
 
-**Deliverable:** a Lean test that loads the three evaluation suites and the
-harness reproduces `interpreter_test.gleam` exactly; **all fixtures pass**.
+**Deliverable:** a Lean harness that loads the three evaluation suites and
+reproduces `interpreter_test.gleam`; **all fixtures pass**.
 
-- [ ] JSON: use `Lean.Json` (or Std) to parse the fixture files.
-- [ ] IR decoder for the `{"0": code, …}` dag-json node shape
-      (`spec/README.md:44-92`) → `Node Unit`.
-- [ ] Value decoder for `{binary|integer|string|list|record|tagged}`
-      (`interpreter_test.gleam:31`).
-- [ ] Expectation decoder: `{value: …}` vs `{break: {UndefinedVariable |
-      UndefinedBuiltin | NotImplemented→Vacant}}` (`interpreter_test.gleam:108`).
-- [ ] Effect-folding harness (`interpreter_test.gleam:182`): run `execute`; for
-      each expected effect assert `Break(UnhandledEffect(label, lift))`, then
-      `resume(reply, env, k)`; finally compare to the expectation.
-- [ ] Wire as a `lake test` target (or `#eval`-based assertion script) over
-      `core_suite`, `builtins_suite`, `effects_suite`.
-- [ ] **DoD:** zero failures across all three suites.
+- [x] JSON via `Lean.Data.Json` (`Json.parse`, `getObjVal?`/`getStr?`/`getInt?`/
+      `getArr?`; objects iterated through `.obj m |>.toList`).
+- [x] IR decoder (`Eyg/Spec/Harness.lean` `decodeNode`) for the `{"0": code, …}`
+      dag-json shape, incl. base64 (`decodeB64`) for `{"/":{"bytes":…}}` and the
+      integer `isSafe` rejection.
+- [x] Value decoder `{binary|integer|string|list|record|tagged}` (`decodeValue`).
+- [x] Expectation decoder `{value}` vs `{break: {UndefinedVariable |
+      UndefinedBuiltin | NotImplemented→Vacant}}` (`decodeExpectation`).
+- [x] Effect-folding runner (`runFixture`): `execute`, then per expected effect
+      require `Break (UnhandledEffect label lift)` and `resume reply env k`;
+      finally compare value (`==`) or break reason.
+- [x] `lake exe spec` target over all three suites; exits non-zero on any fail.
+- [x] **DoD met:** `spec evaluation: 104/104 fixtures passed`.
+
+**Notes:** two fixtures forced the Unicode work flagged in M4 — `string_split`
+on an empty pattern returns grapheme clusters, and `string_length` counts
+grapheme clusters. Added a combining-mark-aware `graphemes` helper in
+`Builtin.lean` (covers the combining-diacritics ranges the fixtures use) and
+routed both builtins through it. `string_split_once`/`string_replace`
+empty-pattern quirks already passed (ASCII fixtures).
 
 ## Milestone 7 — IR codec & `ir_suite.json` (encode / decode / CID)
 

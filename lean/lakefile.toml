@@ -15,3 +15,9 @@ rev = "14e1a557df9a3859f63c9db1b22ed3c0ea0ea058"
 [[lean_lib]]
 name = "Eyg"
 globs = ["Eyg.*"]
+
+# Spec evaluation harness: `lake exe spec` runs the spec/ fixtures and exits
+# non-zero on any failure (the project's real contract).
+[[lean_exe]]
+name = "spec"
+root = "Eyg.Spec.Harness"
