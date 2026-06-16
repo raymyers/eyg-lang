@@ -1,0 +1,17 @@
+name = "eyg"
+version = "0.1.0"
+defaultTargets = ["Eyg"]
+
+[leanOptions]
+weak.linter.mathlibStandardSet = true
+
+# cslib pulls in mathlib transitively, so we don't require mathlib directly
+# (avoids version skew between the two). Pinned to a known-good revision.
+[[require]]
+name = "cslib"
+git = "https://github.com/fmontesi/cslib"
+rev = "14e1a557df9a3859f63c9db1b22ed3c0ea0ea058"
+
+[[lean_lib]]
+name = "Eyg"
+globs = ["Eyg.*"]
