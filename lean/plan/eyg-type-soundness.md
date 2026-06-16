@@ -393,12 +393,17 @@ T6 obligation.
       **Remaining:** non-empty `Record` fields realize a record row (sorted-row
       hinge); union-row ⇒ `.Tagged` canonical form (for `Case`).
 - [~] Extend `preservation`/`progress` with the new `Reduce` cases. **DELIVERED:**
-      `Cons` and `Tag` operations green (no `IncorrectTerm` crash on `Cons`, via
-      `canonical_list`); **`NoCases`** vacuously safe (via `canonical_union_empty` —
-      no value inhabits `Union Empty`). **Remaining:** `Case` (the full match — `hit`
-      pushes the branch, `miss` needs "tag ≠ head ⇒ value inhabits the tail union";
-      no `NoMatch`), `Select l` (no `MissingField`), `Extend`/`Overwrite`. Re-green
-      `soundness` for the full data fragment.
+      the entire **list** fragment (`Cons`) and **variant** fragment (`Tag`/`Case`/
+      `NoCases`) green through `preservation`+`progress`+`soundness_value`. `Case`
+      (the row-reasoning crux) uses the `Eyg/Types/Row.lean` metatheory: HIT — the
+      guarded (first-occurrence) `RowContains` forces the payload to type at the
+      union's head; MISS — `tyEquiv_rowContains_mp` lands the tag in the tail and
+      `rowContains_tyEquiv` surfaces it so the value re-types at `union tail` (no
+      `NoMatch`). **Remaining:** the **record** ops `Select`/`Extend`/`Overwrite` —
+      these need a record-value typing (`RecordWf`: sorted fields realize a row) and
+      the sorted-record↔row reconciliation (the record analog of the variant row
+      work, with the `recordInsert`/`recordGet` sorting). Re-green `soundness` for the
+      full data fragment.
 
 ## Milestone T5 — Slice 3: effects & handlers (the novel part)
 
