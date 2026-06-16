@@ -1,4 +1,5 @@
 import Eyg.Types.Typing
+import Eyg.Types.TyEquivInv
 import Eyg.Interpreter.State
 
 /-!
@@ -38,22 +39,29 @@ recursive: a `Closure` carries an `EnvWf`; an env binds `HasTypeV` values). Valu
 are pure — no effect row (a value *is* a result). -/
 mutual
 
-/-- A value has a type. -/
+/-- A value has a type. Each constructor's conclusion is *any* type `TyEquiv`-equal
+to the value's natural type — conversion is baked in at the leaves (rather than as
+a separate recursive `convV` rule), so canonical forms are pure `cases` and the
+typing-judgment's conversion is localized to values (keeping `StackWf`
+conversion-free). -/
 inductive HasTypeV {m : Type} : Value m → Ty → Prop where
-  | int {n} : HasTypeV (.Integer n) .integer
-  | str {s} : HasTypeV (.String s) .string
-  | bin {b} : HasTypeV (.Binary b) .binary
-  /-- A closure inhabits an arrow whose middle slot is the body's effect row,
-  provided its captured env realizes a context typing the body. -/
-  | closure {x body env argTy εb retTy Γ} :
+  | int {n τ} : Ty.TyEquiv .integer τ → HasTypeV (.Integer n) τ
+  | str {s τ} : Ty.TyEquiv .string τ → HasTypeV (.String s) τ
+  | bin {b τ} : Ty.TyEquiv .binary τ → HasTypeV (.Binary b) τ
+  /-- A closure inhabits (a type equivalent to) an arrow whose middle slot is the
+  body's effect row, provided its captured env realizes a context typing the body. -/
+  | closure {x body env argTy εb retTy Γ τ} :
       EnvWf env Γ →
       HasType ((x, .mono argTy) :: Γ) body retTy εb →
-      HasTypeV (.Closure x body env) (.fun argTy εb retTy)
-  /-- A (strictly under-applied) builtin partial at its residual arrow. -/
-  | partialBuiltin {id s args applied a ε r} :
+      Ty.TyEquiv (.fun argTy εb retTy) τ →
+      HasTypeV (.Closure x body env) τ
+  /-- A (strictly under-applied) builtin partial at (a type equivalent to) its
+  residual arrow. -/
+  | partialBuiltin {id s args applied a ε r τ} :
       Builtins.scheme id = some s →
       BuiltinPartialWf (s.instantiate args) applied (.fun a ε r) →
-      HasTypeV (.Partial (.Builtin id) applied) (.fun a ε r)
+      Ty.TyEquiv (.fun a ε r) τ →
+      HasTypeV (.Partial (.Builtin id) applied) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -99,24 +107,52 @@ theorem envwf_lookup {m : Type} {env : Env m} {Γ : Ctx} {x : String} {s : Schem
           · simp only [hxy] at hl ⊢
             exact ih henv hl
 
+/-- **Value conversion** (derived): a value's type may be replaced by a
+`TyEquiv`-equal one. Each constructor already carries a `TyEquiv` to its natural
+type; compose it with `trans`. -/
+theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
+    (h : HasTypeV v τ) (heq : Ty.TyEquiv τ τ') : HasTypeV v τ' := by
+  cases h with
+  | int he => exact .int (he.trans heq)
+  | str he => exact .str (he.trans heq)
+  | bin he => exact .bin (he.trans heq)
+  | closure henv hbody he => exact .closure henv hbody (he.trans heq)
+  | partialBuiltin hs hp he => exact .partialBuiltin hs hp (he.trans heq)
+
 /-! ## Canonical forms
 
 A value of a base type is the corresponding literal; a value of an arrow type is
-a closure or a builtin partial (the only callable shapes in the pure core).
-`cases` discharges the impossible constructors automatically — their conclusion
-type indices do not unify with the goal's. -/
+a closure or a builtin partial (the only callable shapes in the pure core). Since
+conversion is baked into each constructor's conclusion, these are pure `cases`:
+the constructors whose *natural* head differs carry an impossible `TyEquiv` (e.g.
+`TyEquiv .string .integer`), refuted by the head-shape inversion lemmas. -/
 
 theorem canonical_integer {m : Type} {v : Value m} (h : HasTypeV v .integer) :
     ∃ n, v = .Integer n := by
-  cases h with | int => exact ⟨_, rfl⟩
+  cases h with
+  | int => exact ⟨_, rfl⟩
+  | str he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
+  | bin he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
+  | closure _ _ he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
+  | partialBuiltin _ _ he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
 
 theorem canonical_string {m : Type} {v : Value m} (h : HasTypeV v .string) :
     ∃ s, v = .String s := by
-  cases h with | str => exact ⟨_, rfl⟩
+  cases h with
+  | str => exact ⟨_, rfl⟩
+  | int he => have hc := Ty.tyEquiv_string_inv he; simp at hc
+  | bin he => have hc := Ty.tyEquiv_string_inv he; simp at hc
+  | closure _ _ he => have hc := Ty.tyEquiv_string_inv he; simp at hc
+  | partialBuiltin _ _ he => have hc := Ty.tyEquiv_string_inv he; simp at hc
 
 theorem canonical_binary {m : Type} {v : Value m} (h : HasTypeV v .binary) :
     ∃ b, v = .Binary b := by
-  cases h with | bin => exact ⟨_, rfl⟩
+  cases h with
+  | bin => exact ⟨_, rfl⟩
+  | int he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
+  | str he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
+  | closure _ _ he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
+  | partialBuiltin _ _ he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
 
 /-- A value at an arrow type is a closure or a (callable) builtin partial. -/
 theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
@@ -124,13 +160,16 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
     (∃ x body env, v = .Closure x body env) ∨
     (∃ id applied, v = .Partial (.Builtin id) applied) := by
   cases h with
-  | closure _ _ => exact Or.inl ⟨_, _, _, rfl⟩
-  | partialBuiltin _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | closure _ _ _ => exact Or.inl ⟨_, _, _, rfl⟩
+  | partialBuiltin _ _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
+  | str he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
+  | bin he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
 
 /-! ## Sanity checks -/
 
 -- `Integer 5 : integer`.
-example : HasTypeV (.Integer 5 : Value Unit) .integer := HasTypeV.int
+example : HasTypeV (.Integer 5 : Value Unit) .integer := HasTypeV.int (Ty.TyEquiv.refl _)
 
 -- The empty env realizes the empty context.
 example : EnvWf ([] : Env Unit) [] := EnvWf.nil
@@ -139,11 +178,13 @@ example : EnvWf ([] : Env Unit) [] := EnvWf.nil
 example : HasTypeV (.Partial (.Builtin "int_add") [.Integer 2] : Value Unit)
     (.fun .integer .empty .integer) :=
   HasTypeV.partialBuiltin (s := .mono (Ty.pure2 .integer .integer .integer)) (args := []) rfl
-    (BuiltinPartialWf.cons HasTypeV.int BuiltinPartialWf.nil)
+    (BuiltinPartialWf.cons (HasTypeV.int (Ty.TyEquiv.refl _)) BuiltinPartialWf.nil)
+    (Ty.TyEquiv.refl _)
 
 -- A closure over the empty env inhabits `integer → integer`.
 example : HasTypeV (.Closure "x" (Eyg.Ir.Tree.variable_ "x") [] : Value Unit)
     (.fun .integer .empty .integer) :=
   HasTypeV.closure EnvWf.nil (HasType.var (s := .mono .integer) (args := []) rfl)
+    (Ty.TyEquiv.refl _)
 
 end Eyg.Types

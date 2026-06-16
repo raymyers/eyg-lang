@@ -104,7 +104,8 @@ example : MStateWf (.run (Config.initial
 example : StackWf [(Kontinue.Apply (.Closure "x" (variable_ "x") []) ([] : Env Unit), ())]
     .integer .empty .integer :=
   StackWf.applyf
-    (HasTypeV.closure EnvWf.nil (HasType.var (s := .mono .integer) (args := []) rfl))
+    (HasTypeV.closure EnvWf.nil (HasType.var (s := .mono .integer) (args := []) rfl)
+      (Ty.TyEquiv.refl _))
     StackWf.nil
 
 end
