@@ -43,3 +43,25 @@ commit plan changes
 /goal Execute `lean/plan/eyg-semantics-STEP.md` until PLAN complete.
 
 ---
+
+Study `lean/plan/eyg-semantics.md` and `lean/Eyg/Semantics`, create PLAN `lean/plan/eyg-type-soundness.md` to prove type soundness of the EYG semantics using Lean. This will involve Preservation and Progress theorems. Format as milestone sections with clear deliverables, `- [ ]` task bullets. Commit. Do you think you'll have what you need for this or are there more resources we should look up?
+
+---
+
+Based on your `## Do we have what we need?` section in PLAN `lean/plan/eyg-type-soundness.md`, retrieve the the desired docs and summarize the relevant information in md files in `lean/plan/references/*`, reference in PLAN. Commit.
+
+---
+
+Based on the current codebase and references, is PLAN `lean/plan/eyg-type-soundness.md` now set up for success? If you need to improve or streamline it (while keeping the same overall goal), you may do so and commit.
+
+---
+
+Is "Red" for reduce a convention? Would Reduce or something be clearer
+
+---
+
+commit plan changes
+
+---
+
+/goal Execute `lean/plan/eyg-type-soundness-STEP.md` until PLAN complete.
