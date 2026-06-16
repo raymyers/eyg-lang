@@ -394,9 +394,11 @@ T6 obligation.
       hinge); union-row ⇒ `.Tagged` canonical form (for `Case`).
 - [~] Extend `preservation`/`progress` with the new `Reduce` cases. **DELIVERED:**
       `Cons` and `Tag` operations green (no `IncorrectTerm` crash on `Cons`, via
-      `canonical_list`). **Remaining:** `Case` (no `NoMatch`), `Select l` (no
-      `MissingField`), `Extend`/`Overwrite`. Re-green `soundness` for the full data
-      fragment.
+      `canonical_list`); **`NoCases`** vacuously safe (via `canonical_union_empty` —
+      no value inhabits `Union Empty`). **Remaining:** `Case` (the full match — `hit`
+      pushes the branch, `miss` needs "tag ≠ head ⇒ value inhabits the tail union";
+      no `NoMatch`), `Select l` (no `MissingField`), `Extend`/`Overwrite`. Re-green
+      `soundness` for the full data fragment.
 
 ## Milestone T5 — Slice 3: effects & handlers (the novel part)
 
