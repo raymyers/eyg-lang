@@ -330,11 +330,18 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       closure-application crux). The builtin **application/saturation** case is
       isolated behind the hypothesis `BuiltinAppPreserves` (the **T6** obligation:
       per-builtin `Builtin.run` typing; `int_add` may trap with `Unrepresentable`).
-- [ ] `progress` (well-typed non-value steps without a bad crash; terminal is a
-      typed value) and **`soundness` over `evalR`** (fold `preservation`+`progress`
-      across the fuel) — the remaining T3c-iii pieces. Needs a `Builtins.scheme id =
-      some s → isBuiltin id` consistency lemma and the dual builtin-progress
-      hypothesis; **green, sorry-free** for the pure core.
+- [x] **`soundness_value` over `evalR`** — **DELIVERED** (T3c-iii), sorry-free,
+      axioms clean: a well-typed config whose `evalR` terminates with a value yields
+      a value of the answer type `τ` (type preserved through the whole run). Fuel
+      induction over `preservation` + `reduce1Run_done_value_typed` (`StackWf.nil`
+      pins `τ` at the empty stack; saturated builtins defer to `hsat`).
+- [ ] **`progress` / no-bad-crash half** — remaining T3c piece: a well-typed
+      non-terminal state steps (`reduce1Run` is `.tau`/`.done value`, never a *bad*
+      crash, never `.perform`). Needs the `Builtins.scheme id = some s → isBuiltin id`
+      consistency lemma (for the `Builtin`-node `UndefinedBuiltin`), `envwf_lookup`
+      (for the `Variable` `UndefinedVariable`), and a builtin no-bad-crash hypothesis
+      (`Unrepresentable` permitted). Then `soundness` = value-typed **and**
+      crash-free.
 - [x] Sanity `example`s typing real fixtures (`(\x.x) 1 : integer`, an arithmetic
       term) — **DELIVERED** in T3a; optional `#guard` against `gleam_analysis`
       `type_at` deferred.
