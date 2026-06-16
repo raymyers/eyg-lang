@@ -454,7 +454,19 @@ This is the milestone with no direct mechanization precedent — see the fork be
       the perform/handle fixtures, so the twin is behaviourally identical to the
       interpreter's `doPerform`). This was a prerequisite the plan had not surfaced;
       the direct-frame-typing route (fork (a)) is now unblocked.
-- [ ] **Un-pin the effect row.** Add typing rules `Perform` (singleton-row arrow
+- [ ] **Un-pin the effect row.** ⚙ **Design fully worked out** in
+      `progress/2026-06-16-T5-unpin-perform-design.md` (rule shapes, the new `wait`
+      `MStateWf` clause `∃ a b, EffContains ε op a b ∧ StackWf k b ε τ`, the
+      `stackWf_conv_in` + `stackWf_doPerformR_unhandled` lemmas, and the one genuine
+      design decision — the **`.reply` value-typing contract**: replies are arbitrary,
+      so `preservation`'s `.reply` case must be conditioned on a typed reply, which is
+      sound because closed `evalR` never replies, so `soundness_value` stays green;
+      the contract only bites at `runR`/`BehaviorsR` in T6/T7). This is **one atomic
+      slice** (adding `Perform` cascades through every exhaustive case-split — it
+      cannot land rule-only and stay green). **Defer `Handle` to the slice after**: with
+      no `Handle` rule a typed `StackWf` has no `Delimit` frame, so every well-typed
+      perform is unhandled and escapes — the simplest first effect slice.
+      Add typing rules `Perform` (singleton-row arrow
       `Fun(a, EffectExtend(l,(a,b),Empty), b)` — Koka's "operation as Var" trick,
       `references/algebraic-effects-handlers-soundness.md` §2) and `Handle`
       (input `EffectExtend(l,(a,b),tail)` → output `tail`; `l` discharged; all of
