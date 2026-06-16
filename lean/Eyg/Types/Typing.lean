@@ -39,6 +39,27 @@ open Eyg.Ir
 matching the interpreter's `Env` shadowing). -/
 abbrev Ctx := List (String × Scheme)
 
+/-! ## `Handle` scheme component types (T5)
+
+The deep-handler scheme `handle(l)` (`contextual.gleam` `handle`) factors into these
+pieces. They are `abbrev`s (reducible) so `canonical_arrow` / `tyEquiv_fun_inv` see the
+arrows through them. -/
+
+/-- The resumption type `Fun(reply, tail, ret)` — a delimited continuation. -/
+abbrev kontTy (reply tail ret : Ty) : Ty := .fun reply tail ret
+/-- The handler type `Fun(lift, ∅, Fun(kont, tail, ret))` — gets the performed value
+and the resumption, returns the answer under the discharged row `tail`. -/
+abbrev handlerTy (lift reply tail ret : Ty) : Ty :=
+  .fun lift .empty (.fun (kontTy reply tail ret) tail ret)
+/-- The guarded-computation type `Fun({}, ⟨l:(lift,reply)|tail⟩, ret)` — runs under
+the handled row; `l` is discharged by the handler. -/
+abbrev execTy (l : String) (lift reply tail ret : Ty) : Ty :=
+  .fun (.record .empty) (.effectExtend l lift reply tail) ret
+/-- `handle(l) = Fun(handler, ∅, Fun(exec, tail, ret))`. -/
+abbrev handleTy (l : String) (lift reply tail ret : Ty) : Ty :=
+  .fun (handlerTy lift reply tail ret) .empty
+    (.fun (execTy l lift reply tail ret) tail ret)
+
 /-- The declarative typing judgment for EYG terms (pure core this slice). -/
 inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   /-- Variable: look up a scheme and instantiate it (`do_infer` `ir.Variable`). -/

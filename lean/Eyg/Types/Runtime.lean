@@ -172,6 +172,66 @@ inductive BuiltinPartialWf {m : Type} : Ty → List (Value m) → Ty → Prop wh
 
 end
 
+/-- A continuation **segment** typed as a transformer that tracks *both* endpoints
+`(σin, εin) ⇒ (σout, εout)`. Unlike `StackWf` (whose `nil` is the answer and which
+keeps one ambient row), a segment ends in a **hole** another stack plugs into, and an
+**effect-discharging `Delimit` frame changes the row** (`εin = ⟨l:(lift,reply)|tail⟩`
+above, `tail` below) — so the output row must be a separate index. This is what types
+the reified delimited continuation that `Resume` captures (`acc`, re-pushed via
+`move`); see `stackSeg_append`. The six non-`Delimit` frames keep the row constant
+(`εin = εout`); only `delimit` shrinks it.
+
+(Standalone for now, so its composition lemma is provable by `induction`. When
+`HasTypeV.partialResume` references it in the full `Handle` slice it joins the mutual
+block above and `stackSeg_append` is re-derived via the mutual recursor.) -/
+inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop where
+  | nil {σ ε} : StackSegWf [] σ ε σ ε
+  | trace {a w rest σin εin σout εout} :
+      StackSegWf rest σin εin σout εout →
+      StackSegWf ((Kontinue.Trace w, a) :: rest) σin εin σout εout
+  | assign {a x body fenv Γ defnTy bodyTy εin σout εout rest} :
+      EnvWf fenv Γ →
+      HasType ((x, .mono defnTy) :: Γ) body bodyTy εin →
+      StackSegWf rest bodyTy εin σout εout →
+      StackSegWf ((Kontinue.Assign x body fenv, a) :: rest) defnTy εin σout εout
+  | arg {a arg fenv Γ argTy retTy εin σout εout rest} :
+      EnvWf fenv Γ →
+      HasType Γ arg argTy εin →
+      StackSegWf rest retTy εin σout εout →
+      StackSegWf ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy εin retTy) εin σout εout
+  | applyf {a f fenv argTy retTy εin σout εout rest} :
+      HasTypeV f (.fun argTy εin retTy) →
+      StackSegWf rest retTy εin σout εout →
+      StackSegWf ((Kontinue.Apply f fenv, a) :: rest) argTy εin σout εout
+  | callwith {a arg fenv argTy retTy εin σout εout rest} :
+      HasTypeV arg argTy →
+      StackSegWf rest retTy εin σout εout →
+      StackSegWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy εin retTy) εin σout εout
+  /-- A deep `Delimit l handler henv` frame: discharges `l`, so its input row is
+  `⟨l:(lift,reply)|tail⟩` and the rest of the segment continues under `tail`. -/
+  | delimit {a l handler henv Γ lift reply tail ret σout εout rest} :
+      EnvWf henv Γ →
+      HasTypeV handler (handlerTy lift reply tail ret) →
+      StackSegWf rest ret tail σout εout →
+      StackSegWf ((Kontinue.Delimit l handler henv false, a) :: rest)
+        ret (.effectExtend l lift reply tail) σout εout
+
+/-- **Segment composition** (the corrected `Resume` keystone). Two segments compose
+end-to-end: the first's hole `(σmid, εmid)` is filled by the second. This *is*
+provable across the row-changing `delimit` frame (the row is tracked per-endpoint),
+unlike the uniform-`ε` `stackWf_append`. -/
+theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σout εout : Ty}
+    (hseg : StackSegWf seg σin εin σmid εmid) (hk : StackSegWf k σmid εmid σout εout) :
+    StackSegWf (seg ++ k) σin εin σout εout := by
+  induction hseg with
+  | nil => exact hk
+  | trace _ ih => exact .trace (ih hk)
+  | assign henv hbody _ ih => exact .assign henv hbody (ih hk)
+  | arg henv harg _ ih => exact .arg henv harg (ih hk)
+  | applyf hf _ ih => exact .applyf hf (ih hk)
+  | callwith harg _ ih => exact .callwith harg (ih hk)
+  | delimit henv hh _ ih => exact .delimit henv hh (ih hk)
+
 /-! ## The lookup lemma (replaces the substitution lemma)
 
 If `env` realizes `Γ` and `Γ` binds `x` to scheme `s`, then `env` binds `x` to a
