@@ -259,6 +259,13 @@ unions, effects all present) and a *decidable* row-equivalence.
       `normalizeRow` + `RowEquiv ↔ normalizeRow r = normalizeRow s` decidability is
       the T1b follow-up** — the declarative soundness proof needs only the relation
       and its equivalence laws (decidability is for the algorithmic layer, T8).
+      **T1b partial DELIVERED** (`Eyg/Types/TyEquivInv.lean`): head-shape invariance
+      `tyEquiv_shape` + per-head inversion lemmas
+      `tyEquiv_{fun,integer,string,binary,record,union}_inv` (what the T3
+      preservation case split needs). Remaining: `normalize`/`normalizeRow` +
+      `tyEquiv_iff` + decidability + component inversion (prerequisite for the
+      `StackWf` conversion handling — see
+      `progress/2026-06-16-T3c-preservation-design.md`).
 - [ ] Reconcile with the interpreter's **canonical (sorted, unique-key) records**
       (`recordInsert`/`mkRecord`): a lemma that a sorted field list realizes a row
       `RowEquiv`-equal to any permutation — the hinge for `Select`/`Extend`/
@@ -323,9 +330,14 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       term) — **DELIVERED** in T3a; optional `#guard` against `gleam_analysis`
       `type_at` deferred.
 
-**T3 status:** the typing judgment (T3a) is green. The runtime-typing layer
-(`HasTypeV`/`EnvWf`/`StackWf`/`MStateWf`), canonical-forms lemmas, and the
-`preservation`/`progress`/`soundness` proofs are the next T3 sub-slices.
+**T3 status:** judgment (T3a), runtime value typing + canonical forms (T3b), and
+continuation/state typing `StackWf`/`MStateWf` (T3c-i) are all green. The
+`preservation`/`progress`/`soundness` proofs (T3c-ii/iii) are next; their design —
+the `tau` case split mirroring `reduce1Run` frame-by-frame, the
+`reduce1Run_not_perform` effect-safety obligation, and the required `StackWf.nil`
+`TyEquiv`-closure / `stackWf_conv` (which depends on finishing T1b normalization
+for component inversion) — is recorded in
+`progress/2026-06-16-T3c-preservation-design.md`.
 
 ## Milestone T4 — Slice 2: records, unions, rows
 
