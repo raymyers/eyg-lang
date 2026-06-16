@@ -105,7 +105,7 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
     (∃ n, e.expr = .Integer n) ∨ (∃ s, e.expr = .String s) ∨
     (∃ b, e.expr = .Binary b) ∨ (∃ id, e.expr = .Builtin id) ∨
     e.expr = .Tail ∨ e.expr = .Empty ∨ e.expr = .Cons ∨ (∃ l, e.expr = .Tag l) ∨
-    e.expr = .NoCases ∨ (∃ l, e.expr = .Case l) := by
+    e.expr = .NoCases ∨ (∃ l, e.expr = .Case l) ∨ (∃ l, e.expr = .Select l) := by
   induction h with
   | var => exact Or.inl ⟨_, rfl⟩
   | lam => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
@@ -126,7 +126,9 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
   | nocases => iterate 12 apply Or.inr
                exact Or.inl rfl
   | case_ => iterate 13 apply Or.inr
-             exact ⟨_, rfl⟩
+             exact Or.inl ⟨_, rfl⟩
+  | select => iterate 14 apply Or.inr
+              exact ⟨_, rfl⟩
   | conv _ _ _ ih => exact ih
 
 /-- Inversion for `Tail`: a type equivalent to some list type. -/
@@ -187,6 +189,16 @@ theorem inv_case {Γ : Ctx} {l : String} {a : m} {τ ε : Ty}
   induction h with
   | case_ => cases he; exact ⟨_, _, _, _, .refl _⟩
   | conv _ hτ _ ih => obtain ⟨i, e', r, t, heq⟩ := ih he; exact ⟨i, e', r, t, heq.trans hτ⟩
+  | _ => simp at he
+
+/-- Inversion for `Select l`: a type equivalent to `{l:α|r} → α`. -/
+theorem inv_select {Γ : Ctx} {l : String} {a : m} {τ ε : Ty}
+    (h : HasType Γ (⟨.Select l, a⟩ : Tree.Node m) τ ε) :
+    ∃ fieldTy tail, Ty.TyEquiv (.fun (.record (.rowExtend l fieldTy tail)) .empty fieldTy) τ := by
+  generalize he : (⟨.Select l, a⟩ : Tree.Node m) = e at h
+  induction h with
+  | select => cases he; exact ⟨_, _, .refl _⟩
+  | conv _ hτ _ ih => obtain ⟨ft, t, heq⟩ := ih he; exact ⟨ft, t, heq.trans hτ⟩
   | _ => simp at he
 
 theorem inv_app {Γ : Ctx} {f arg : Tree.Node m} {a : m} {τ ε : Ty}

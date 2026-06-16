@@ -91,6 +91,10 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
         (.fun (.fun inner eff ret) .empty
           (.fun (.fun (.union tail) eff ret) .empty
             (.fun (.union (.rowExtend l inner tail)) eff ret))) ε
+  /-- Record projection `Select l`: `∀α r. {l:α|r} → α`
+  (`select(l) = pure1(Record(RowExtend l q0 q1), q0)`). -/
+  | select {Γ l fieldTy tail ε a} :
+      HasType Γ ⟨.Select l, a⟩ (.fun (.record (.rowExtend l fieldTy tail)) .empty fieldTy) ε
   /-- The empty record `Empty` (`prim(Record(Empty))`). -/
   | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal

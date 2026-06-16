@@ -112,7 +112,7 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       exact ⟨τin, HasTypeV.listNil heq, hst⟩
   | Empty =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, HasTypeV.recordNil (inv_empty hty), hst⟩
+      exact ⟨τin, HasTypeV.record RecordWf.nil (inv_empty hty), hst⟩
   | Cons =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, heq⟩ := inv_cons hty
@@ -129,10 +129,15 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨inner, eff, ret, tail, heq⟩ := inv_case hty
       exact ⟨τin, HasTypeV.partialMatchNil heq, hst⟩
+  | Select l =>
+      simp only [reduce1Run, reduceEval] at hr; cases hr
+      obtain ⟨fieldTy, tail, heq⟩ := inv_select hty
+      exact ⟨τin, HasTypeV.partialSelect heq, hst⟩
   | _ =>
       exfalso
       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
-        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | h | h | h | ⟨_, h⟩ | h | ⟨_, h⟩ <;> simp at h
+        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | h | h | h | ⟨_, h⟩ | h | ⟨_, h⟩ | ⟨_, h⟩ <;>
+        simp at h
 
 /-- The builtin **application/saturation** preservation obligation, isolated as a
 hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
@@ -235,6 +240,17 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                       obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
                       exact ⟨_, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
                         StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hrest⟩
+        | @partialSelect lbl fieldTy tail _ he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := hv.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hrw hetag =>
+                obtain ⟨f', hcont, hf'⟩ :=
+                  (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                obtain ⟨value, hget, hvalue⟩ := recordWf_get hrw hcont
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
+                exact ⟨_, hvalue.conv (hf'.symm.trans hRet), hrest⟩
   | callwith harg hrest =>
       rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hv with
@@ -298,6 +314,17 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                       obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
                       exact ⟨_, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
                         StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hrest⟩
+        | @partialSelect lbl fieldTy tail _ he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := harg.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hrw hetag =>
+                obtain ⟨f', hcont, hf'⟩ :=
+                  (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                obtain ⟨value, hget, hvalue⟩ := recordWf_get hrw hcont
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
+                exact ⟨_, hvalue.conv (hf'.symm.trans hRet), hrest⟩
 
 /-! ## Effect safety for the pure core: no `.perform`
 
@@ -333,6 +360,11 @@ theorem reduceCall_ne_perform [BEq m] {f arg : Value m} {ann : m} {env : Env m} 
     | partialMatchNil _ => exact absurd h (by simp [reduceCall])
     | partialMatchOne _ _ => exact absurd h (by simp [reduceCall])
     | partialMatchTwo _ _ _ =>
+        simp only [reduceCall] at h
+        split at h
+        · exact absurd h (by simp)
+        · split at h <;> exact absurd h (by simp)
+    | partialSelect _ =>
         simp only [reduceCall] at h
         split at h
         · exact absurd h (by simp)
@@ -450,6 +482,11 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                     split at h
                     · exact absurd h (by simp)
                     · split at h <;> exact absurd h (by simp)
+                | partialSelect _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h
+                    split at h
+                    · exact absurd h (by simp)
+                    · split at h <;> exact absurd h (by simp)
           | callwith harg hrest =>
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
@@ -472,6 +509,11 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                 | partialMatchOne _ _ =>
                     simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
                 | partialMatchTwo _ _ _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h
+                    split at h
+                    · exact absurd h (by simp)
+                    · split at h <;> exact absurd h (by simp)
+                | partialSelect _ =>
                     simp only [reduce1Run, reduceApply, reduceCall] at h
                     split at h
                     · exact absurd h (by simp)
@@ -549,11 +591,12 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
       | Tag l => exact Or.inl ⟨_, rfl⟩
       | NoCases => exact Or.inl ⟨_, rfl⟩
       | Case l => exact Or.inl ⟨_, rfl⟩
+      | Select l => exact Or.inl ⟨_, rfl⟩
       | _ =>
           exfalso
           rcases hasType_expr_form hty with ⟨_, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, _, hh⟩ |
-            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | hh | hh | hh | ⟨_, hh⟩ | hh | ⟨_, hh⟩ <;>
-            simp at hh
+            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | hh | hh | hh | ⟨_, hh⟩ | hh | ⟨_, hh⟩ |
+            ⟨_, hh⟩ <;> simp at hh
   | V w =>
       cases k with
       | nil => exact Or.inr (Or.inl ⟨w, rfl⟩)
@@ -598,6 +641,17 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                     split
                     · exact ⟨_, rfl⟩
                     · exact ⟨_, rfl⟩
+                | @partialSelect lbl fieldTy tail _ he =>
+                    obtain ⟨hD, _, _⟩ := Ty.tyEquiv_fun_components he
+                    have hvr := hw.conv hD.symm
+                    obtain ⟨fields, rfl⟩ := canonical_record hvr
+                    cases hvr with
+                    | record hrw hetag =>
+                        obtain ⟨f', hcont, _⟩ := (Ty.tyEquiv_rowContains
+                          (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                        obtain ⟨value, hget, _⟩ := recordWf_get hrw hcont
+                        exact Or.inl ⟨(.V value, fenv, rest),
+                          by simp [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget]⟩
           | @callwith _ arg fenv _ _ _ _ _ harg hrest =>
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
@@ -633,5 +687,16 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                     split
                     · exact ⟨_, rfl⟩
                     · exact ⟨_, rfl⟩
+                | @partialSelect lbl fieldTy tail _ he =>
+                    obtain ⟨hD, _, _⟩ := Ty.tyEquiv_fun_components he
+                    have hvr := harg.conv hD.symm
+                    obtain ⟨fields, rfl⟩ := canonical_record hvr
+                    cases hvr with
+                    | record hrw hetag =>
+                        obtain ⟨f', hcont, _⟩ := (Ty.tyEquiv_rowContains
+                          (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                        obtain ⟨value, hget, _⟩ := recordWf_get hrw hcont
+                        exact Or.inl ⟨(.V value, fenv, rest),
+                          by simp [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget]⟩
 
 end Eyg.Types
