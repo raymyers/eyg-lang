@@ -72,7 +72,8 @@ The relevant literature has been retrieved and distilled into
 - [`references/progress-preservation-recipe.md`](./references/progress-preservation-recipe.md)
   — Wright–Felleisen / TAPL / Software Foundations syntactic-soundness skeleton,
   the lemma DAG, and how to phrase soundness for a **total/crash** semantics.
-  Backs the overall shape (T5/T6/T7) and the binder decision (T1).
+  Backs the `progress`/`preservation` shape used in every slice (T3–T7) and the
+  de Bruijn binder decision (T1).
 - [`references/row-types-scoped-labels.md`](./references/row-types-scoped-labels.md)
   — Leijen, *Extensible Records with Scoped Labels*: the exact row-equality rules
   (`eq-swap`/`eq-head`) and `rewrite_row` (Fig. 3) that EYG's `RowEquiv` mirrors,
@@ -80,12 +81,14 @@ The relevant literature has been retrieved and distilled into
 - [`references/algebraic-effects-handlers-soundness.md`](./references/algebraic-effects-handlers-soundness.md)
   — Koka / Links / Frank / Eff / Wrocław type-and-effect soundness: effect-row
   threading, `perform`/`handle` rules, handler-frame + resumption typing, the
-  deep/shallow flag, and the effect-safety statement. Backs **T3/T4/T5/T6**.
+  deep/shallow flag, and the effect-safety statement. Backs **T5** (and the
+  effect-safety corollaries in **T7**).
 - [`references/abstract-machine-type-soundness.md`](./references/abstract-machine-type-soundness.md)
   — CEK / typed-continuation soundness: continuation-stack typing as an
   **answer-type transformer** (`K : A ⇒ B`), closure/environment typing that
   replaces the substitution lemma, and why the step relation must be a transparent
-  inductive. Backs **T0/T4**.
+  inductive. Backs **T0** and the runtime-typing definitions introduced in **T3**
+  (`StackWf`/`EnvWf`/`HasTypeV`).
 
 Key cross-cutting findings from the survey:
 - **No published Lean (or confirmed Coq/Agda) mechanization of syntactic
@@ -94,10 +97,10 @@ Key cross-cutting findings from the survey:
   Hazel/Tes (Coq/Iris, semantic), PEPM-2024 (intrinsically-typed Agda machine).
 - The machine-soundness sources type the configuration via **simulation against a
   typed contextual semantics**, *not* by typing the CEK frames directly — so
-  typing EYG's `Delimit`/`Resume` frames (T4) is the genuinely novel obligation;
+  typing EYG's `Delimit`/`Resume` frames (T5) is the genuinely novel obligation;
   PEPM-2024's intrinsic-typing style is the nearest precedent. A lower-risk
   alternative is the simulation route (don't type the machine config; prove it
-  simulates a typed contextual/`Red` semantics).
+  simulates a typed contextual/`Reduce` semantics) — this is the explicit T5 fork.
 
 ## ⚠️ Central architectural constraint (must be resolved in T0)
 
@@ -116,10 +119,10 @@ impossible at the kernel level (the same wall that precluded a kernel
 So T0 must furnish a **transparent reduction relation** with explicit, reducible
 rules. Recommended approach (decided in T0, see Open Questions):
 
-> Define `inductive Red : MState m → Label m → MState m → Prop` with **one
+> Define `inductive Reduce : MState m → Label m → MState m → Prop` with **one
 > explicit constructor per CEK reduction rule**, transcribed from `state.gleam` /
 > the Lean `step` match arms (still environment-based — no substitution, no
-> capture-avoidance). Soundness is proved over `Red`. `Red` is then cross-checked
+> capture-avoidance). Soundness is proved over `Reduce`. `Reduce` is then cross-checked
 > to agree with the opaque `step`/`eval` **executably** on every `spec/` fixture
 > (the proven-by-testing bridge already used for `FBS≡interpreter: 104/104`), so
 > the relation we reason about and the machine we run stay in lockstep without a
@@ -153,247 +156,302 @@ avoided) while making preservation provable.
 
 ---
 
-## Milestone T0 — Reduction substrate: a transparent step
+## Plan structure: vertical slices, not horizontal layers
 
-**Deliverable:** `Eyg/Semantics/Reduction.lean` — an explicit relational CEK
-step `Red` that is reducible (so preservation is provable), plus a progress note
-recording the decision, plus an executable cross-check that `Red` agrees with the
-opaque `step`/`eval`.
+This is research-grade work with **no existing Lean/Coq/Agda mechanization of
+row-based handler soundness to copy** (see `references/`). To avoid a big-bang
+integration where no theorem is green until the end, the milestones are
+**vertical slices of the language**, each delivering a *complete, sorry-free
+`progress` + `preservation` + no-crash result for a growing fragment*:
 
-- [ ] Decide and document the substrate (Open Question #1). Default: explicit
-      relational `Red`, environment-based, transcribed from `step`.
-- [ ] `inductive Red : MState m → Label m → MState m → Prop` with one constructor
-      per reduction rule (var lookup, lambda→closure, apply push/pop, let, the
-      `Switch` primitives `Cons`/`Extend`/`Overwrite`/`Select`/`Tag`/`Match`/
-      `NoCases`, `Perform`, `Handle`/`Delimit`, `Resume`, builtin saturation).
-      Pure moves carry `.tau`; the effect boundary emits `.perform`; resuming a
-      `wait` emits `.reply` (same `Label` discipline as `Step`).
-- [ ] **`Red` is deterministic** (`Red s μ s₁ → Red s μ' s₂ → …`) and total in the
-      same sense as the untyped `progress` (no transparent stuck states except the
-      crash ones). Reuse to re-derive `progress`/`not_stuck` for `Red`.
-- [ ] Executable agreement `Red ≈ step`: a `#guard`/`lake exe spec` check that one
-      `Red` step matches one `step` move on the spec fixtures (the S5-style
-      proven-by-testing bridge). Report e.g. `Red≡step: N/N`.
-- [ ] (Optional, if cheap) bridge `Red`↔`Step` where `Step`'s `step c e k = …`
-      hypotheses can be discharged — at minimum keep both and reason over `Red`.
+```
+T0  substrate        →  T1 types/rows  →  T2 schemes/builtins   (foundations)
+T3  PURE CORE         (functions, let, literals; ε pinned to empty)   ← first green theorem
+T4  + records/unions/rows
+T5  + effects & handlers   (the novel part; effect safety)
+T6  + let-polymorphism & full builtin table   (full language)
+T7  packaging & corollaries     T8  stretch
+```
 
-## Milestone T1 — Types, rows, and row equivalence
+Two rules keep the slices cheap to grow:
 
-**Deliverable:** `Eyg/Types/Ty.lean` — the EYG type language and the row-
-equivalence relation.
+1. **Fix all judgment signatures once, in T3** — `HasType`/`HasTypeV`/`EnvWf`/
+   `StackWf`/`MStateWf` carry the effect row *from the start* (pinned to `empty`
+   in T3). Later slices **add constructors/cases**, never re-type the judgments,
+   so `preservation`/`progress` proofs extend by new cases rather than rewrites.
+2. **Define the full `Ty` and the canonical reduction `Reduce` up front** (T0/T1);
+   slices just start *using* the record/union/effect constructors.
+
+### What the kernel soundness theorem is actually *about* (important)
+
+The shipped artifacts — `eval`, `eygLTS`/`Step`, `Behaviors` — are all built on
+the **opaque `partial def` `step`**, so a kernel theorem cannot compute through
+them (the S5 wall). Therefore **`Reduce` is the canonical object of the soundness
+theorem**: T0 also gives `Reduce` its own observable layer (`BehaviorsR`, a
+fueled `evalR`), and *all* of `preservation`/`progress`/`soundness` are stated
+and kernel-proved over `Reduce`/`BehaviorsR`. The link from `Reduce` to the shipped
+opaque `eval`/`Behaviors` is **executable agreement only** (the S5-style
+`Reduce≡step` test on every fixture), never a kernel equality. This is honest and
+sufficient — the soundness result is a real kernel theorem about a semantics
+that is *executably identical* to the interpreter — but the plan must not claim a
+kernel `eval`-level corollary, which the opaque `step` precludes.
+
+---
+
+## Milestone T0 — Transparent substrate `Reduce` + its observable layer
+
+**Deliverable:** `Eyg/Semantics/Reduction.lean` — an explicit, reducible
+relational CEK step `Reduce`, a `Reduce`-based fueled evaluator `evalR` and behaviour
+set `BehaviorsR`, and an executable cross-check that `Reduce` agrees with the opaque
+`step`/`eval`. A progress note records the decision.
+
+- [ ] `inductive Reduce : MState m → Label m → MState m → Prop` with one **explicit,
+      reducible** constructor per reduction rule (var lookup, lambda→closure, apply
+      push/pop, let, the `Switch` primitives `Cons`/`Extend`/`Overwrite`/`Select`/
+      `Tag`/`Match`/`NoCases`, `Perform`, `Handle`/`Delimit`, `Resume`, builtin
+      saturation), transcribed from `state.gleam` / the Lean `step` arms. Pure
+      moves carry `.tau`; the effect boundary emits `.perform`; resuming a `wait`
+      emits `.reply` (the `Label` discipline of `Step`). Environment-based — no
+      substitution. *(Why a relation, not a function: preservation must `cases` on
+      each rule; an opaque `def step` blocks that — `references/abstract-machine-
+      type-soundness.md` §6.)*
+- [ ] **`Reduce`-based observable layer** so the soundness theorem has a transparent
+      target: `evalR : Nat → MState m → ResultR` (structural on fuel, over `Reduce`)
+      and `BehaviorsR : MState m → Set Behavior` (mirror S4 `Behaviors` but over
+      `Reduce`). These, not the opaque `eval`/`Behaviors`, are what T7 concludes about.
+- [ ] **`Reduce` is deterministic** and total in the untyped sense (every state is a
+      crash/value terminal or has a `Reduce` move). Re-derive `progress`/`not_stuck`
+      for `Reduce` (cheap; transcribe `Lts.progress`).
+- [ ] **Executable agreement** `Red ≈ step`: a `lake exe spec` check that one `Reduce`
+      step matches one opaque `step` move on every fixture (S5-style bridge);
+      report `Reduce≡step: N/N`. This is the *only* link to the shipped interpreter,
+      and it is by design not a kernel theorem (opaque `partial def`).
+
+## Milestone T1 — Type language & row equivalence
+
+**Deliverable:** `Eyg/Types/Ty.lean` — the **full** EYG type language (records,
+unions, effects all present) and a *decidable* row-equivalence.
 
 - [ ] `inductive Ty` mirroring `isomorphic.Type`: `var`, `fun (arg eff ret)`,
       `binary`, `integer`, `string`, `list`, `record (row)`, `union (row)`,
       `empty`, `rowExtend (label) (field) (tail)`,
-      `effectExtend (label) (lift) (reply) (tail)`, `never`, `promise`. Decide
-      type-variable representation (Open Question #2: de Bruijn vs. named-with-
-      freshness). Recommend **de Bruijn / locally-nameless** for variables bound
-      by type schemes to avoid α-renaming pain.
-- [ ] Smart constructors / notation: `unit = record empty`, `boolean`,
-      `result`, `option`, `rows`, `record`, `union` (mirror `isomorphic.gleam`).
-- [ ] **Row well-formedness / kinding.** Distinguish *value rows* (under
-      `record`/`union`) from *effect rows* (under `fun`'s middle slot /
-      `effectExtend`). A predicate `Ty.WfRow`/`Ty.WfEff` ruling out e.g. an
-      `effectExtend` inside a record row. Keep minimal — only what soundness needs.
-- [ ] **`RowEquiv` / `EffEquiv`** — rows equal up to commuting *distinct* labels
-      (the content of `rewrite_row`/`rewrite_effect`): reflexive, symmetric,
-      transitive, congruent, and `rowExtend l₁ a (rowExtend l₂ b r) ≈
-      rowExtend l₂ b (rowExtend l₁ a r)` when `l₁ ≠ l₂`. Prove it is an
-      equivalence relation. This is the **new proof machinery** for soundness
-      (analogous to, but heavier than, IMP's nothing).
+      `effectExtend (label) (lift) (reply) (tail)`, `never`, `promise`.
+      **Type variables: de Bruijn** (Open Question #2; canonical types, decidable
+      type equality, no α-renaming — `references/progress-preservation-recipe.md`
+      §5).
+- [ ] Smart constructors: `unit = record empty`, `boolean`, `result`, `option`,
+      `rows`, `record`, `union` (mirror `isomorphic.gleam`).
+- [ ] **Row well-formedness / kinding** `Ty.WfRow`/`Ty.WfEff` — distinguish *value
+      rows* (under `record`/`union`) from *effect rows* (under `fun`'s middle slot
+      / `effectExtend`). Keep minimal.
+- [ ] **`RowEquiv` / `EffEquiv`** = Leijen's row equality (`eq-head` congruence +
+      `eq-swap` *only when labels differ*; `references/row-types-scoped-labels.md`).
+      **Recommended route: define a stable-sort `normalizeRow` and prove
+      `RowEquiv r s ↔ normalizeRow r = normalizeRow s`** — this gives the
+      equivalence (refl/symm/trans/congruence) and **decidability** via plain `Eq`,
+      far cheaper than chaining `swap`/`trans`. The `l ≠ l'` guard is load-bearing
+      (keeps duplicate labels ordered) — make it a decidable obligation.
 - [ ] Reconcile with the interpreter's **canonical (sorted, unique-key) records**
       (`recordInsert`/`mkRecord`): a lemma that a sorted field list realizes a row
-      that is `RowEquiv` to any permutation — the hinge between dynamic record
-      values and row types in preservation for `Select`/`Extend`/`Overwrite`.
+      `RowEquiv`-equal to any permutation — the hinge for `Select`/`Extend`/
+      `Overwrite` preservation in T4. *(With the normalization route this is nearly
+      immediate: dynamic records are already in normal form.)*
 
-## Milestone T2 — Type schemes, substitution, instantiation
+## Milestone T2 — Schemes, instantiation, builtin table
 
-**Deliverable:** `Eyg/Types/Scheme.lean` — polymorphism and the primitive/builtin
-scheme tables.
+**Deliverable:** `Eyg/Types/Scheme.lean` — type substitution, instantiation, and
+the primitive/builtin scheme tables.
 
-- [ ] Type substitution `Ty.subst` (mono and into rows/effect rows) with the
-      standard lemmas (compositionality; substitution commutes with `RowEquiv`).
-- [ ] `Scheme` (∀-quantified `Ty`) with `instantiate : Scheme → Ty` (fresh/de
-      Bruijn open) mirroring `binding.instantiate`/`open`. Decide whether to model
-      `gen` (generalization) declaratively (close over non-escaping vars) — Open
-      Question #3 (value restriction / effect-safe generalization, cf.
-      `close_eff`).
+- [ ] Type substitution `Ty.subst` (into rows/effect rows) + lemmas
+      (compositionality; `subst` commutes with `RowEquiv`).
+- [ ] `Scheme` (∀-quantified `Ty`) with `instantiate : Scheme → Ty` (de Bruijn
+      open) mirroring `binding.instantiate`/`open`. **Defer `gen`
+      (generalization) to T6** — the pure/rows/effects slices (T3–T5) use only
+      *monomorphic* `let` plus polymorphic *builtin/primitive schemes*, which is
+      enough to exercise everything except let-polymorphism.
 - [ ] **Primitive schemes** for every non-application node, transcribed from
       `contextual.gleam`'s `prim`/`cons`/`extend`/`overwrite`/`select`/`tag`/
       `case_`/`nocases`/`perform`/`handle`. These ARE the typing rules for those
-      nodes.
-- [ ] **Builtin scheme table** transcribed from `builtins()` (`int_add`, `equal`,
-      `fix`, `list_fold`, `string_*`, …). One Lean table, used by both the typing
-      judgment (T3) and the canonical-forms/preservation reasoning for builtin
-      saturation (T5). Start with a representative subset; complete incrementally.
+      nodes; introduce each in the slice that needs it (data in T4, effects in T5).
+- [ ] **Builtin scheme table** from `builtins()` — start with the arithmetic
+      subset needed by T3 fixtures (`int_add`, …); grow per slice; complete in T6.
 
-## Milestone T3 — Declarative typing judgment for terms
+## Milestone T3 — Slice 1: pure monomorphic core (first green theorem)
 
-**Deliverable:** `Eyg/Types/Typing.lean` — `HasType`, one rule per IR node.
+**Deliverable:** `Eyg/Types/Typing.lean` + `Eyg/Types/Runtime.lean` +
+`Eyg/Types/Soundness.lean` — the **full judgment signatures** plus the rules for
+the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
+**This milestone proves the entire pipeline end-to-end before any hard feature.**
 
-- [ ] `HasType : Ctx → Node m → Ty → Ty → Prop` (env, term, type, **effect row**),
-      `Ctx = List (String × Scheme)`. One constructor per `Expr` arm, mirroring
-      `do_infer`:
-  - [ ] `Variable` (instantiate scheme from `Ctx`), `Lambda` (arrow with the
-        body's effect row in the middle slot; the lambda *itself* is pure),
-        `Apply` (function's effect row + argument's row + the latent arrow row all
-        combine — read off `do_infer`'s effect threading carefully).
-  - [ ] `Let` with generalization (per T2 decision), `Integer`/`String`/`Binary`,
-        `Tail`/`Cons`/`Empty`/`Extend`/`Select`/`Overwrite`/`Tag`/`Case`/`NoCases`
-        (via T2 primitive schemes), `Perform` (adds the effect to the row),
-        `Handle` (discharges it), `Builtin` (via T2 table), `Vacant` (well-typed
-        at any type but its dynamic outcome is a crash — see Open Question #5).
-  - [ ] A **subsumption/conversion rule** allowing `RowEquiv`/`EffEquiv` rewriting
-        of a derivation's type/row (so syntactic row order never blocks a rule).
-- [ ] Sanity `example`s: type a handful of spec fixtures (`(\x.x) 1 : Integer`,
-      a record `Select`, a `perform`/`handle` round-trip) by hand to validate the
-      rules before building the heavy metatheory.
-- [ ] (Cross-check, optional) `#guard` that the hand-typed fixtures' types agree
-      with `gleam_analysis` `type_at`/`type_` output where a fixture exists.
+- [ ] `HasType : Ctx → Node m → Ty → Ty → Prop` (env, term, type, **effect row** —
+      present now, pinned to `empty` in this slice), `Ctx = List (String ×
+      Scheme)`. Rules for this slice only: `Variable`, `Lambda` (arrow with body's
+      row in the middle; the lambda value itself pure), `Apply` (effect threading
+      per `do_infer`), monomorphic `Let`, `Integer`/`String`/`Binary`, arithmetic
+      `Builtin`. Plus the **`RowEquiv`/`EffEquiv` conversion rule** (so row order
+      never blocks a rule).
+- [ ] Runtime typing with **full signatures**: `HasTypeV : Value m → Ty → Prop`
+      (literals, `Closure` via `EnvWf` + body typing — `references/abstract-
+      machine-type-soundness.md` §3; `Partial` at its residual arrow), `EnvWf : Env
+      m → Ctx → Prop` (lock-step) with the **lookup lemma** (replaces the
+      substitution lemma), `StackWf : Stack m → (Ty × Ty) → (Ty × Ty) → Prop`
+      (**continuation as answer-type transformer** `A ⇒ B`; the `Arg`/`Apply`/
+      `Assign`/`CallWith` frames only in this slice), and `MStateWf : MState m → Ty
+      → Ty → Prop`.
+- [ ] **Canonical-forms lemmas** for the slice (arrow ⇒ `Closure`/saturatable
+      `Partial`; `integer` ⇒ `.Integer`).
+- [ ] `preservation` (`MStateWf s τ ε → Reduce s μ s' → MStateWf s' τ ε`) and
+      `progress` (`MStateWf s τ ε → s.IsValue ∨ ∃ μ s', Reduce s μ s' ∧
+      ¬ μ.IsCrashMove`) **over `Reduce`**, by `cases` on `Reduce`.
+- [ ] **`soundness` over `BehaviorsR`** for the pure fragment: well-typed ⇒ never
+      `crash`; terminal value has type `τ`. **Green, sorry-free, axioms clean.**
+- [ ] Sanity `example`s typing real fixtures (`(\x.x) 1 : integer`, an arithmetic
+      term); optional `#guard` against `gleam_analysis` `type_at`.
 
-## Milestone T4 — Semantic typing: values, environments, stacks, configs
+## Milestone T4 — Slice 2: records, unions, rows
 
-**Deliverable:** `Eyg/Types/Runtime.lean` — typing of runtime artifacts and the
-configuration-typing relation. This is the heart of CEK soundness.
+**Deliverable:** extend the T3 files with structured data; re-green the theorems.
 
-- [ ] **Value typing** `HasTypeV : Value m → Ty → Prop`: `Integer:integer`, …,
-      `Record` fields realize a record row (using the T1 sorted-row hinge),
-      `Tagged l v` inhabits a union row containing `l`, `LinkedList` elements,
-      and **`Closure param body env`** well-typed iff `body` is well-typed under
-      `env`'s typing extended with `param` (ties to `HasType`).
-- [ ] **`Partial switch applied`** typing: a partially-applied primitive/builtin
-      is typed at the *residual* arrow of its scheme after consuming `applied`
-      (canonical-forms input for `Apply` preservation).
-- [ ] **Environment typing** `EnvWf : Env m → Ctx → Prop` (pointwise value typing
-      against schemes).
-- [ ] **Stack / continuation typing** `StackWf : Stack m → (Ty × Ty) → (Ty × Ty)
-      → Prop` — a continuation is typed as a transformer from the *hole's* type+
-      effect to the *answer's* type+effect. Crucially, a `Delimit`/handler frame
-      **discharges** an effect label from the row (the effect-safety invariant),
-      and `Resume`/`Arg`/`Apply`/`Assign`/`CallWith` frames thread types per the
-      reduction rules. This is the subtlest definition in the project.
-- [ ] **Configuration typing** `MStateWf : MState m → Ty → Ty → Prop` combining
-      control (`E`/`V`), env, and stack so that the whole machine is well-typed at
-      an answer type+row. `wait op env k` typed so that `op` is in the row.
-- [ ] **Canonical forms lemmas**: a value of type `integer` is `.Integer _`; of a
-      record row is `.Record` with those fields; of an arrow is a `Closure` or a
-      saturatable `Partial`; of a union is `.Tagged`. These feed Progress.
+- [ ] Add typing rules (primitive schemes from T2) for `Empty`/`Extend`/`Select`/
+      `Overwrite`/`Tag`/`Case`/`NoCases`/`Cons`/`Tail`, using `RowEquiv` on the row
+      arguments.
+- [ ] Extend `HasTypeV` (`Record` fields realize a record row via the T1 sorted-row
+      hinge; `Tagged l v` inhabits a union row containing `l`; `LinkedList`) and the
+      canonical-forms lemmas (record row ⇒ `.Record`; union row ⇒ `.Tagged`).
+- [ ] Extend `preservation`/`progress` with the new `Reduce` cases — `Select l` on a
+      record returns field `l` (no `MissingField`), `Case` matches a present tag
+      (no `NoMatch`). Re-green `soundness` for the data fragment.
 
-## Milestone T5 — Preservation
+## Milestone T5 — Slice 3: effects & handlers (the novel part)
 
-**Deliverable:** `Eyg/Types/Preservation.lean`.
+**Deliverable:** effect-row threading and handler soundness; **effect safety**.
+This is the milestone with no direct mechanization precedent — see the fork below.
 
-- [ ] `preservation : MStateWf s τ ε → Red s μ s' → MStateWf s' τ ε'` with
-      `EffEquiv`/row-compatible `ε'` (effect row only shrinks or is preserved;
-      `reply` consumes a pending effect). Induction on `Red` (transparent thanks
-      to T0); each case uses the matching canonical-forms / scheme lemma.
-- [ ] **Effect labelling**: if `μ = .perform op lift` then `op` is a member of
-      `ε` (and `lift` has the row's declared lift type); if `μ = .reply op v` then
-      `v` has the declared reply type. The effect-safety half of preservation.
-- [ ] Builtin saturation case: applying a saturated builtin yields a value of the
-      scheme's return type (uses `callBuiltin`'s behavior via `Red`'s explicit
-      builtin rule, not the opaque `step`).
-- [ ] Multistep corollary: `MStateWf` is invariant along `eygLTS.MTr`/`Red*`
-      (fold preservation over the trace), and the observable trace's labels are
-      all in the (evolving) effect row.
+- [ ] **Un-pin the effect row.** Add typing rules `Perform` (singleton-row arrow
+      `Fun(a, EffectExtend(l,(a,b),Empty), b)` — Koka's "operation as Var" trick,
+      `references/algebraic-effects-handlers-soundness.md` §2) and `Handle`
+      (input `EffectExtend(l,(a,b),tail)` → output `tail`; `l` discharged; all of
+      `Σ(l)` handled; bind `resume`), with the `shallow : Bool` flag flipping the
+      resumption's codomain row (deep = discharged `tail`; shallow = undischarged).
+- [ ] **DECISION (fork, resolve at the top of T5):** typing the CEK `Delimit`/
+      `Resume` frames directly has **no precedent** (the literature types machines
+      by *simulation* against a typed contextual semantics). Two routes:
+      - *(a) Direct frame typing* — extend `StackWf` so a `Delimit` frame discharges
+        an effect label from the row and `Resume` types the reified continuation.
+        Reuses the existing machine; matches EYG's goal; highest novelty/risk.
+      - *(b) Simulation fallback* — define a small contextual reduction with typed
+        evaluation contexts (Koka/Links style), prove `progress`/`preservation`
+        there (well-trodden: context typing + replacement lemma), then prove `Reduce`
+        simulates it. Lower proof risk for the metatheory, but adds a second
+        semantics + a simulation proof.
+      **Recommendation:** attempt (a) for one effect first (it reuses everything);
+      fall back to (b) if `Resume`/continuation typing stalls. T3/T4 already prove
+      the pipeline, so this fork is isolated to the effect layer.
+- [ ] **Effect safety in `preservation`:** if `μ = .perform op lift` then `op ∈ ε`
+      (and `lift`/reply have the row's declared types). `wait op env k` typed so
+      `op ∈ ε`.
+- [ ] **`progress` with the effect escape clause:** a well-typed non-value is a
+      value, *suspends on `op ∈ ε`*, or takes a non-crash step (no
+      `UnhandledEffect` outside the row). Re-green `soundness` incl. effect safety.
 
-## Milestone T6 — Progress
+## Milestone T6 — Slice 4: let-polymorphism & full builtins (full language)
 
-**Deliverable:** `Eyg/Types/Progress.lean`.
+**Deliverable:** the remaining generality; `progress`+`preservation`+`soundness`
+for the **whole** core language.
 
-- [ ] `progress_typed : MStateWf s τ ε → s.IsValue ∨ (suspended on op ∈ ε) ∨
-      ∃ μ s', Red s μ s' ∧ ¬ μ.IsCrashMove`. Concretely: a well-typed
-      non-value, non-suspended state can take a **non-crash** step. Via canonical
-      forms (T4): the control + top frame always match a non-crash reduction rule.
-- [ ] **No-crash corollary** `well_typed_not_crash : MStateWf s τ ε →
-      ¬ s.IsCrash` — the headline. Each crash `Reason` (`NotAFunction`, `Vacant`,
-      `NoMatch`, `MissingField`, `UndefinedVariable`, `IncorrectTerm`,
-      `UndefinedBuiltin`) is shown unreachable from a well-typed state by
-      canonical forms (e.g. `NotAFunction` needs a non-arrow in function position,
-      excluded by canonical forms for arrows).
-- [ ] **Unhandled-effect characterization**: a well-typed state suspends
-      (`wait op …`) only when `op ∈ ε`; so a program typed with `ε = empty`
-      (a `pure()` context, cf. `contextual.pure`) never suspends — it terminates
-      with a value or diverges silently.
+- [ ] **Let-generalization** `gen` (deferred from T2), declaratively and
+      **effect-safe** (only generalize effect tails that don't escape — mirror
+      `close`/`close_eff`; Open Question #3). Extend the `Let` rule and re-green.
+- [ ] **Complete the builtin scheme table** (`fix`, `list_fold`, `binary_fold`,
+      all `string_*`/`int_*`, …) and the builtin-saturation preservation case
+      (saturated builtin yields its scheme's return type, via `Reduce`'s explicit
+      builtin rule).
+- [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
-## Milestone T7 — Soundness over `Behaviors` (the payoff)
+## Milestone T7 — Packaging & corollaries
 
-**Deliverable:** `Eyg/Types/Soundness.lean` — tie progress+preservation to the
-S4 `Behaviors` and the S1 `eval`.
+**Deliverable:** `Eyg/Types/Soundness.lean` — the headline statements + hygiene.
 
-- [ ] `soundness : HasType [] prog τ ε → ∀ b ∈ Behaviors (Config.initial prog),
+- [ ] `soundness : HasType [] prog τ ε → ∀ b ∈ BehaviorsR (Config.initial prog),
       b` is `terminates trace (value v)` with `HasTypeV v τ`, or
-      `suspended/diverges` with **every** `perform op` in the trace satisfying
-      `op ∈ ε` — and **never** `terminates _ (crash _)`. (Combine T5 multistep +
-      T6 no-crash + `outcome_unique`.)
-- [ ] `eval_well_typed_no_crash : HasType [] prog τ ε → ∀ fuel,
-      eval fuel (Config.initial prog) ≠ .done (.crash _)` — the FBS-level
-      restatement (via `eval_iff_mtr`/`eval_sound_done`), so the executable
-      semantics also witnesses soundness.
+      `suspended`/`diverges` with **every** `perform op` in the trace satisfying
+      `op ∈ ε`, and **never** `terminates _ (crash _)`. (T5/T6 preservation+progress
+      folded over the trace + `outcome_unique`.)
 - [ ] **Pure ⇒ effect-free** `pure_no_perform : HasType [] prog τ empty → …` the
-      trace has no `perform` labels (specializing effect safety).
-- [ ] Axiom hygiene: `#print axioms soundness` clean (`propext`/`Classical.choice`
-      /`Quot.sound` only); zero `sorry`.
+      observable trace has no `perform` labels (Eff's `A!∅` purity certificate —
+      `references/algebraic-effects-handlers-soundness.md` §4).
+- [ ] **Executable transfer to the shipped interpreter** (not a kernel claim): the
+      `Reduce≡step` fixture agreement (T0) means the soundness result holds *of the
+      interpreter we actually run*. Document this exactly as S5 documents its
+      bridge; do **not** state a kernel `eval`/`Behaviors`-level corollary.
+- [ ] Axiom hygiene: `#print axioms soundness` clean (`propext`/`Classical.choice`/
+      `Quot.sound` only); zero `sorry` across the project.
 
-## Milestone T8 — Stretch: algorithmic soundness & value relation
+## Milestone T8 — Stretch: algorithmic soundness, references, value relation
 
-**Deliverable:** none required for the core result; tracked as the on-ramp to a
-verified type checker / compiler.
+**Deliverable:** none required for the core result; the on-ramp to a verified
+checker / compiler.
 
-- [ ] **Algorithmic soundness**: relate a Lean port of `contextual.do_infer`
-      (or a *checker* `check : Node → Option (Ty × Ty)`) to `HasType` — "if
-      inference succeeds with `τ ! ε`, then `HasType [] e τ ε`". This is what makes
-      "the analyzer says OK" imply soundness. Large; depends on porting `unify`.
+- [ ] **Algorithmic soundness**: relate a Lean port of `contextual.do_infer` (or a
+      `check : Node → Option (Ty × Ty)`) to `HasType` — "inference succeeds with
+      `τ ! ε` ⟹ `HasType [] e τ ε`". Makes "the analyzer says OK" imply soundness;
+      depends on porting `unify`. Large.
 - [ ] **References / linking**: extend `Ctx` with `refs : Cid → Scheme`
-      (mirroring `Context.refs`) so linked content/release references type-check
-      instead of crashing.
-- [ ] **Value relation** `V : Value → Value → Prop` (the deferred S6 item):
-      structural on data, behavioral/step-indexed on closures — the bridge to
-      compiler correctness, where soundness of the source type system is a
-      prerequisite.
+      (mirroring `Context.refs`) so linked references type-check instead of crash.
+- [ ] **Value relation** `V : Value → Value → Prop` (deferred S6 item): structural
+      on data, behavioral/step-indexed on closures — the bridge to compiler
+      correctness.
 
 ---
 
 ## Definition of done
 
-- [ ] A transparent reduction `Red` exists and is cross-checked against `step`
-      executably (T0); the opaque-`partial def` blocker is resolved.
-- [ ] `Ty`, `RowEquiv`/`EffEquiv` (proved an equivalence), schemes, and
-      `HasType` (one rule per node, transcribed from `gleam_analysis`) are defined
-      and validated on sample fixtures.
-- [ ] `preservation` and `progress_typed` proved over `Red`, including
-      **effect safety** (emitted `perform` labels ∈ the effect row).
-- [ ] `well_typed_not_crash` and `soundness` (over `Behaviors`) proved; the
-      `eval`-level restatement holds; pure programs emit no effects.
-- [ ] No `sorry`; axioms clean; `lake build` + `lake exe spec` green (incl. any
-      new `Red≡step` / typing cross-checks).
+- [ ] **T0:** transparent `Reduce` + `BehaviorsR`/`evalR`; `Reduce≡step` green on every
+      fixture; the opaque-`partial def` blocker is resolved by reasoning over `Reduce`.
+- [ ] **T1–T2:** full `Ty`; `RowEquiv`/`EffEquiv` proved an equivalence (and
+      decidable via normalization); schemes + the builtin table.
+- [ ] **T3 (the derisking checkpoint):** `progress`+`preservation`+`soundness`
+      green and sorry-free for the **pure monomorphic core**, with the *final*
+      judgment signatures (so later slices only add cases).
+- [ ] **T4/T5/T6:** each re-greens `soundness` for its larger fragment — data,
+      then effects+handlers (**incl. effect safety**: emitted `perform` ∈ row),
+      then let-polymorphism + full builtins.
+- [ ] **T7:** headline `soundness` over `BehaviorsR`; `pure_no_perform`; executable
+      transfer to the interpreter documented (kernel claim stays at the `Reduce`
+      level); axioms clean; zero `sorry`; `lake build` + `lake exe spec` green.
 
-## Open questions / decisions to settle (mostly in T0–T2)
+## Decisions made (baked into the milestones)
 
-1. **Reduction substrate** (T0). Explicit relational `Red` (recommended) vs.
-   re-founding `step` as a structural/fuel `def` with equation lemmas (heavier,
-   but yields a *kernel* `Red ≈ step` instead of an executable one). The opaque
-   `partial def step` cannot be used directly for preservation either way.
-2. **Type-variable representation** (T1). De Bruijn / locally-nameless
-   (recommended, no α-renaming) vs. named with a freshness side-condition (closer
-   to `binding.gleam`'s integer keys).
-3. **Generalization / value restriction** (T2/T3). EYG generalizes `let` only in
-   effect-safe positions (`close`/`close_eff`). Decide how much of that to model
-   declaratively, or whether to start with a **monomorphic core** (no `let`-poly,
-   builtins still polymorphic via schemes) to land soundness sooner, then add
-   generalization.
-4. **Scope sequencing** — recommend proving soundness for a **pure core first**
-   (functions, `let`, integers/strings, records+`Select`/`Extend`, unions+`Case`)
-   with `ε = empty`, *then* adding effect rows + `Perform`/`Handle`/`Resume`.
-   Effects (esp. handler-frame typing in T4 and effect safety in T5/T6) are the
-   genuinely hard, novel part and benefit from a solid pure base.
-5. **`Vacant` typing.** `do_infer` types `Vacant` at a fresh var with an `Error`
-   (it is the "todo/hole" node). It is *well-typed* but its dynamic outcome is a
-   `crash (Vacant)`. Decide: either exclude `Vacant` from "well-typed-and-
-   runnable" (treat its typing error as not-well-typed — recommended, matches
-   `do_infer` recording `Error`), or accept that `crash Vacant` is the one
-   sanctioned crash. This choice directly affects the `well_typed_not_crash`
-   statement.
+These were open in the first draft and are now resolved by the structure above —
+recorded here so the rationale is not lost:
+
+- **Reduction substrate = explicit relational `Reduce`** (T0), reasoned over for
+  soundness; the bridge to the opaque `step` is executable, not kernel. (Re-founding
+  `step` as a structural `def` with equation lemmas was the alternative — heavier,
+  not justified.)
+- **Type variables = de Bruijn** (T1) — canonical types, decidable equality, no
+  α-renaming.
+- **`RowEquiv` via stable-sort normalization** (T1) — yields decidability + the
+  equivalence laws cheaply.
+- **Monomorphic first, generalize in T6** (T2/T6) — slices T3–T5 use monomorphic
+  `let` + polymorphic builtin/primitive schemes; let-generalization is added last.
+- **Sequencing = vertical slices** (T3 pure → T4 data → T5 effects → T6 poly),
+  each green before the next — the effect layer (no precedent) is isolated to T5.
+
+## Open questions (still to settle)
+
+1. **CEK frame typing vs. simulation, for effects** (decided at the top of T5).
+   Direct `Delimit`/`Resume` frame typing (reuses the machine, novel) vs. a typed
+   contextual semantics + a `Reduce`-simulates-it proof (well-trodden metatheory,
+   second semantics). Recommendation: try direct for one effect, fall back to
+   simulation if continuation typing stalls. This is the single largest remaining
+   risk and the reason effects are their own slice.
+2. **`Vacant` typing.** `do_infer` types `Vacant` at a fresh var but records an
+   `Error` (the "todo/hole" node). It is *shape*-typeable yet its dynamic outcome
+   is `crash (Vacant)`. Decide: **exclude `Vacant` from "well-typed"** (treat the
+   recorded `Error` as not-well-typed — recommended, matches `do_infer`), or accept
+   `crash Vacant` as the one sanctioned crash. Directly affects the no-crash
+   statement; settle in T3 when the `HasType` rules are fixed.
 
 ## Do we have what we need? (answer to the prompt's question)
 
@@ -420,7 +478,7 @@ assumes it.
   resumption typing, the deep/shallow flag, T5/T6 effect safety).
 - [`references/abstract-machine-type-soundness.md`](./references/abstract-machine-type-soundness.md)
   — CEK / typed-continuation soundness: the `StackWf` "continuation as answer-type
-  transformer" pattern and closure/environment typing for T4 (and why T0's `Red`
+  transformer" pattern and closure/environment typing for T4 (and why T0's `Reduce`
   must be transparent).
 - [`references/progress-preservation-recipe.md`](./references/progress-preservation-recipe.md)
   — Software-Foundations / Wright–Felleisen *Progress + Preservation* skeleton and
