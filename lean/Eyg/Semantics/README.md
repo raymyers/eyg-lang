@@ -26,9 +26,12 @@ constructive plan is `lean/plan/eyg-semantics.md`.
 | Outcome   | `value v \| crash reason`               | terminal-state predicates (S2)            |
 | Divergence| `∀ fuel, eval fuel cfg = timeout`       | `OmegaSequence` ω-trace (S4)              |
 
-**State = the CEK configuration.** The LTS state is exactly the interpreter's
-machine configuration, so the semantics and the implementation share one step
-function. Environments eliminate substitution, so there are no
+**State = the CEK machine.** The LTS state is the interpreter's machine state,
+so the semantics and the implementation share one step function. Concretely it
+is `MState = run Config | wait op env k`: a running `Config = Control × Env ×
+Stack`, plus a `wait` variant for a machine suspended at an unhandled effect
+(needed because separate `perform`/`reply` labels require a state *between* the
+request and its reply). Environments eliminate substitution, so there are no
 capture-avoidance lemmas.
 
 **Source terms are closed, linked core terms.** `import`/`#CID` references are
@@ -66,4 +69,9 @@ middle ground").
   `eval_timeout_antitone`); `FBS≡interpreter` cross-checked on all 104 spec
   fixtures via `lake exe spec`. Remaining: the general agreement *proof*
   (`eval_agrees_execute_value`, currently a stub — Milestone S5).
-* **S2–S6:** see `lean/plan/eyg-semantics.md`.
+* **S2 — the LTS:** `eygLTS : LTS MState Label` defined over `step`
+  (`Lts.lean`); `progress`/`not_stuck` proved; `HasTau` instance wired.
+  The LTS state is `MState = run Config | wait op env k` (the `wait` variant is
+  the suspended machine awaiting a reply — needed for separate `perform`/`reply`
+  labels).
+* **S3–S6:** see `lean/plan/eyg-semantics.md`.

@@ -110,20 +110,27 @@ rules with the interpreter.
       `interpFinal`); reports `FBS≡interpreter: 104/104` and fails the run on any
       disagreement. A concrete instance of the S5 bridge over the whole suite.
 
-## Milestone S2 — The EYG LTS in cslib
+## Milestone S2 — The EYG LTS in cslib ✅
 
-**Deliverable:** `Eyg/Semantics/Lts.lean` defines `eygLTS : LTS Config Label`
+**Deliverable:** `Eyg/Semantics/Lts.lean` defines `eygLTS : LTS MState Label`
 and the terminal/outcome predicates.
 
-- [ ] `inductive Step : Config → Label → Config → Prop` from the CEK rules:
-      pure machine moves are `tau`; reaching the effect boundary emits
-      `perform op lift`; resuming emits `reply op v`.
-- [ ] `def eygLTS : LTS Config Label := ⟨Step⟩`.
-- [ ] `Outcome` predicates: `IsValue`, `IsCrash`, `Stuck` (none should be
-      `Stuck` once totality holds — prove `progress`-style: every non-terminal
-      config has a `Step`).
-- [ ] Derive multistep `eygLTS.MTr` for free; sanity-check `MTr.comp`/`split`
-      give trace concatenation/splitting.
+- [x] `inductive Step : MState → Label → MState → Prop` from the CEK rules,
+      defined *over* the interpreter's `step`: pure moves are `tau`; the effect
+      boundary emits `perform op lift`; resuming emits `reply op v`.
+- [x] `def eygLTS : LTS MState Label := ⟨Step⟩`, with `eygLTS_Tr` simp lemma and
+      a `HasTau (Label m)` instance (τ = `tau`) for cslib's weak/divergence API.
+- [x] Outcome predicates `MState.outcome?`/`Terminated`/`IsValue`/`IsCrash`;
+      `progress` (every state is `Terminated` or steps) ⇒ `not_stuck` (cslib
+      `Stuck` is empty for `eygLTS`). Proof cases on `step` abstractly.
+- [x] `eygLTS.MTr` available for free (cslib); one-step `MTr` reply example.
+- **State refinement:** the LTS state is `MState = run Config | wait op env k`,
+  not bare `Config` — separate `perform`/`reply` labels need a suspended state.
+  `wait` holds the captured resume context; rationale in `Lts.lean`.
+- **Constraint:** `step` is `partial def`-backed ⇒ irreducible, so concrete
+  `tau`/`perform` transitions can't use `rfl`. Does not block S3/S5 (proofs case
+  on `step c e k` abstractly). See
+  `progress/2026-06-16-partial-def-irreducibility.md`.
 
 ## Milestone S3 — FBS ⟷ LTS correspondence
 
