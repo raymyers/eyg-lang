@@ -473,7 +473,15 @@ This is the milestone with no direct mechanization precedent — see the fork be
       at `runR`/`BehaviorsR` (T6/T7). All sorry-free, axioms
       `propext`/`Classical.choice`/`Quot.sound`; `lake exe spec` 104/104; a sanity
       `example` types `perform "Log" "hi" : unit ! ⟨Log:(String,unit)⟩`.
-- [ ] **Type `Handle`.** Now the only remaining effect rule. With `Handle`/`Delimit`
+- [ ] **Type `Handle`.** ⚙ **Design worked out** in
+      `progress/2026-06-16-T5-handle-design.md` (the `handle` scheme; the `Delimit`
+      answer-type-transformer frame that discharges `l`; the `Resume` reified-
+      continuation typing as a stack-*segment* transformer `reply ⇒ ret`; the
+      generalization of `stackWf_doPerformR_unhandled` to a handled-`.tau`-vs-escape
+      dispatch; and the one new metatheory point — the ambient row *shrinks* across a
+      `Delimit`, which the per-frame `StackWf` row already accommodates). Highest-risk
+      slice (continuation typing, no precedent); fork (b) simulation remains the
+      fallback. Now the only remaining effect rule. With `Handle`/`Delimit`
       a typed `StackWf` *will* carry a `Delimit` frame, so `stackWf_doPerformR_unhandled`
       generalizes to "walk to the nearest matching `Delimit`": a handled `perform`
       resumes (`.tau`) rather than escaping. Add `Handle`
