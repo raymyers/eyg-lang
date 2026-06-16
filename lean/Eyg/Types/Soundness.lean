@@ -306,6 +306,75 @@ theorem run_string_ends_with [BEq m] {a b v : Value m}
   simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
   cases h; exact hasTypeV_bool _
 
+/-- `Ok v` inhabits `result a b` when `v : a`. -/
+theorem hasTypeV_ok [BEq m] {v : Value m} {a b : Ty} (hv : HasTypeV v a) :
+    HasTypeV (Eyg.Interpreter.ok v) (Ty.result a b) := by
+  refine HasTypeV.tagged (tail := .rowExtend "Error" b .empty) hv ?_
+  simp only [Ty.result, Ty.union', Ty.rows]; exact .refl _
+
+/-- `Error v` inhabits `result a b` when `v : b`. -/
+theorem hasTypeV_error [BEq m] {v : Value m} {a b : Ty} (hv : HasTypeV v b) :
+    HasTypeV (Eyg.Interpreter.error v) (Ty.result a b) := by
+  refine HasTypeV.tagged (tail := .rowExtend "Ok" a .empty) hv ?_
+  simp only [Ty.result, Ty.union', Ty.rows]
+  exact Ty.TyEquiv.congrUnion
+    (Ty.TyEquiv.swapRow (l := "Error") (l' := "Ok") (f := b) (f' := a) (t := .empty) (by decide))
+
+/-- An `ordTag` value inhabits `Builtins.intCompareResult`. -/
+theorem hasTypeV_ordTag [BEq m] (o : Ordering) :
+    HasTypeV (Builtin.ordTag o : Value m) Builtins.intCompareResult := by
+  cases o with
+  | lt =>
+      refine HasTypeV.tagged
+        (tail := .rowExtend "Eq" Ty.unit (.rowExtend "Gt" Ty.unit .empty)) hasTypeV_unit ?_
+      simp only [Builtins.intCompareResult, Ty.union', Ty.rows]; exact .refl _
+  | eq =>
+      refine HasTypeV.tagged
+        (tail := .rowExtend "Lt" Ty.unit (.rowExtend "Gt" Ty.unit .empty)) hasTypeV_unit ?_
+      simp only [Builtins.intCompareResult, Ty.union', Ty.rows]
+      exact Ty.TyEquiv.congrUnion
+        (Ty.TyEquiv.swapRow (l := "Eq") (l' := "Lt") (f := Ty.unit) (f' := Ty.unit)
+          (t := .rowExtend "Gt" Ty.unit .empty) (by decide))
+  | gt =>
+      refine HasTypeV.tagged
+        (tail := .rowExtend "Lt" Ty.unit (.rowExtend "Eq" Ty.unit .empty)) hasTypeV_unit ?_
+      simp only [Builtins.intCompareResult, Ty.union', Ty.rows]
+      refine (Ty.TyEquiv.congrUnion (Ty.TyEquiv.swapRow (l := "Gt") (l' := "Lt")
+        (f := Ty.unit) (f' := Ty.unit) (t := .rowExtend "Eq" Ty.unit .empty) (by decide))).trans ?_
+      exact Ty.TyEquiv.congrUnion (Ty.TyEquiv.congrRow (.refl _)
+        (Ty.TyEquiv.swapRow (l := "Gt") (l' := "Eq") (f := Ty.unit) (f' := Ty.unit)
+          (t := .empty) (by decide)))
+
+/-- `int_compare : Integer → Integer → Builtins.intCompareResult`. -/
+theorem run_int_compare [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_compare" [a, b] = .ok v) : HasTypeV v Builtins.intCompareResult := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha; obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  cases h; exact hasTypeV_ordTag _
+
+/-- `int_divide : Integer → Integer → result Integer Unit`. -/
+theorem run_int_divide [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_divide" [a, b] = .ok v) : HasTypeV v (Ty.result .integer Ty.unit) := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha; obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  cases h
+  split
+  · exact hasTypeV_error hasTypeV_unit
+  · exact hasTypeV_ok (HasTypeV.int (.refl _))
+
+/-- `int_parse : String → result Integer Unit` (or the sanctioned `Unrepresentable`). -/
+theorem run_int_parse [BEq m] {a v : Value m} (ha : HasTypeV a .string)
+    (h : Builtin.run "int_parse" [a] = .ok v) : HasTypeV v (Ty.result .integer Ty.unit) := by
+  obtain ⟨s, rfl⟩ := canonical_string ha
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  split at h
+  · cases h; exact hasTypeV_error hasTypeV_unit
+  · split at h
+    · cases h; exact hasTypeV_ok (HasTypeV.int (.refl _))
+    · exact absurd h (by simp)
+
 /-- The builtin **application/saturation** preservation obligation, isolated as a
 hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
 and `int_add` may legitimately trap with the sanctioned `Unrepresentable`). When a
