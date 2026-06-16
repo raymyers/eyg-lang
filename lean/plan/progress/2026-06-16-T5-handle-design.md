@@ -136,18 +136,42 @@ So `preservation_perform` becomes a *case split*: handled ⇒ the `.tau` success
 case likewise: a typed stack with a matching `Delimit` ⇒ the perform `.tau`-steps
 (handled), else escapes with `op ∈ ε`.
 
-### Row-change subtlety (the one genuinely new metatheory point)
+### Row-change subtlety — ⚠ SHARPENED FINDING (resolve first, next session)
 The ambient `ε` is **not invariant** across a `Delimit` pop (it shrinks `EffectExtend
 l … tail → tail`) or a `perform`-into-handler (the handler runs under `tail`, the
-performed label discharged). `preservation`/`MStateWf` are stated with a *fixed* `ε`.
-Options: (a) thread the row through `StackWf` per-frame (already done — each frame
-carries its own `ε`; only `MStateWf` pins the *top* `ε`), and let `preservation`'s
-conclusion use the **frame's** row at the boundary rather than the global `ε`; or (b)
-keep `ε` global and prove the discharged-row successor types at the same global `ε` via
-`EffContains`/`TyEquiv` reasoning. The `StackWf` answer-type-transformer already varies
-the row per frame (the `delimit` frame's `rest` is at `tail`), so (a) is the natural
-fit and mostly already in place — `MStateWf`'s top `ε` is just the row of the
-outermost control, and `Delimit` pops are internal to `StackWf`.
+performed label discharged). On closer analysis this is **more than bookkeeping**: it
+*breaks the current `preservation` statement*
+
+```
+preservation : MStateWf s τ ε → Reduce s μ s' → ReplyContract ε s μ → MStateWf s' τ ε
+```
+
+because the **same `ε`** appears in hypothesis and conclusion. Concretely, the
+`Delimit`-value-pop step `( .V v, env, Delimit l h e :: rest )  ⟶  ( .V v, env, rest )`
+takes a state well-typed at `ε = EffectExtend l (lift,reply) tail` to a successor
+well-typed only at `ε' = tail` (the `StackWf.delimit` constructor types `rest` at
+`tail`). So `MStateWf s' τ ε` is **false**; only `MStateWf s' τ tail` holds.
+
+`StackWf.delimit` itself fits the **existing** `StackWf` signature with no change — the
+ε index is just "the ambient row at the top of this segment", and the constructor
+recurses `StackWf rest ret tail τout` at a *different* row than its own input
+`EffectExtend l lift reply tail` (the other 6 frames keep the row constant; only
+`delimit` changes it). The problem is purely in the **theorem statements**, not the
+judgments.
+
+**Decision for next session — make the row an output, not an invariant:**
+restate preservation as `MStateWf s τ ε → Reduce s μ s' → … → ∃ ε', MStateWf s' τ ε'`
+(the successor is well-typed at *some* row — the same one except a `Delimit` pop /
+handled `perform`, which yield `tail`). This is sound and sufficient: the headline
+`soundness_value` only concludes `HasTypeV v τ`, which is **ε-free**, so the existential
+row never obstructs it; the `progress` effect-escape clause already names its own `op`/
+`ε` witnesses per state. The `ReplyContract`/`EffContains` reasoning is unaffected.
+Alternative (heavier, rejected): keep `ε` fixed and carry a "the run's row only ever
+shrinks" relation — needless for the value/no-crash result. *Resolve this restatement
+first; then the `Delimit`/`Resume`/handled-`perform` cases are mechanical (the keystone
+`stackWf_move` already types `Resume`).* Note every existing `cases hst` site
+(`preservation_V`, `reduce1Run_done_value_typed`, `progress`, `preservation_perform`)
+gains a `delimit` frame case under this restatement.
 
 ## Concrete execution order
 1. Helpers `handlerTy`/`kontTy`/`execTy` (abbrevs) in Typing/Runtime.
