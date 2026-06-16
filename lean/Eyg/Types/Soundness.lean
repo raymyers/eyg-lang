@@ -112,7 +112,8 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       exact ⟨τin, HasTypeV.listNil heq, hst⟩
   | Empty =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, HasTypeV.record RecordWf.nil (inv_empty hty), hst⟩
+      exact ⟨τin, HasTypeV.record (fun _ _ hc => by cases hc) (fun _ _ _ hc _ => by cases hc)
+        (inv_empty hty), hst⟩
   | Cons =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, heq⟩ := inv_cons hty
@@ -245,10 +246,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             have hvr := hv.conv hD.symm
             obtain ⟨fields, rfl⟩ := canonical_record hvr
             cases hvr with
-            | record hrw hetag =>
+            | record hpres hmatch hetag =>
                 obtain ⟨f', hcont, hf'⟩ :=
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
-                obtain ⟨value, hget, hvalue⟩ := recordWf_get hrw hcont
+                obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
                 exact ⟨_, hvalue.conv (hf'.symm.trans hRet), hrest⟩
   | callwith harg hrest =>
@@ -319,10 +320,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             have hvr := harg.conv hD.symm
             obtain ⟨fields, rfl⟩ := canonical_record hvr
             cases hvr with
-            | record hrw hetag =>
+            | record hpres hmatch hetag =>
                 obtain ⟨f', hcont, hf'⟩ :=
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
-                obtain ⟨value, hget, hvalue⟩ := recordWf_get hrw hcont
+                obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
                 exact ⟨_, hvalue.conv (hf'.symm.trans hRet), hrest⟩
 
@@ -646,10 +647,10 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                     have hvr := hw.conv hD.symm
                     obtain ⟨fields, rfl⟩ := canonical_record hvr
                     cases hvr with
-                    | record hrw hetag =>
+                    | record hpres hmatch hetag =>
                         obtain ⟨f', hcont, _⟩ := (Ty.tyEquiv_rowContains
                           (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
-                        obtain ⟨value, hget, _⟩ := recordWf_get hrw hcont
+                        obtain ⟨value, hget, _⟩ := record_get hpres hmatch hcont
                         exact Or.inl ⟨(.V value, fenv, rest),
                           by simp [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget]⟩
           | @callwith _ arg fenv _ _ _ _ _ harg hrest =>
@@ -692,10 +693,10 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                     have hvr := harg.conv hD.symm
                     obtain ⟨fields, rfl⟩ := canonical_record hvr
                     cases hvr with
-                    | record hrw hetag =>
+                    | record hpres hmatch hetag =>
                         obtain ⟨f', hcont, _⟩ := (Ty.tyEquiv_rowContains
                           (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
-                        obtain ⟨value, hget, _⟩ := recordWf_get hrw hcont
+                        obtain ⟨value, hget, _⟩ := record_get hpres hmatch hcont
                         exact Or.inl ⟨(.V value, fenv, rest),
                           by simp [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget]⟩
 

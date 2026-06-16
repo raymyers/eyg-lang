@@ -108,10 +108,15 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
       HasTypeV otherwise (.fun (.union tail) eff ret) →
       Ty.TyEquiv (.fun (.union (.rowExtend label inner tail)) eff ret) τ →
       HasTypeV (.Partial (.Match label) [branch, otherwise]) τ
-  /-- A record value: its sorted fields realize a row (`RecordWf`, lock-step), up
-  to `TyEquiv` reordering of that row. Generalizes `recordNil`. -/
+  /-- A record value realizes a row by **first-occurrence membership**, in two
+  `∃`-free clauses (so it nests legally): every row label is *present*, and every
+  present value *matches* the row's visible field type. Both read the first
+  occurrence, so the interpreter's sorted-unique records match scoped-row types
+  even with shadowed duplicates. -/
   | record {fields row τ} :
-      RecordWf fields row → Ty.TyEquiv (.record row) τ → HasTypeV (.Record fields) τ
+      (∀ l f, Ty.RowContains row l f → recordGet fields l ≠ none) →
+      (∀ l f v, Ty.RowContains row l f → recordGet fields l = some v → HasTypeV v f) →
+      Ty.TyEquiv (.record row) τ → HasTypeV (.Record fields) τ
   /-- `Select l`: `∀α r. ⟨l:α|r⟩ → α` (`select(l) = pure1(Record(RowExtend l q0 q1), q0)`). -/
   | partialSelect {label fieldTy tail τ} :
       Ty.TyEquiv (.fun (.record (.rowExtend label fieldTy tail)) .empty fieldTy) τ →
@@ -135,14 +140,6 @@ inductive BuiltinPartialWf {m : Type} : Ty → List (Value m) → Ty → Prop wh
       HasTypeV v a →
       BuiltinPartialWf r applied τ →
       BuiltinPartialWf (.fun a ε r) (v :: applied) τ
-
-/-- A record's fields realize a row, in **lock-step** (the dynamic record is
-sorted, so this is its row in sorted order; `TyEquiv` handles reordering). -/
-inductive RecordWf {m : Type} : List (String × Value m) → Ty → Prop where
-  | nil : RecordWf [] .empty
-  | cons {l v fields fieldTy rest} :
-      HasTypeV v fieldTy → RecordWf fields rest →
-      RecordWf ((l, v) :: fields) (.rowExtend l fieldTy rest)
 
 end
 
@@ -190,7 +187,7 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | partialMatchNil he => exact .partialMatchNil (he.trans heq)
   | partialMatchOne hb he => exact .partialMatchOne hb (he.trans heq)
   | partialMatchTwo hb ho he => exact .partialMatchTwo hb ho (he.trans heq)
-  | record hrw he => exact .record hrw (he.trans heq)
+  | record hpres hmatch he => exact .record hpres hmatch (he.trans heq)
   | partialSelect he => exact .partialSelect (he.trans heq)
 
 /-! ## Canonical forms
@@ -243,27 +240,16 @@ theorem canonical_record {m : Type} {v : Value m} {row : Ty} (h : HasTypeV v (.r
   cases h <;> rename_i he <;>
     first | exact ⟨_, rfl⟩ | (have hs := Ty.tyEquiv_shape he; simp [Ty.shape] at hs)
 
-/-- **`Select` is safe**: if a record's fields realize a row that contains `l : f`,
-then `recordGet` finds the field, and its value has type `f` (no `MissingField`).
-`recordGet`'s `==` lookup walks the spine in lock-step with `RowContains`. -/
-theorem recordWf_get {m : Type} {fields : List (String × Value m)} {row : Ty} {l : String}
-    {f : Ty} (hrw : RecordWf fields row) (hc : Ty.RowContains row l f) :
-    ∃ v, recordGet fields l = some v ∧ HasTypeV v f := by
-  induction fields generalizing row with
-  | nil => cases hrw; cases hc
-  | cons hd fields' ih =>
-      obtain ⟨k, vk⟩ := hd
-      cases hrw with
-      | @cons _ _ _ fieldTy rest hvk hrw' =>
-          cases hc with
-          | head => exact ⟨vk, by simp [recordGet], hvk⟩
-          | tail hne hc' =>
-              obtain ⟨v, hget, hv⟩ := ih hrw' hc'
-              refine ⟨v, ?_, hv⟩
-              simp only [recordGet]
-              split
-              · next hh => exact absurd (eq_of_beq hh) hne
-              · exact hget
+/-- **`Select` is safe**: from the two record clauses, `recordGet` finds the field
+(present) and its value has the row's type (matches) — no `MissingField`. -/
+theorem record_get {m : Type} {fields : List (String × Value m)} {row : Ty} {l : String}
+    {f : Ty}
+    (hpres : ∀ l f, Ty.RowContains row l f → recordGet fields l ≠ none)
+    (hmatch : ∀ l f v, Ty.RowContains row l f → recordGet fields l = some v → HasTypeV v f)
+    (hc : Ty.RowContains row l f) : ∃ v, recordGet fields l = some v ∧ HasTypeV v f := by
+  cases hg : recordGet fields l with
+  | none => exact absurd hg (hpres l f hc)
+  | some v => exact ⟨v, rfl, hmatch l f v hc hg⟩
 
 /-- A value at an arrow type is a closure or a (callable) partial — never a
 literal or a data structure. Callers `cases` the typing again to dispatch on the
@@ -283,7 +269,7 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialMatchOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialMatchTwo _ _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialSelect _ => exact Or.inr ⟨_, _, rfl⟩
-  | record _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
+  | record _ _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | str he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
