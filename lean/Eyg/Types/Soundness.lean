@@ -104,12 +104,14 @@ typed `Partial (Builtin id)` is applied to a typed argument and the machine take
 `tau` step (i.e. the builtin did *not* crash), the successor stays well-typed. -/
 def BuiltinAppPreserves (m : Type) [BEq m] : Prop :=
   ∀ {id : String} {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m}
-    {rest : Stack m} {argTy retTy ε τ : Ty} {cfg' : Config m},
+    {rest : Stack m} {argTy retTy ε τ : Ty},
     HasTypeV (.Partial (.Builtin id) applied) (.fun argTy ε retTy) →
     HasTypeV arg argTy →
     StackWf rest retTy ε τ →
-    reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .tau cfg' →
-    MStateWf (.run cfg') τ ε
+    (∀ cfg', reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .tau cfg' →
+        MStateWf (.run cfg') τ ε) ∧
+    (∀ v, reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .done (.value v) →
+        HasTypeV v τ)
 
 /-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
 application case is the crux; the builtin-application case defers to `hsat`. -/
@@ -141,7 +143,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
               HasType.conv hbody hR hE, StackWf.trace hrest⟩
             simpa using hv.conv hA.symm
       · simp only [reduce1Run, reduceApply] at hr
-        exact hsat hf hv hrest hr
+        exact (hsat hf hv hrest).1 _ hr
   | callwith harg hrest =>
       rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
       · cases hv with
@@ -152,7 +154,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
               HasType.conv hbody hR hE, StackWf.trace hrest⟩
             simpa using harg.conv hA.symm
       · simp only [reduce1Run, reduceApply] at hr
-        exact hsat hv harg hrest hr
+        exact (hsat hv harg hrest).1 _ hr
 
 /-! ## Effect safety for the pure core: no `.perform`
 
@@ -234,5 +236,74 @@ theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
               exact preservation_V hsat hwf h
   | perform h => exact (not_perform hwf h).elim
   | reply => exact hwf.elim
+
+/-! ## Soundness: a well-typed run never crashes; its result is typed
+
+The terminal-value half of soundness, threaded through `evalR`. When `reduce1Run`
+of a well-typed state is `.done (.value v)`, the value is typed at the answer type
+`τ`: at the empty stack this is `StackWf.nil` (`τin = τ`); a saturated builtin
+defers to `hsat`. -/
+
+theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
+    {cfg : Config m} {τ ε : Ty} {v : Value m}
+    (hwf : MStateWf (.run cfg) τ ε) (h : reduce1Run cfg = .done (.value v)) :
+    HasTypeV v τ := by
+  obtain ⟨c, env, k⟩ := cfg
+  cases c with
+  | E e =>
+      -- `reduceEval` never yields `.done (.value _)` (only `.tau` or a crash)
+      obtain ⟨expr, ann⟩ := e
+      cases expr <;> simp only [reduce1Run, reduceEval] at h <;>
+        first | exact absurd h (by simp) | (split at h <;> exact absurd h (by simp))
+  | V w =>
+      cases k with
+      | nil =>
+          -- terminal: `w = v`, typed at `τ` via `StackWf.nil`
+          obtain ⟨τin, hw, hst⟩ := mStateWf_V hwf
+          simp only [reduce1Run] at h
+          cases h
+          cases hst; exact hw
+      | cons kontann rest =>
+          obtain ⟨kont, ann⟩ := kontann
+          obtain ⟨τin, hw, hst⟩ := mStateWf_V hwf
+          cases hst with
+          | trace _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | arg _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | applyf hf hrest =>
+              rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
+              · simp only [reduce1Run, reduceApply] at h
+                exact (hsat hf hw hrest).2 _ h
+          | callwith harg hrest =>
+              rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
+              · simp only [reduce1Run, reduceApply] at h
+                exact (hsat hw harg hrest).2 _ h
+
+/-- **Soundness (value typing through evaluation).** A well-typed configuration's
+fuel-bounded evaluation, if it terminates with a value, terminates with a value of
+the answer type `τ` — the type is *preserved through the whole run* (modulo the T6
+builtin obligation `hsat`). Proof: fuel induction, `preservation` across each `tau`
+step, `reduce1Run_done_value_typed` at the terminal. -/
+theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) :
+    ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {v : Value m},
+      MStateWf (.run cfg) τ ε → evalR fuel cfg = .done (.value v) → HasTypeV v τ := by
+  intro fuel
+  induction fuel with
+  | zero => intro cfg τ ε v _ h; simp [evalR] at h
+  | succ n ih =>
+      intro cfg τ ε v hwf h
+      rw [evalR] at h
+      cases hrr : reduce1Run cfg with
+      | tau cfg' =>
+          rw [hrr] at h
+          exact ih (preservation hsat hwf (Reduce.tau hrr)) h
+      | done o =>
+          rw [hrr] at h
+          cases o with
+          | value w => cases h; exact reduce1Run_done_value_typed hsat hwf hrr
+          | crash r => simp at h
+      | perform op lift envP kP => rw [hrr] at h; simp at h
 
 end Eyg.Types

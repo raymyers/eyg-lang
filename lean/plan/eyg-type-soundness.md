@@ -321,11 +321,20 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       `_string`/`_binary` (base ⇒ literal) and `canonical_arrow` (arrow ⇒ `Closure`
       or builtin `Partial`). Resting builtin partials are typed *only at arrows*, so
       the impossible cases drop out by index mismatch.
-- [ ] `preservation` (`MStateWf s τ ε → Reduce s μ s' → MStateWf s' τ ε`) and
-      `progress` (`MStateWf s τ ε → s.IsValue ∨ ∃ μ s', Reduce s μ s' ∧
-      ¬ μ.IsCrashMove`) **over `Reduce`**, by `cases` on `Reduce`.
-- [ ] **`soundness` over `BehaviorsR`** for the pure fragment: well-typed ⇒ never
-      `crash`; terminal value has type `τ`. **Green, sorry-free, axioms clean.**
+- [x] `preservation` (`MStateWf s τ ε → Reduce s μ s' → MStateWf s' τ ε`)
+      **DELIVERED** in `Eyg/Types/Soundness.lean`, sorry-free, axioms clean, over the
+      transparent `Reduce`. `reply` vacuous (`wait` untyped); `perform` impossible
+      (`not_perform` — pure-core **effect safety**: no `HasTypeV` rule types a
+      `Perform` partial, and `reduceCallBuiltin` never performs); `tau` splits into
+      `preservation_E` (eval steps) and `preservation_V` (frame steps incl. the
+      closure-application crux). The builtin **application/saturation** case is
+      isolated behind the hypothesis `BuiltinAppPreserves` (the **T6** obligation:
+      per-builtin `Builtin.run` typing; `int_add` may trap with `Unrepresentable`).
+- [ ] `progress` (well-typed non-value steps without a bad crash; terminal is a
+      typed value) and **`soundness` over `evalR`** (fold `preservation`+`progress`
+      across the fuel) — the remaining T3c-iii pieces. Needs a `Builtins.scheme id =
+      some s → isBuiltin id` consistency lemma and the dual builtin-progress
+      hypothesis; **green, sorry-free** for the pure core.
 - [x] Sanity `example`s typing real fixtures (`(\x.x) 1 : integer`, an arithmetic
       term) — **DELIVERED** in T3a; optional `#guard` against `gleam_analysis`
       `type_at` deferred.
