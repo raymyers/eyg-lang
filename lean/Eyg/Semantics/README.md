@@ -77,4 +77,8 @@ middle ground").
 * **S3 — FBS ⟷ LTS:** `Correspondence.lean`. `instDeterministic`;
   `eval_sound_done`/`eval_sound_effect` (observable trace = emitted events);
   `eval_complete` (silent runs); `eval_iff_mtr` characterization.
-* **S4–S6:** see `lean/plan/eyg-semantics.md`.
+* **S4 — behaviour & divergence:** `Behavior.lean`. `Behaviors cfg`
+  (terminating trace+outcome, or divergent ω-trace); `outcome_unique`;
+  `tauDiverges_iff_timeout` (both directions — internal divergence ⟺ `eval`
+  times out at every fuel).
+* **S5–S6:** see `lean/plan/eyg-semantics.md`.

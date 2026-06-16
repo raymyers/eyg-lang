@@ -152,20 +152,22 @@ finite executions.
       terminal state with outcome o)`, combining sound + complete (uniqueness via
       `instDeterministic`).
 
-## Milestone S4 — Observable behavior: traces & divergence
+## Milestone S4 — Observable behavior: traces & divergence ✅
 
 **Deliverable:** `Eyg/Semantics/Behavior.lean` defining `Behaviors cfg` as a
 finite trace + outcome, or an infinite trace.
 
-- [ ] `FiniteBehavior := { trace : List Label, outcome : Outcome }` via
-      `eygLTS.MTr` to a terminal config.
-- [ ] `DivergentBehavior` via `OmegaSequence` (`Foundations/Data/OmegaSequence`):
-      an infinite run that emits an ω-trace — captures "server loop on `!fix`
-      performing effects forever" (difference-doc §divergence), which big-step
-      could not express.
-- [ ] `Behaviors : Config → Set Behavior` unifying both; prove `Behaviors` is
-      determined (singleton up to the chosen trace) using S3 determinism.
-- [ ] Connect to FBS: `cfg` diverges ⟺ `∀ fuel, eval fuel cfg = timeout`.
+- [x] `Behavior := terminates (trace) (outcome) | diverges (ωSequence Label)`;
+      `Behaviors : Config → Set Behavior` via `eygLTS.MTr` (finite) and
+      `eygLTS.ωTr` (infinite).
+- [x] `diverges` uses cslib `ωSequence` — an infinite run emitting an ω-trace,
+      capturing effectful non-termination a big-step semantics can't express.
+- [x] `outcome_unique`: the silent terminal outcome of a config is determined
+      (via S3 `eval_iff_mtr` + `eval_mono`). (Full trace-singleton-ness not
+      separately needed; outcome determinacy is the substantive part.)
+- [x] Connect to FBS: `tauDiverges_iff_timeout` — `TauDiverges cfg ↔ ∀ fuel,
+      eval fuel cfg = timeout`, **both directions** (backward builds the infinite
+      `loopSucc` trajectory). `TauDiverges := eygLTS.Divergent (.run cfg)`.
 
 ## Milestone S5 — Interpreter ≡ semantics (the bridge theorem)
 
