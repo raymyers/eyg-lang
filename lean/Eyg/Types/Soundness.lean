@@ -209,6 +209,37 @@ theorem run_int_add_noBad [BEq m] {a b : Value m} {e : Reason m}
   · exact absurd h (by simp)
   · cases h; simp [Reason.IsBad]
 
+/-- `int_subtract`'s only failure is the sanctioned `Unrepresentable`. -/
+theorem run_int_subtract_noBad [BEq m] {a b : Value m} {e : Reason m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_subtract" [a, b] = .error e) : ¬ Reason.IsBad e := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha; obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  split at h
+  · exact absurd h (by simp)
+  · cases h; simp [Reason.IsBad]
+
+/-- `int_multiply`'s only failure is the sanctioned `Unrepresentable`. -/
+theorem run_int_multiply_noBad [BEq m] {a b : Value m} {e : Reason m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_multiply" [a, b] = .error e) : ¬ Reason.IsBad e := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha; obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  split at h
+  · exact absurd h (by simp)
+  · cases h; simp [Reason.IsBad]
+
+/-- `int_parse`'s only failure is the sanctioned `Unrepresentable`. -/
+theorem run_int_parse_noBad [BEq m] {a : Value m} {e : Reason m} (ha : HasTypeV a .string)
+    (h : Builtin.run "int_parse" [a] = .error e) : ¬ Reason.IsBad e := by
+  obtain ⟨s, rfl⟩ := canonical_string ha
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · cases h; simp [Reason.IsBad]
+
 /-- `string_append : String → String → String`. -/
 theorem run_string_append [BEq m] {a b v : Value m}
     (ha : HasTypeV a .string) (hb : HasTypeV b .string)
