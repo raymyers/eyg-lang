@@ -92,7 +92,7 @@ theorem tauDiverges_imp_timeout {m : Type} [BEq m] :
           apply ih (c', e', k')
           refine ⟨ss.tail, μs.tail, ?_, ?_, ?_⟩
           · intro i; exact hω (i + 1)
-          · show ss 1 = MState.run (c', e', k'); rw [hsucc]
+          · change ss 1 = MState.run (c', e', k'); rw [hsucc]
           · intro i; exact htr (i + 1)
 
 /-- Total "loop successor": the next config if `step` reduces, else `cfg`
@@ -147,7 +147,7 @@ theorem timeout_imp_tauDiverges {m : Type} [BEq m] {cfg : Config m}
   refine ⟨(⟨fun n => MState.run (loopSucc^[n] cfg)⟩ : ωSequence (MState m)),
           ωSequence.const Label.tau, ?_, rfl, fun _ => rfl⟩
   intro i
-  show eygLTS.Tr (.run (loopSucc^[i] cfg)) _ (.run (loopSucc^[i + 1] cfg))
+  change eygLTS.Tr (.run (loopSucc^[i] cfg)) _ (.run (loopSucc^[i + 1] cfg))
   rw [eygLTS_Tr, Function.iterate_succ_apply']
   exact step_loopSucc_tau (hT i)
 
