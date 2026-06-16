@@ -230,22 +230,30 @@ so the do-monad couldn't be inferred (`Bind Return`). Builtins (M4) and effects
 - **`int_parse`** uses `String.toInt?`; confirm it matches Gleam `int.parse`
   (sign/leading-zero/`+` handling) against the fixtures.
 
-## Milestone 5 — Algebraic effects: perform / handle / resume
+## Milestone 5 — Algebraic effects: perform / handle / resume  ✅ DONE (pending M6)
 
 **Deliverable:** deep-handler effect machinery works; `effects_suite.json`
-passes including the resume-and-continue protocol.
+passes including the resume-and-continue protocol. Suite validation in M6;
+M5 is `#guard`-checked.
 
-- [ ] `perform`/`do_perform` (`state.gleam:239-260`): walk the stack to the
-      nearest `Delimit` frame with a matching label, accumulate the traversed
-      prefix, build `Resume((prefix, env))`, and reinstate
-      `CallWith(arg) :: CallWith(resume) :: rest`. Unmatched → `UnhandledEffect`.
-- [ ] `deep` (`state.gleam:263`): push `Delimit(label, handler, env, False)`,
-      call `exec` with `unit`.
-- [ ] `Resume` case in `call` (`state.gleam:199`): `move` the popped frames back
-      onto `k` and continue with the supplied value.
-- [ ] `resume` driver (`expression.gleam:10`) for the harness's reply step.
-- [ ] Note: shallow handlers (`Delimit … True`) are stubbed in Gleam; keep the
-      field but only deep is exercised by the suite.
+- [x] `perform`/`doPerform` (`state.gleam:239-260`): walk the stack to the
+      nearest matching `Delimit`, accumulate the traversed prefix, build
+      `Resume(prefix, env)`, reinstate `CallWith arg :: CallWith resume :: rest`;
+      unmatched → `UnhandledEffect`.
+- [x] `deep` (`state.gleam:263`): push `Delimit(label, handler, env, false)`,
+      `call exec unit`.
+- [x] `Resume` arm in `call` (`state.gleam:199`): `move` popped frames back onto
+      `k`, continue with the supplied value.
+- [x] `resume` driver (`expression.gleam:10`) already present (M2) for the
+      harness reply step.
+- [x] Shallow `Delimit … true` field kept for shape parity; only deep exercised.
+- [x] `#guard`: abort handler (`\p.\r. p` ⟶ 1), **resume-and-continue**
+      (`\p.\resume. resume 5` over `let x = perform "Get" unit in x + 10` ⟶ 15),
+      unhandled effect ⟶ break — all pass.
+
+The interpreter core (M2–M5) is now feature-complete; the remaining milestones
+build the JSON spec harness (M6) and IR codec/CID (M7) that validate it against
+the real `spec/` fixtures.
 
 ## Milestone 6 — Spec harness & evaluation suites GREEN
 

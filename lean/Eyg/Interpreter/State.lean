@@ -78,6 +78,14 @@ abbrev EvalReturn (m : Type) := Except (Debug m) (Control m × Env m × Stack m)
 /-- Result of `call`/`callBuiltin`/`perform`/`deep` — error is a bare `Reason`. -/
 abbrev Return (m : Type) := Except (Reason m) (Control m × Env m × Stack m)
 
+/-! ## Effect helper (state.gleam:232) -/
+
+/-- Re-push a list of popped frames onto the stack (`state.move`). Folds each
+`(kontinue, meta)` back on top of `acc`, reversing `delimited` onto it. -/
+def move : List (Kontinue m × m) → Stack m → Stack m
+  | [], acc => acc
+  | (step, mt) :: rest, acc => move rest ((step, mt) :: acc)
+
 /-! ## The machine (state.gleam:91-211) -/
 
 mutual
@@ -174,7 +182,9 @@ partial def call [BEq m] (f : Value m) (arg : Value m) (ann : m) (env : Env m) (
               else call otherwise arg ann env k
       | .NoCases, [] => .error (.NoMatch arg)
       | .Builtin key, applied => callBuiltin key (applied ++ [arg]) ann env k
-      -- TODO(M5): `.Perform`/`.Handle`/`.Resume`
+      | .Perform label, [] => perform label arg env k
+      | .Handle label, [handler] => deep label handler arg ann env k
+      | .Resume frames capturedEnv, [] => .ok (.V arg, capturedEnv, move frames k)
       | switch, applied => .ok (.V (.Partial switch (applied ++ [arg])), env, k)
   | term => .error (.NotAFunction term)
 
@@ -222,6 +232,34 @@ partial def callBuiltin [BEq m] (key : String) (applied : List (Value m)) (ann :
             | .error e => .error e
             | .ok value => .ok (.V value, env, k)
           else .ok (.V (.Partial (.Builtin key) applied), env, k)
+
+/-- Walk the stack to the nearest matching `Delimit`, capturing the traversed
+prefix as the resumption (`state.do_perform`). On reaching the handler, install
+`CallWith arg :: CallWith resume :: rest` and run the handler `h`. -/
+partial def doPerform (label : String) (arg : Value m) (iEnv : Env m) (k : Stack m)
+    (acc : List (Kontinue m × m)) : Return m :=
+  match k with
+  | (.Delimit l h e shallow, mt) :: rest =>
+      if l == label then
+        -- shallow is always false for the suite; keep the field for shape parity
+        let acc := if shallow then acc else (Kontinue.Delimit label h e false, mt) :: acc
+        let resume : Value m := .Partial (.Resume acc iEnv) []
+        let k := (Kontinue.CallWith arg e, mt) :: (Kontinue.CallWith resume e, mt) :: rest
+        .ok (.V h, e, k)
+      else
+        doPerform label arg iEnv rest ((Kontinue.Delimit l h e shallow, mt) :: acc)
+  | (kont, mt) :: rest => doPerform label arg iEnv rest ((kont, mt) :: acc)
+  | [] => .error (.UnhandledEffect label arg)
+
+/-- Perform an effect (`state.perform`). -/
+partial def perform (label : String) (arg : Value m) (iEnv : Env m) (k : Stack m) : Return m :=
+  doPerform label arg iEnv k []
+
+/-- Install a deep handler and run the guarded computation (`state.deep`):
+push `Delimit(label, handler, env, false)`, then `call exec unit`. -/
+partial def deep [BEq m] (label : String) (handler : Value m) (exec : Value m) (ann : m)
+    (env : Env m) (k : Stack m) : Return m :=
+  call exec unit ann env ((Kontinue.Delimit label handler env false, ann) :: k)
 
 end
 
@@ -333,6 +371,30 @@ private def fact : Tree.Node Unit :=
        ("Gt", Tree.lambda "_" (Tree.multiply (Tree.variable_ "n") selfNMinus1))]))
   Tree.apply (Tree.apply (Tree.builtin "fix") body) (Tree.integer 4)
 #guard (execute fact []).toOption == some (.Integer 24)
+
+/-! ### Algebraic effects (Milestone 5) -/
+
+-- deep handler that ignores `resume` and returns the effect payload:
+-- handle "Eff" (\p.\r. p) (\_. perform "Eff" 1)  ⟶ 1
+private def abortHandler : Tree.Node Unit :=
+  let handler := Tree.lambda "p" (Tree.lambda "r" (Tree.variable_ "p"))
+  let exec := Tree.lambda "_" (Tree.apply (Tree.perform "Eff") (Tree.integer 1))
+  Tree.apply (Tree.apply (Tree.handle "Eff") handler) exec
+#guard (execute abortHandler []).toOption == some (.Integer 1)
+
+-- deep handler that resumes the computation:
+-- handle "Get" (\p.\resume. resume 5) (\_. let x = perform "Get" unit in x + 10)  ⟶ 15
+private def resumeHandler : Tree.Node Unit :=
+  let handler := Tree.lambda "p" (Tree.lambda "resume"
+    (Tree.apply (Tree.variable_ "resume") (Tree.integer 5)))
+  let exec := Tree.lambda "_"
+    (Tree.let_ "x" (Tree.apply (Tree.perform "Get") Tree.unit)
+      (Tree.add (Tree.variable_ "x") (Tree.integer 10)))
+  Tree.apply (Tree.apply (Tree.handle "Get") handler) exec
+#guard (execute resumeHandler []).toOption == some (.Integer 15)
+
+-- unhandled effect ⟶ break (UnhandledEffect)
+#guard (execute (Tree.apply (Tree.perform "Boom") (Tree.integer 1)) []).toOption == none
 end
 
 end Eyg.Interpreter
