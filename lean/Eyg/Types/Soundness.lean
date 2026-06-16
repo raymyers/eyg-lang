@@ -97,4 +97,61 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
         ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> simp at h
 
+/-- The builtin **application/saturation** preservation obligation, isolated as a
+hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
+and `int_add` may legitimately trap with the sanctioned `Unrepresentable`). When a
+typed `Partial (Builtin id)` is applied to a typed argument and the machine takes a
+`tau` step (i.e. the builtin did *not* crash), the successor stays well-typed. -/
+def BuiltinAppPreserves (m : Type) [BEq m] : Prop :=
+  ∀ {id : String} {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m}
+    {rest : Stack m} {argTy retTy ε τ : Ty} {cfg' : Config m},
+    HasTypeV (.Partial (.Builtin id) applied) (.fun argTy ε retTy) →
+    HasTypeV arg argTy →
+    StackWf rest retTy ε τ →
+    reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .tau cfg' →
+    MStateWf (.run cfg') τ ε
+
+/-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
+application case is the crux; the builtin-application case defers to `hsat`. -/
+theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
+    {v : Value m} {env : Env m} {kont : Kontinue m} {ann : m} {rest : Stack m}
+    {cfg' : Config m} {τ ε : Ty}
+    (hwf : MStateWf (.run (.V v, env, (kont, ann) :: rest)) τ ε)
+    (hr : reduce1Run (.V v, env, (kont, ann) :: rest) = .tau cfg') :
+    MStateWf (.run cfg') τ ε := by
+  obtain ⟨τin, hv, hst⟩ := mStateWf_V hwf
+  cases hst with
+  | trace hrest =>
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      exact ⟨τin, hv, hrest⟩
+  | assign henvc hbody hrest =>
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc, hbody, hrest⟩
+      simpa using hv
+  | arg henvc harg hrest =>
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      exact ⟨_, _, henvc, harg, StackWf.applyf hv hrest⟩
+  | applyf hf hrest =>
+      rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+      · cases hf with
+        | closure henvc hbody heqc =>
+            obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
+              HasType.conv hbody hR hE, StackWf.trace hrest⟩
+            simpa using hv.conv hA.symm
+      · simp only [reduce1Run, reduceApply] at hr
+        exact hsat hf hv hrest hr
+  | callwith harg hrest =>
+      rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+      · cases hv with
+        | closure henvc hbody heqc =>
+            obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
+              HasType.conv hbody hR hE, StackWf.trace hrest⟩
+            simpa using harg.conv hA.symm
+      · simp only [reduce1Run, reduceApply] at hr
+        exact hsat hv harg hrest hr
+
 end Eyg.Types
