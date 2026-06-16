@@ -1,0 +1,149 @@
+import Eyg.Types.Typing
+import Eyg.Interpreter.State
+
+/-!
+# Runtime typing — values & environments (Milestone T3b)
+
+Typing for *runtime* objects, the layer that lets preservation/progress talk
+about machine states. Following `references/abstract-machine-type-soundness.md`
+§3, an environment machine replaces the **substitution lemma** with an
+**environment-typing + lookup lemma**: a closure is well-typed when its captured
+environment realizes a context under which its body type-checks, and variable
+lookup is sound against that.
+
+This slice delivers the **value** half — `HasTypeV` (values), `EnvWf`
+(environments, lock-step with `Ctx`), and `BuiltinPartialWf` (a partially-applied
+builtin at its residual arrow) — plus the lookup lemma and the canonical-forms
+lemmas. The **continuation** half (`StackWf` answer-type transformer) and
+`MStateWf`, then `preservation`/`progress`/`soundness`, are the T3c sub-slice.
+
+## Why a partially-applied builtin is typed *only at an arrow*
+
+A resting `Partial (Builtin id) applied` is always **strictly under-applied** —
+the machine reduces a saturated builtin immediately, never leaving it as a value.
+So its type is always a residual *arrow* (`fun a ε r`). Baking that into
+`HasTypeV.partialBuiltin` (the conclusion type is literally `.fun a ε r`) makes
+the arrow canonical-forms lemma immediate and excludes the un-reachable
+"saturated builtin sitting as a base-typed value". Preservation maintains it:
+applying the last argument reduces rather than resting.
+-/
+
+namespace Eyg.Types
+
+open Eyg.Interpreter
+open Eyg.Ir
+
+/-! Runtime typing for values, environments, and builtin partials (mutually
+recursive: a `Closure` carries an `EnvWf`; an env binds `HasTypeV` values). Values
+are pure — no effect row (a value *is* a result). -/
+mutual
+
+/-- A value has a type. -/
+inductive HasTypeV {m : Type} : Value m → Ty → Prop where
+  | int {n} : HasTypeV (.Integer n) .integer
+  | str {s} : HasTypeV (.String s) .string
+  | bin {b} : HasTypeV (.Binary b) .binary
+  /-- A closure inhabits an arrow whose middle slot is the body's effect row,
+  provided its captured env realizes a context typing the body. -/
+  | closure {x body env argTy εb retTy Γ} :
+      EnvWf env Γ →
+      HasType ((x, .mono argTy) :: Γ) body retTy εb →
+      HasTypeV (.Closure x body env) (.fun argTy εb retTy)
+  /-- A (strictly under-applied) builtin partial at its residual arrow. -/
+  | partialBuiltin {id s args applied a ε r} :
+      Builtins.scheme id = some s →
+      BuiltinPartialWf (s.instantiate args) applied (.fun a ε r) →
+      HasTypeV (.Partial (.Builtin id) applied) (.fun a ε r)
+
+/-- An environment realizes a context, binding-for-binding. The value bound to a
+scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
+monomorphic schemes of T3–T5 this is just `HasTypeV v τ`). -/
+inductive EnvWf {m : Type} : Env m → Ctx → Prop where
+  | nil : EnvWf [] []
+  | cons {y v s env Γ} :
+      (∀ args, HasTypeV v (s.instantiate args)) →
+      EnvWf env Γ →
+      EnvWf ((y, v) :: env) ((y, s) :: Γ)
+
+/-- Peel the already-applied arguments of a builtin partial off an arrow,
+yielding the residual type: each applied value matches the next domain. -/
+inductive BuiltinPartialWf {m : Type} : Ty → List (Value m) → Ty → Prop where
+  | nil {τ} : BuiltinPartialWf τ [] τ
+  | cons {a ε r v applied τ} :
+      HasTypeV v a →
+      BuiltinPartialWf r applied τ →
+      BuiltinPartialWf (.fun a ε r) (v :: applied) τ
+
+end
+
+/-! ## The lookup lemma (replaces the substitution lemma)
+
+If `env` realizes `Γ` and `Γ` binds `x` to scheme `s`, then `env` binds `x` to a
+value inhabiting every instantiation of `s` — in particular the one the `var`
+typing rule chose. -/
+
+theorem envwf_lookup {m : Type} {env : Env m} {Γ : Ctx} {x : String} {s : Scheme}
+    (h : EnvWf env Γ) (hl : Γ.lookup x = some s) :
+    ∃ v, env.lookup x = some v ∧ ∀ args, HasTypeV v (s.instantiate args) := by
+  induction env generalizing Γ with
+  | nil => cases h; simp [List.lookup] at hl
+  | cons hd tl ih =>
+      obtain ⟨y, v⟩ := hd
+      cases h with
+      | @cons _ _ s' _ Γ₀ hv henv =>
+          simp only [List.lookup_cons] at hl ⊢
+          by_cases hxy : (x == y) = true
+          · simp only [hxy] at hl ⊢
+            cases hl
+            exact ⟨v, rfl, hv⟩
+          · simp only [hxy] at hl ⊢
+            exact ih henv hl
+
+/-! ## Canonical forms
+
+A value of a base type is the corresponding literal; a value of an arrow type is
+a closure or a builtin partial (the only callable shapes in the pure core).
+`cases` discharges the impossible constructors automatically — their conclusion
+type indices do not unify with the goal's. -/
+
+theorem canonical_integer {m : Type} {v : Value m} (h : HasTypeV v .integer) :
+    ∃ n, v = .Integer n := by
+  cases h with | int => exact ⟨_, rfl⟩
+
+theorem canonical_string {m : Type} {v : Value m} (h : HasTypeV v .string) :
+    ∃ s, v = .String s := by
+  cases h with | str => exact ⟨_, rfl⟩
+
+theorem canonical_binary {m : Type} {v : Value m} (h : HasTypeV v .binary) :
+    ∃ b, v = .Binary b := by
+  cases h with | bin => exact ⟨_, rfl⟩
+
+/-- A value at an arrow type is a closure or a (callable) builtin partial. -/
+theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
+    (h : HasTypeV v (.fun a ε r)) :
+    (∃ x body env, v = .Closure x body env) ∨
+    (∃ id applied, v = .Partial (.Builtin id) applied) := by
+  cases h with
+  | closure _ _ => exact Or.inl ⟨_, _, _, rfl⟩
+  | partialBuiltin _ _ => exact Or.inr ⟨_, _, rfl⟩
+
+/-! ## Sanity checks -/
+
+-- `Integer 5 : integer`.
+example : HasTypeV (.Integer 5 : Value Unit) .integer := HasTypeV.int
+
+-- The empty env realizes the empty context.
+example : EnvWf ([] : Env Unit) [] := EnvWf.nil
+
+-- A partially-applied `int_add` rests at the arrow `integer → integer`.
+example : HasTypeV (.Partial (.Builtin "int_add") [.Integer 2] : Value Unit)
+    (.fun .integer .empty .integer) :=
+  HasTypeV.partialBuiltin (s := .mono (Ty.pure2 .integer .integer .integer)) (args := []) rfl
+    (BuiltinPartialWf.cons HasTypeV.int BuiltinPartialWf.nil)
+
+-- A closure over the empty env inhabits `integer → integer`.
+example : HasTypeV (.Closure "x" (Eyg.Ir.Tree.variable_ "x") [] : Value Unit)
+    (.fun .integer .empty .integer) :=
+  HasTypeV.closure EnvWf.nil (HasType.var (s := .mono .integer) (args := []) rfl)
+
+end Eyg.Types

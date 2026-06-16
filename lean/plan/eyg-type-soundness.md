@@ -300,16 +300,16 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       (instantiate `Builtins.scheme`), and the **`TyEquiv` conversion rule**.
       Sanity-typing `example`s for `(\x.x) 1`, `let`, `int_add 2 3`, value
       `ε`-generality, and a row-reorder conversion — all green.
-- [ ] Runtime typing with **full signatures**: `HasTypeV : Value m → Ty → Prop`
-      (literals, `Closure` via `EnvWf` + body typing — `references/abstract-
-      machine-type-soundness.md` §3; `Partial` at its residual arrow), `EnvWf : Env
-      m → Ctx → Prop` (lock-step) with the **lookup lemma** (replaces the
-      substitution lemma), `StackWf : Stack m → (Ty × Ty) → (Ty × Ty) → Prop`
-      (**continuation as answer-type transformer** `A ⇒ B`; the `Arg`/`Apply`/
-      `Assign`/`CallWith` frames only in this slice), and `MStateWf : MState m → Ty
-      → Ty → Prop`.
-- [ ] **Canonical-forms lemmas** for the slice (arrow ⇒ `Closure`/saturatable
-      `Partial`; `integer` ⇒ `.Integer`).
+- [~] Runtime typing with **full signatures**. **Value half DELIVERED** (T3b,
+      `Eyg/Types/Runtime.lean`): `HasTypeV : Value m → Ty → Prop` (literals,
+      `Closure` via `EnvWf` + body typing, `Partial` builtin at its residual arrow
+      via `BuiltinPartialWf`), `EnvWf : Env m → Ctx → Prop` (lock-step) with the
+      **`envwf_lookup` lemma** (replaces the substitution lemma). **Continuation
+      half deferred to T3c**: `StackWf` (answer-type transformer) and `MStateWf`.
+- [x] **Canonical-forms lemmas** — **DELIVERED** (T3b): `canonical_integer`/
+      `_string`/`_binary` (base ⇒ literal) and `canonical_arrow` (arrow ⇒ `Closure`
+      or builtin `Partial`). Resting builtin partials are typed *only at arrows*, so
+      the impossible cases drop out by index mismatch.
 - [ ] `preservation` (`MStateWf s τ ε → Reduce s μ s' → MStateWf s' τ ε`) and
       `progress` (`MStateWf s τ ε → s.IsValue ∨ ∃ μ s', Reduce s μ s' ∧
       ¬ μ.IsCrashMove`) **over `Reduce`**, by `cases` on `Reduce`.
