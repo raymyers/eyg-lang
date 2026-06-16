@@ -121,7 +121,31 @@ is to reify `acc` concretely and prove a `move`-append `StackWf` lemma
 (`stackWf_move : StackWf-seg acc reply tail ret → StackWf k ret tail b → StackWf (move
 acc k) reply tail b`) and store the segment typing directly.
 
-### 5. Generalize `stackWf_doPerformR_unhandled`
+### 5. Generalize `stackWf_doPerformR_unhandled` — ⚠ THE HARDEST PROOF (do last)
+**This is the novel core of handler soundness and the one genuinely hard proof left.**
+The T5e `∃ε'` preservation foundation is committed; `stackWf_move` (Resume) and all the
+typing infrastructure are easy by comparison. The dispatch lemma replaces the current
+"typed stack ⇒ no `Delimit` ⇒ always unhandled" with a walk that may pass
+**effect-discharging `Delimit` frames for *other* labels**:
+
+> `stackWf_doPerformR_dispatch`: for `StackWf k σ ε τ`, `doPerformR op arg env k acc`
+> either (handled) returns `.ok (.V handler, henv, CallWith arg :: CallWith resume ::
+> rest)` where the nearest `Delimit op …` frame's handler types the successor (handler
+> applied to `arg : lift` and `resume : kontTy`, the latter via `stackWf_move` on the
+> captured `acc`); or (escape) returns `.error (.UnhandledEffect op arg)` **and `op ∈
+> ε`** — the residual bottom row still carries `op` because every `Delimit` walked past
+> discharged a *different* label (`l' ≠ op`), so by `StackWf.delimit`'s row relation the
+> row above each is `EffectExtend(l', …, rowbelow)` with `op` preserved into `rowbelow`.
+
+The effect-safety half is the subtle part: prove by induction on `StackWf` that walking
+past a `Delimit l' …` (with `l' ≠ op`, the only way `doPerformR` continues) keeps `op`
+in the row, because that frame's input row is `EffectExtend(l', lift', reply', rowbelow)`
+and `op ≠ l'` ⇒ `EffContains` of `op` transfers from the row-below to the row-above
+(`EffContains.tail`). The `acc` threading for `resume`'s typing must track that the
+captured prefix is a `StackWf`-segment `reply ⇒ ret` (use `stackWf_move`; the deep
+re-push of the matching `Delimit` into `acc` keeps the resumption delimited).
+
+Mechanical generalization (below) of the original sketch:
 Currently (T5c) a typed stack has *no* `Delimit`, so every perform escapes. With the
 `delimit` frame, the lemma splits:
 - **walk past non-`Delimit` frames** (as now), and past `Delimit l' …` with `l' ≠ l`
