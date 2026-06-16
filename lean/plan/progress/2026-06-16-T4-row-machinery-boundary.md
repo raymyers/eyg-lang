@@ -86,3 +86,29 @@ So the next slice is: guarded `RowContains` + re-green `tyEquiv_rowContains` +
 redesign `tagged`/`partialTag` + add `Case` (3 `partialMatch` arities + the
 hit/miss operation) + a `Tagged` canonical form. The unguarded version committed
 here is the stepping stone and validates the `tyEquiv_rowContains` shape.
+
+## UPDATE 2 — variant fragment DONE; records are the analog
+
+`Case`/`Tag`/`NoCases` are all green now (no `tagged` redesign was needed — the
+guarded `RowContains` + `tyEquiv_rowContains_mp` + `rowContains_tyEquiv` suffice
+with the original `tagged` typing). `canonical_union` added.
+
+**Records (`Select`/`Extend`/`Overwrite`) — the remaining T4, directly analogous:**
+- `recordRow : Ty → Ty` projection + `tyEquiv_recordRow` (copy `unionRow`).
+- `RecordWf : List (String × Value) → Ty → Prop` — fields realize a row in
+  **lock-step** (`nil ↦ empty`; `(l,v)::fs ↦ rowExtend l fieldTy rest`). The
+  dynamic record is sorted, so its row is in sorted order; `TyEquiv` reorders it.
+  Add `HasTypeV.record : RecordWf fields row → TyEquiv (.record row) τ →
+  HasTypeV (.Record fields) τ` (the non-empty generalization of `recordNil`).
+- `recordWf_get : RecordWf fields row → RowContains row l f → recordGet fields l =
+  some v ∧ HasTypeV v f` (induction; `recordGet`'s `==` lookup mirrors the row
+  spine). This is the **`Select` no-`MissingField`** lemma.
+- `canonical_record : HasTypeV v (.record row) → ∃ fields, v = .Record fields`.
+- `Select l`: invert `record`, transport `RowContains (rowExtend l ..) l ..` back
+  to the value's row via `tyEquiv_rowContains`, `recordWf_get` ⇒ the field, typed.
+- `Extend l` / `Overwrite l`: the result `Record (recordInsert fields l v)` is
+  typed by relating `recordInsert` to a row `rowExtend`/update (a `RecordWf`
+  preservation lemma under `recordInsert`).
+
+The variant work is the template; records add only the `RecordWf` lock-step
+relation and the `recordGet`/`recordInsert` ↔ row correspondence.
