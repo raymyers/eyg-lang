@@ -142,28 +142,34 @@ inductive with derived structural equality.
   `true'`/`false'`; `Reason` field `module`→`module_`; `Kontinue` field
   `then`→`then_`.
 
-## Milestone 2 — Core CEK machine (no effects/builtins yet)
+## Milestone 2 — Core CEK machine (no effects/builtins yet)  ✅ DONE
 
 **Deliverable:** `State.lean` evaluates the pure lambda-calculus core; a
 `partial def` loop runs `Variable/Lambda/Apply/Let/Integer/String/Binary` and
 the `Vacant`/`Undefined*` error paths.
 
-- [ ] `Control := E (Node) | V Value`; `Next := Loop Control Scope Stack |
-      Break (Except Debug Value)`; `Debug := Reason × m × Scope × Stack`.
-- [ ] `eval` (one expr → next config), mirroring `state.gleam:91`: `Lambda`→
-      `Closure`, `Apply`→push `Arg`, `Let`→push `Assign`, `Variable`→scope
-      lookup or `UndefinedVariable`, literals → `V`, `Vacant`→`Vacant`,
-      reference nodes → the matching `Undefined*` reasons.
-- [ ] `apply` (value meets a frame), mirroring `state.gleam:137`: `Assign`,
-      `Arg`→push `Apply`, `Apply`/`CallWith`→`call`, `Delimit`/`Trace`→
-      pass-through.
-- [ ] `call` skeleton (`state.gleam:152`): `Closure`→bind param, push `Trace`,
-      enter body; `Partial(switch, applied)` accumulation; `term`→
-      `NotAFunction`.
-- [ ] `partial def loop`/`step` (`state.gleam:76`) + `execute`
-      (`expression.gleam:26`).
-- [ ] Sanity `#eval`: identity application, `let`, currying produce the right
-      `Value`.
+- [x] `Control := E Node | V Value`; `Next := Loop … | Break (Except Debug
+      Value)`; `Debug := Reason × m × Env × Stack`. Also `EvalReturn`
+      (`Except Debug …`, for `eval`/`apply`) and `Return` (`Except Reason …`,
+      for `call`/`callBuiltin`/`perform`/`deep`) — see error-type discipline.
+- [x] `eval` (`state.gleam:91`): all 23 nodes incl. literals, `Variable`
+      lookup/`UndefinedVariable`, `Vacant`, reference `Undefined*`, and the
+      `Builtin id` validity check via `isBuiltin` (decision #1).
+- [x] `apply` (`state.gleam:137`): `Assign`/`Arg`/`Apply`/`CallWith`/`Delimit`/
+      `Trace`.
+- [x] `call` skeleton (`state.gleam:152`): `Closure` (bind, push `Trace`, enter
+      body), generic `Partial` accumulation, `NotAFunction`. **Switch-specific
+      arms are TODO(M3-M5)** — marked in the source above the catch-all.
+- [x] `step`/`ofEvalReturn` (`state.gleam:76`), `partial def loop`, `execute`
+      (`expression.gleam:26`), `resume` (`expression.gleam:10`).
+- [x] Sanity `#guard`: identity application, `let`, currying, unbound-variable
+      break — all pass at build time.
+
+**Notes:** `meta` (a Lean reserved token) is spelled `ann` for the per-frame
+metadata variable. `eval`/`apply` use a local `let res : Return …` then
+`mapError` to attach `Debug`, matching the Gleam `result.map_error` boundary
+exactly. `eval`/`apply`/`call` are `partial def` in one `mutual` block
+(anticipating M5's `fix`-driven non-termination; only `loop` truly needs it).
 
 ## Milestone 3 — Structured values: records, variants, lists, matching
 
