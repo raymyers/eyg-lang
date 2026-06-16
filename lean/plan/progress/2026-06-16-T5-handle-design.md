@@ -326,6 +326,23 @@ is the one real piece of CEK handler-soundness metatheory left; with it the mapp
 cascade closes. It is genuinely a fresh-session task — five in-session dry-runs confirm
 it cannot be wedged in green alongside everything else without a broken intermediate.
 
+### 6th-pass confirmation (the constructor was actually added & measured)
+Adding `StackWf.conv` to the inductive was tried directly: `Machine.lean` stayed green
+after deleting the now-dead uniform `stackWf_append`/`stackWf_move` (they assume one row,
+incompatible with `conv`); `StackSegWf` needs **no** `conv` (the Resume case applies
+`StackWf.conv` to the *base* stack `k`, not the segment). The break is entirely in
+`Soundness.lean`: the `conv` alternative is missing at exactly five `induction/cases hst`
+sites — `stackWf_doPerformR_unhandled` (75, trivial: `| conv _ _ _ ih => … exact ih …`,
+`doPerformR` ignores the typing), `preservation_V` (199), `preservation_perform` (592),
+`reduce1Run_done_value_typed` (676, plus its `nil` leaf now needs `hw.conv hc`), and
+`progress` (867). The `conv` case in the latter four **must recurse** (it wraps a smaller
+`StackWf` at a different `(σ,ε)`), so those four convert from `cases hst` to `induction
+hst` — every existing case header gains an (ignored) IH param, the `conv` case uses its
+IH after `hv.conv hσ.symm` + ambient rewrite, and `preservation_V` simultaneously becomes
+`∃ε'` (the `conv` case's successor sits at the inner row). This is the *exact* shape of
+the next session's first move; it was measured, not estimated. Reverted to green
+(`Machine.lean` only was touched) pending that focused session.
+
 ## Concrete execution order
 1. Helpers `handlerTy`/`kontTy`/`execTy` (abbrevs) in Typing/Runtime.
 2. `HasType.handle` + `inv_handle` + `hasType_expr_form` arm + `rcases` bumps.
