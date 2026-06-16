@@ -155,7 +155,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
       simp only [reduce1Run, reduceApply] at hr; cases hr
       exact ⟨_, _, henvc, harg, StackWf.applyf hv hrest⟩
   | applyf hf hrest =>
-      rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+      rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hf with
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
@@ -163,10 +163,12 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
               HasType.conv hbody hR hE, StackWf.trace hrest⟩
             simpa using hv.conv hA.symm
-      · simp only [reduce1Run, reduceApply] at hr
-        exact (hsat hf hv hrest).1 _ hr
+      · cases hf with
+        | partialBuiltin hs hp he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact (hsat (.partialBuiltin hs hp he) hv hrest).1 _ hr
   | callwith harg hrest =>
-      rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+      rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hv with
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
@@ -174,8 +176,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
               HasType.conv hbody hR hE, StackWf.trace hrest⟩
             simpa using harg.conv hA.symm
-      · simp only [reduce1Run, reduceApply] at hr
-        exact (hsat hv harg hrest).1 _ hr
+      · cases hv with
+        | partialBuiltin hs hp he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact (hsat (.partialBuiltin hs hp he) harg hrest).1 _ hr
 
 /-! ## Effect safety for the pure core: no `.perform`
 
@@ -199,11 +203,10 @@ theorem reduceCall_ne_perform [BEq m] {f arg : Value m} {ann : m} {env : Env m} 
     (hf : HasTypeV f (.fun a e r)) :
     reduceCall f arg ann env k ≠ .perform op lift envP kP := by
   intro h
-  rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+  rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
   · exact absurd h (by simp [reduceCall])
-  · rw [show reduceCall (.Partial (.Builtin id) applied) arg ann env k
-        = reduceCallBuiltin id (applied ++ [arg]) ann env k from rfl] at h
-    exact reduceCallBuiltin_ne_perform h
+  · cases hf with
+    | partialBuiltin _ _ _ => exact reduceCallBuiltin_ne_perform h
 
 /-- A well-typed state's `reduce1Run` is never `.perform` (pure-core effect safety). -/
 theorem not_perform [BEq m] {cfg : Config m} {τ ε : Ty}
@@ -292,15 +295,19 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
           | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
           | arg _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
           | applyf hf hrest =>
-              rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
-              · simp only [reduce1Run, reduceApply] at h
-                exact (hsat hf hw hrest).2 _ h
+              · cases hf with
+                | partialBuiltin hs hp he =>
+                    simp only [reduce1Run, reduceApply] at h
+                    exact (hsat (.partialBuiltin hs hp he) hw hrest).2 _ h
           | callwith harg hrest =>
-              rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
-              · simp only [reduce1Run, reduceApply] at h
-                exact (hsat hw harg hrest).2 _ h
+              · cases hw with
+                | partialBuiltin hs hp he =>
+                    simp only [reduce1Run, reduceApply] at h
+                    exact (hsat (.partialBuiltin hs hp he) harg hrest).2 _ h
 
 /-- **Soundness (value typing through evaluation).** A well-typed configuration's
 fuel-bounded evaluation, if it terminates with a value, terminates with a value of
@@ -385,26 +392,35 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
           | assign _ _ _ => exact Or.inl ⟨_, rfl⟩
           | arg _ _ _ => exact Or.inl ⟨_, rfl⟩
           | @applyf _ f fenv _ _ _ _ _ hf hrest =>
-              rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
-              · simp only [reduce1Run, reduceApply]
-                cases hres : reduceCall (.Partial (.Builtin id) applied) w ann fenv rest with
-                | tau cfg' => exact Or.inl ⟨cfg', rfl⟩
-                | done o =>
-                    cases o with
-                    | value v => exact Or.inr (Or.inl ⟨v, rfl⟩)
-                    | crash r => exact Or.inr (Or.inr ⟨r, rfl, hbad hf hw hres⟩)
-                | perform _ _ _ _ => exact absurd hres (reduceCall_ne_perform hf)
+              · cases hf with
+                | @partialBuiltin id _ _ _ _ _ _ _ hs hp he =>
+                    simp only [reduce1Run, reduceApply]
+                    cases hres : reduceCall (.Partial (.Builtin id) applied) w ann fenv rest with
+                    | tau cfg' => exact Or.inl ⟨cfg', rfl⟩
+                    | done o =>
+                        cases o with
+                        | value v => exact Or.inr (Or.inl ⟨v, rfl⟩)
+                        | crash r =>
+                            exact Or.inr (Or.inr ⟨r, rfl, hbad (.partialBuiltin hs hp he) hw hres⟩)
+                    | perform _ _ _ _ =>
+                        exact absurd hres (reduceCall_ne_perform (.partialBuiltin hs hp he))
           | @callwith _ arg fenv _ _ _ _ _ harg hrest =>
-              rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
-              · simp only [reduce1Run, reduceApply]
-                cases hres : reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest with
-                | tau cfg' => exact Or.inl ⟨cfg', rfl⟩
-                | done o =>
-                    cases o with
-                    | value v => exact Or.inr (Or.inl ⟨v, rfl⟩)
-                    | crash r => exact Or.inr (Or.inr ⟨r, rfl, hbad hw harg hres⟩)
-                | perform _ _ _ _ => exact absurd hres (reduceCall_ne_perform hw)
+              · cases hw with
+                | @partialBuiltin id _ _ _ _ _ _ _ hs hp he =>
+                    simp only [reduce1Run, reduceApply]
+                    cases hres : reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest with
+                    | tau cfg' => exact Or.inl ⟨cfg', rfl⟩
+                    | done o =>
+                        cases o with
+                        | value v => exact Or.inr (Or.inl ⟨v, rfl⟩)
+                        | crash r =>
+                            exact Or.inr (Or.inr
+                              ⟨r, rfl, hbad (.partialBuiltin hs hp he) harg hres⟩)
+                    | perform _ _ _ _ =>
+                        exact absurd hres (reduceCall_ne_perform (.partialBuiltin hs hp he))
 
 end Eyg.Types

@@ -166,11 +166,13 @@ theorem canonical_binary {m : Type} {v : Value m} (h : HasTypeV v .binary) :
   | listNil he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
   | recordNil he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
 
-/-- A value at an arrow type is a closure or a (callable) builtin partial. -/
+/-- A value at an arrow type is a closure or a (callable) partial — never a
+literal or a data structure. Callers `cases` the typing again to dispatch on the
+partial's switch. -/
 theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
     (h : HasTypeV v (.fun a ε r)) :
     (∃ x body env, v = .Closure x body env) ∨
-    (∃ id applied, v = .Partial (.Builtin id) applied) := by
+    (∃ sw applied, v = .Partial sw applied) := by
   cases h with
   | closure _ _ _ => exact Or.inl ⟨_, _, _, rfl⟩
   | partialBuiltin _ _ _ => exact Or.inr ⟨_, _, rfl⟩
