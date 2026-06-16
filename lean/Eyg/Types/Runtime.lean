@@ -143,6 +143,13 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
       Ty.TyEquiv (.fun (.record (.rowExtend label oldTy tail)) .empty
         (.record (.rowExtend label newTy tail))) τ →
       HasTypeV (.Partial (.Overwrite label) [v]) τ
+  /-- `Perform l` (the resting effect operation, no args): `∀α β μ. α →⟨l:(α,β)|μ⟩ β`.
+  Calling it with an `α` performs `l`; the latent row `⟨l:(α,β)|μ⟩` is unified with
+  the ambient effect by the stack frame, so a resting `Perform l` is the witness that
+  `l ∈ ε` (effect safety). -/
+  | partialPerformNil {label argTy replyTy μ τ} :
+      Ty.TyEquiv (.fun argTy (.effectExtend label argTy replyTy μ) replyTy) τ →
+      HasTypeV (.Partial (.Perform label) []) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -215,6 +222,7 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | partialExtendOne hvf he => exact .partialExtendOne hvf (he.trans heq)
   | partialOverwriteNil he => exact .partialOverwriteNil (he.trans heq)
   | partialOverwriteOne hvf he => exact .partialOverwriteOne hvf (he.trans heq)
+  | partialPerformNil he => exact .partialPerformNil (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -335,6 +343,7 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialExtendOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialOverwriteNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialOverwriteOne _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialPerformNil _ => exact Or.inr ⟨_, _, rfl⟩
   | record _ _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc

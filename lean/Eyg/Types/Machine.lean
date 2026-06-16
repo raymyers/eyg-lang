@@ -1,4 +1,5 @@
 import Eyg.Types.Runtime
+import Eyg.Types.EffRow
 import Eyg.Semantics.Reduction
 
 /-!
@@ -69,12 +70,18 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
       StackWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy ε retTy) ε τout
 
 /-- A machine state is well-typed at answer type `τ` and effect row `ε`: the
-control yields an intermediate `τin` that the stack carries to `τ`. A `wait`
-state is not typeable in the pure core (T5 un-pins this). -/
+control yields an intermediate `τin` that the stack carries to `τ`. A `wait op env
+k` state (suspended performing `op`, awaiting a reply) is typed by **effect safety**
+(T5): `op` is a member of the ambient row `ε` (carrying lift `a`, reply `b`), and
+the stack `k` carries a reply of type `b` (up to `TyEquiv`, since the stack's
+expected input need only be equivalent to the declared reply type) to the answer
+`τ`. The reply value itself is supplied by the world — typed by the reply contract,
+discharged in `preservation`'s `reply` case. -/
 def MStateWf {m : Type} : MState m → Ty → Ty → Prop
   | .run (.E e, env, k), τ, ε => ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWf k τin ε τ
   | .run (.V v, _, k), τ, ε => ∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ
-  | .wait _ _ _, _, _ => False
+  | .wait op _ k, τ, ε =>
+      ∃ a b replyTy, Ty.EffContains ε op a b ∧ Ty.TyEquiv b replyTy ∧ StackWf k replyTy ε τ
 
 /-! ## A well-typed program yields a well-typed initial state
 

@@ -106,7 +106,8 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
     (∃ b, e.expr = .Binary b) ∨ (∃ id, e.expr = .Builtin id) ∨
     e.expr = .Tail ∨ e.expr = .Empty ∨ e.expr = .Cons ∨ (∃ l, e.expr = .Tag l) ∨
     e.expr = .NoCases ∨ (∃ l, e.expr = .Case l) ∨ (∃ l, e.expr = .Select l) ∨
-    (∃ l, e.expr = .Extend l) ∨ (∃ l, e.expr = .Overwrite l) := by
+    (∃ l, e.expr = .Extend l) ∨ (∃ l, e.expr = .Overwrite l) ∨
+    (∃ l, e.expr = .Perform l) := by
   induction h with
   | var => exact Or.inl ⟨_, rfl⟩
   | lam => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
@@ -133,7 +134,9 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
   | extend => iterate 15 apply Or.inr
               exact Or.inl ⟨_, rfl⟩
   | overwrite => iterate 16 apply Or.inr
-                 exact ⟨_, rfl⟩
+                 exact Or.inl ⟨_, rfl⟩
+  | perform => iterate 17 apply Or.inr
+               exact ⟨_, rfl⟩
   | conv _ _ _ ih => exact ih
 
 /-- Inversion for `Tail`: a type equivalent to some list type. -/
@@ -227,6 +230,16 @@ theorem inv_overwrite {Γ : Ctx} {l : String} {a : m} {τ ε : Ty}
   induction h with
   | overwrite => cases he; exact ⟨_, _, _, .refl _⟩
   | conv _ hτ _ ih => obtain ⟨n, o, t, heq⟩ := ih he; exact ⟨n, o, t, heq.trans hτ⟩
+  | _ => simp at he
+
+/-- Inversion for `Perform l`: a type equivalent to `α →⟨l:(α,β)|μ⟩ β`. -/
+theorem inv_perform {Γ : Ctx} {l : String} {a : m} {τ ε : Ty}
+    (h : HasType Γ (⟨.Perform l, a⟩ : Tree.Node m) τ ε) :
+    ∃ argTy replyTy μ, Ty.TyEquiv (.fun argTy (.effectExtend l argTy replyTy μ) replyTy) τ := by
+  generalize he : (⟨.Perform l, a⟩ : Tree.Node m) = e at h
+  induction h with
+  | perform => cases he; exact ⟨_, _, _, .refl _⟩
+  | conv _ hτ _ ih => obtain ⟨at_, rt, μ, heq⟩ := ih he; exact ⟨at_, rt, μ, heq.trans hτ⟩
   | _ => simp at he
 
 theorem inv_app {Γ : Ctx} {f arg : Tree.Node m} {a : m} {τ ε : Ty}

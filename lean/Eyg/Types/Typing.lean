@@ -109,6 +109,14 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
           (.record (.rowExtend l newTy tail)))) ε
   /-- The empty record `Empty` (`prim(Record(Empty))`). -/
   | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
+  /-- Effect operation `Perform l`: `∀α β μ. α →⟨l:(α,β)|μ⟩ β`
+  (`perform(l) = Fun(q0, EffectExtend(l,(q0,q1),Empty), q1)`; the scheme pins the
+  tail to `Empty`, the declarative rule allows an arbitrary tail `μ` — Koka's
+  "operation as a variable", so `Perform l arg` is typeable exactly when the ambient
+  row carries `l` (effect safety falls out of the `app` rule's latent = ambient
+  unification). The `Perform l` node is a value, so its own ambient `ε` is free. -/
+  | perform {Γ l a b μ ε ann} :
+      HasType Γ ⟨.Perform l, ann⟩ (.fun a (.effectExtend l a b μ) b) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal
   ones (Leijen's `∼=` in the application rule) so row order never blocks a rule. -/
   | conv {Γ e τ τ' ε ε'} :
@@ -167,6 +175,15 @@ example : HasType (m := Unit) [] (lambda "x" (variable_ "x"))
   · exact HasType.lam (HasType.var (s := .mono Ty.boolean) (args := []) rfl)
   · exact Ty.TyEquiv.congrFun hb (Ty.TyEquiv.refl _) hb
   · exact Ty.TyEquiv.refl _
+
+-- Effect (T5): `perform "Log" "hi"` performs the `Log` operation. It types at the
+-- reply type `unit` under an ambient row that *carries* `Log : (String, unit)` —
+-- effect safety made visible: the term is only typeable when `Log ∈ ε`.
+example : HasType (m := Unit) [] (apply (perform "Log") (string "hi"))
+    Ty.unit (.effectExtend "Log" .string Ty.unit .empty) := by
+  apply HasType.app (argTy := .string)
+  · exact HasType.perform
+  · exact HasType.str
 
 end Examples
 

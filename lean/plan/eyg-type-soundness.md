@@ -454,24 +454,34 @@ This is the milestone with no direct mechanization precedent — see the fork be
       the perform/handle fixtures, so the twin is behaviourally identical to the
       interpreter's `doPerform`). This was a prerequisite the plan had not surfaced;
       the direct-frame-typing route (fork (a)) is now unblocked.
-- [ ] **Un-pin the effect row.** ⚙ **Design fully worked out** in
-      `progress/2026-06-16-T5-unpin-perform-design.md` (rule shapes, the new `wait`
-      `MStateWf` clause `∃ a b, EffContains ε op a b ∧ StackWf k b ε τ`, the
-      `stackWf_conv_in` + `stackWf_doPerformR_unhandled` lemmas, and the one genuine
-      design decision — the **`.reply` value-typing contract**: replies are arbitrary,
-      so `preservation`'s `.reply` case must be conditioned on a typed reply, which is
-      sound because closed `evalR` never replies, so `soundness_value` stays green;
-      the contract only bites at `runR`/`BehaviorsR` in T6/T7). This is **one atomic
-      slice** (adding `Perform` cascades through every exhaustive case-split — it
-      cannot land rule-only and stay green). **Defer `Handle` to the slice after**: with
-      no `Handle` rule a typed `StackWf` has no `Delimit` frame, so every well-typed
-      perform is unhandled and escapes — the simplest first effect slice.
-      Add typing rules `Perform` (singleton-row arrow
-      `Fun(a, EffectExtend(l,(a,b),Empty), b)` — Koka's "operation as Var" trick,
-      `references/algebraic-effects-handlers-soundness.md` §2) and `Handle`
+- [x] **Un-pin the effect row — `Perform` + effect safety DELIVERED** (T5c, design in
+      `progress/2026-06-16-T5-unpin-perform-design.md`). The effect row is no longer
+      pinned: `HasType.perform` (`∀α β μ. α →⟨l:(α,β)|μ⟩ β`, Koka operation-as-variable
+      with an arbitrary tail) makes `Perform l arg` typeable exactly when the ambient
+      row carries `l` (effect safety falls out of the `app` rule's latent = ambient).
+      `HasTypeV.partialPerformNil`, `inv_perform`, and the new `MStateWf` `wait` clause
+      `∃ a b replyTy, EffContains ε op a b ∧ TyEquiv b replyTy ∧ StackWf k replyTy ε τ`
+      (the 3-existential form sidesteps any stack-input conversion). `preservation` now
+      proves **effect safety**: a `.perform` lands a well-typed `wait` with `op ∈ ε`
+      (`preservation_perform` + `reduceCall_perform_wait` +
+      `stackWf_doPerformR_unhandled`: a typed stack has no `Delimit`, so the transparent
+      `doPerformR` reports unhandled and the effect escapes). `progress` gains the
+      **effect-escape disjunct** (a well-typed non-value steps / is a value / sanctioned
+      crash / suspends on `.perform op` with `EffContains ε op a b`). The `.reply` case
+      is conditioned on the `ReplyContract` (typed reply) — sound because closed `evalR`
+      never replies, so `soundness_value` stays green untouched; the contract only bites
+      at `runR`/`BehaviorsR` (T6/T7). All sorry-free, axioms
+      `propext`/`Classical.choice`/`Quot.sound`; `lake exe spec` 104/104; a sanity
+      `example` types `perform "Log" "hi" : unit ! ⟨Log:(String,unit)⟩`.
+- [ ] **Type `Handle`.** Now the only remaining effect rule. With `Handle`/`Delimit`
+      a typed `StackWf` *will* carry a `Delimit` frame, so `stackWf_doPerformR_unhandled`
+      generalizes to "walk to the nearest matching `Delimit`": a handled `perform`
+      resumes (`.tau`) rather than escaping. Add `Handle`
       (input `EffectExtend(l,(a,b),tail)` → output `tail`; `l` discharged; all of
       `Σ(l)` handled; bind `resume`), with the `shallow : Bool` flag flipping the
-      resumption's codomain row (deep = discharged `tail`; shallow = undischarged).
+      resumption's codomain row (deep = discharged `tail`; shallow = undischarged), and
+      type the `Delimit`/`Resume` frames (T5 fork (a), direct frame typing — now
+      unblocked by the transparent `doPerformR`).
 - [ ] **DECISION (fork, resolve at the top of T5):** typing the CEK `Delimit`/
       `Resume` frames directly has **no precedent** (the literature types machines
       by *simulation* against a typed contextual semantics). Two routes:
