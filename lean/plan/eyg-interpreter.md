@@ -318,7 +318,7 @@ prefix decodes to the `baguqeera…` base32 head before running the suite.
 `spec evaluation: 104/104 fixtures passed` /
 `ir round-trip: 21/21 | CID match: 21/21` (exit 0).
 
-## Milestone 8 — Post-completion cleanup  🔶 IN PROGRESS (review findings)
+## Milestone 8 — Post-completion cleanup  ✅ DONE (review findings)
 
 A diff review of M0–M7 (`559ae428^..c53d36ba`) re-ran the suite — **104/104 and
 21/21 CID confirmed, exit 0** (note: the first attempt was a false pass — macOS
@@ -335,9 +335,13 @@ The following minor items are non-blocking but worth tidying:
       CID equality as implemented (it is, and the runner reports `CID match`).
 - [x] **Doc nit:** source-of-truth table now reads "the 30 builtins" (26 pure +
       4 stack-coupled), matching the code.
-- [ ] **(optional) `move` is `List.reverseAux`.** `State.lean:85` hand-rolls
-      `frames.reverse ++ k`. Kept for one-to-one parity with Gleam's `state.move`;
-      fine to leave, but a one-liner alias would do.
+- [x] **`move` is `List.reverseAux` — WON'T CHANGE (kept for parity).** Yes,
+      `State.lean`'s `move` equals `frames.reverse ++ k` / `List.reverseAux`. But
+      the port's governing principle is one-for-one mirroring of the Gleam
+      modules, and Gleam has a named `state.move`. Keeping the named function
+      (with its doc comment) preserves that correspondence; inlining a stdlib
+      alias would diverge from the source for no behavioral gain. Deliberately
+      left as-is.
 - [x] **`binary_from_integers` negative inputs.** Confirmed against
       `builtin.gleam:319` (`<<i, acc:bits>>` = low 8 bits, two's-complement, so
       `-1 → 255`). Fixed: now `UInt8.ofNat (i % 256).toNat` — `Int % 256` is
