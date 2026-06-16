@@ -20,5 +20,6 @@ import Eyg.Types.Ty
 import Eyg.Types.TyEquivInv
 import Eyg.Types.Scheme
 import Eyg.Types.Typing
+import Eyg.Types.Generation
 import Eyg.Types.Runtime
 import Eyg.Types.Machine
