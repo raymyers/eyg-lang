@@ -36,6 +36,20 @@ theorem mStateWf_V {v : Value m} {env k τ ε}
     (h : MStateWf (.run (.V v, env, k)) τ ε) :
     ∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ := h
 
+/-- A crash reason `soundness` must exclude. `Unrepresentable` is the one
+*sanctioned* runtime trap (a JS-safe-range overflow — see the plan's crash list and
+`break.gleam`), so it is **not** bad; every type-error crash is. -/
+def Reason.IsBad : Reason m → Prop
+  | .Unrepresentable _ _ => False
+  | _ => True
+
+/-- The analyzer's builtin table is contained in the interpreter's: a typed
+`Builtin id` is a real builtin, so its node evaluates (no `UndefinedBuiltin`). -/
+theorem builtin_scheme_isBuiltin {id : String} {s : Scheme}
+    (h : Builtins.scheme id = some s) : isBuiltin id = true := by
+  unfold Builtins.scheme at h
+  split at h <;> first | decide | simp_all
+
 /-- Every builtin scheme instantiates to an arrow (builtins are functions), so a
 freshly-evaluated `Builtin` node (`Partial (Builtin id) []`) types at a residual
 arrow via `BuiltinPartialWf.nil`. -/
@@ -305,5 +319,83 @@ theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) :
           | value w => cases h; exact reduce1Run_done_value_typed hsat hwf hrr
           | crash r => simp at h
       | perform op lift envP kP => rw [hrr] at h; simp at h
+
+/-! ## Progress: a well-typed state never gets stuck on a bad crash
+
+The builtin **application** no-bad-crash obligation, isolated as a hypothesis (T6:
+a typed builtin call only ever fails with the sanctioned `Unrepresentable`). -/
+
+def BuiltinAppNoBadCrash (m : Type) [BEq m] : Prop :=
+  ∀ {id : String} {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m}
+    {rest : Stack m} {argTy retTy ε : Ty} {r : Reason m},
+    HasTypeV (.Partial (.Builtin id) applied) (.fun argTy ε retTy) →
+    HasTypeV arg argTy →
+    reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .done (.crash r) →
+    ¬ Reason.IsBad r
+
+/-- **Progress.** A well-typed state either steps (`.tau`), is a terminal value, or
+terminates with a *sanctioned* (`¬ IsBad`) crash — never a bad crash, never
+`.perform` (`not_perform`). For the builtin-free core this is always step-or-value;
+`Unrepresentable` is the only crash a typed program can reach. -/
+theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
+    {cfg : Config m} {τ ε : Ty} (hwf : MStateWf (.run cfg) τ ε) :
+    (∃ cfg', reduce1Run cfg = .tau cfg') ∨ (∃ v, reduce1Run cfg = .done (.value v)) ∨
+    (∃ r, reduce1Run cfg = .done (.crash r) ∧ ¬ Reason.IsBad r) := by
+  obtain ⟨c, env, k⟩ := cfg
+  cases c with
+  | E e =>
+      obtain ⟨Γ, τin, henv, hty, hst⟩ := mStateWf_E hwf
+      obtain ⟨expr, ann⟩ := e
+      cases expr with
+      | Variable x =>
+          obtain ⟨s, args, hl, _⟩ := inv_var hty
+          obtain ⟨v, hvlk, _⟩ := envwf_lookup henv hl
+          exact Or.inl ⟨(.V v, env, k), by simp [reduce1Run, reduceEval, hvlk]⟩
+      | Builtin id =>
+          obtain ⟨s, args, hs, _⟩ := inv_builtin hty
+          exact Or.inl ⟨(.V (.Partial (.Builtin id) []), env, k),
+            by simp [reduce1Run, reduceEval, builtin_scheme_isBuiltin hs]⟩
+      | Integer n => exact Or.inl ⟨_, rfl⟩
+      | String s => exact Or.inl ⟨_, rfl⟩
+      | Binary b => exact Or.inl ⟨_, rfl⟩
+      | Lambda x b => exact Or.inl ⟨_, rfl⟩
+      | Apply f a => exact Or.inl ⟨_, rfl⟩
+      | Let x d b => exact Or.inl ⟨_, rfl⟩
+      | _ =>
+          exfalso
+          rcases hasType_expr_form hty with ⟨_, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, _, hh⟩ |
+            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ <;> simp at hh
+  | V w =>
+      cases k with
+      | nil => exact Or.inr (Or.inl ⟨w, rfl⟩)
+      | cons kontann rest =>
+          obtain ⟨kont, ann⟩ := kontann
+          obtain ⟨τin, hw, hst⟩ := mStateWf_V hwf
+          cases hst with
+          | trace _ => exact Or.inl ⟨_, rfl⟩
+          | assign _ _ _ => exact Or.inl ⟨_, rfl⟩
+          | arg _ _ _ => exact Or.inl ⟨_, rfl⟩
+          | @applyf _ f fenv _ _ _ _ _ hf hrest =>
+              rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              · exact Or.inl ⟨_, rfl⟩
+              · simp only [reduce1Run, reduceApply]
+                cases hres : reduceCall (.Partial (.Builtin id) applied) w ann fenv rest with
+                | tau cfg' => exact Or.inl ⟨cfg', rfl⟩
+                | done o =>
+                    cases o with
+                    | value v => exact Or.inr (Or.inl ⟨v, rfl⟩)
+                    | crash r => exact Or.inr (Or.inr ⟨r, rfl, hbad hf hw hres⟩)
+                | perform _ _ _ _ => exact absurd hres (reduceCall_ne_perform hf)
+          | @callwith _ arg fenv _ _ _ _ _ harg hrest =>
+              rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨id, applied, rfl⟩
+              · exact Or.inl ⟨_, rfl⟩
+              · simp only [reduce1Run, reduceApply]
+                cases hres : reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest with
+                | tau cfg' => exact Or.inl ⟨cfg', rfl⟩
+                | done o =>
+                    cases o with
+                    | value v => exact Or.inr (Or.inl ⟨v, rfl⟩)
+                    | crash r => exact Or.inr (Or.inr ⟨r, rfl, hbad hw harg hres⟩)
+                | perform _ _ _ _ => exact absurd hres (reduceCall_ne_perform hw)
 
 end Eyg.Types
