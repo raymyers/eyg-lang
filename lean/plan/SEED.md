@@ -15,3 +15,13 @@ Save my instructions to you in this convo to lean/plan/SEED.md with `---` lines 
 ---
 
 /goal Execute `lean/plan/eyg-interpreter-STEP.md` until PLAN complete.
+
+---
+
+Review the code diff from the recent commit range associated with PLAN `lean/plan/eyg-interpreter.md` completion. You are responsible for identifying any slop anti-patterns, overcoding, dumb stuff. Also confirm the claim that the tests pass. If there are any findings, append to PLAN as unfinished milestone. If it's a clean minimal solution we're good to go.
+
+---
+
+/goal Execute `lean/plan/eyg-interpreter-STEP.md` until PLAN complete.
+
+---
