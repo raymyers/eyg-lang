@@ -303,6 +303,29 @@ belongs at the *start* of the next Handle session, before the rest of the (now f
 mapped) cascade. Everything else — `reduceDeep`, `delimit`-pop, the `∃ε'` wrapping, the
 isolated `HandledPerformPreserves` — is confirmed mechanical.
 
+### Refinement (3rd pass): the conv is itself nontrivial — row/input lockstep
+Two ways to realize conversion-closure, both with a wrinkle:
+- **`conv`-`nil`** (`nil : TyEquiv σ σ' → StackWf [] σ ε σ'`, no new constructor) makes
+  the `nil` (identity) case of a `stackWf_conv` *lemma* go through, and the `trace` case
+  is trivial — but the **`arg`/`callwith` frames couple the input arrow's effect-row
+  middle to the ambient row** (`StackWf ((Arg..)::rest) (fun argTy ε retTy) ε τ` — the
+  arrow's middle `ε` *is* the ambient `ε`). So converting input `σ→σ'` and row `ε→ε'`
+  must move in **lockstep**: `tyEquiv_fun_inv` forces `σ' = fun a' e' r'` with `ε ≃ e'`,
+  while the constructor demands the middle be the *new* ambient `ε'`. The two equivs
+  come from the same source in the use site (Resume: the resume's `kontTy reply tail ret
+  ≃ fun argTy ε retTy` gives `tail ≃ ε` for *both* the codomain-row and the ambient), so
+  it is provable, but the lemma must thread `e' = ε'` carefully (induct converting the
+  row and input together, not independently).
+- **`conv` constructor** sidesteps the lockstep (it just stores both equivs) but forces
+  every `cases hst` to recurse on the conv case.
+
+Recommendation: add the **`conv` constructor** (simpler to *state* and use; the
+`cases hst` recursion is boilerplate via a helper `stackWf_peelConv`), and in the Resume
+case write `StackWf.conv hR.symm hEff.symm hrest` to get `StackWf rest ret tail τ`. This
+is the one real piece of CEK handler-soundness metatheory left; with it the mapped
+cascade closes. It is genuinely a fresh-session task — five in-session dry-runs confirm
+it cannot be wedged in green alongside everything else without a broken intermediate.
+
 ## Concrete execution order
 1. Helpers `handlerTy`/`kontTy`/`execTy` (abbrevs) in Typing/Runtime.
 2. `HasType.handle` + `inv_handle` + `hasType_expr_form` arm + `rcases` bumps.
