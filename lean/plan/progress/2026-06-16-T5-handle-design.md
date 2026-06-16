@@ -343,6 +343,33 @@ IH after `hv.conv hσ.symm` + ambient rewrite, and `preservation_V` simultaneous
 the next session's first move; it was measured, not estimated. Reverted to green
 (`Machine.lean` only was touched) pending that focused session.
 
+### Correction to the conv-handling approach: `induction hst` is BLOCKED — use frame inversion
+`induction hst` on `preservation_V`/etc. does **not** work cleanly: the goal and `hr :
+reduce1Run (.V v, env, (kont,ann)::rest) = .tau cfg'` are tied to the *specific* stack
+`(kont,ann)::rest`, which `induction hst` would have to generalize (it can't, without
+also generalizing `hr`/`cfg'`). The right tool is **per-frame `StackWf` inversion
+lemmas that fold `conv`** — exactly like the `HasType` generation lemmas (`inv_app`
+etc.) fold the `HasType.conv` rule. For each frame kontinue, e.g.
+
+```
+stackWf_applyf_inv : StackWf ((Apply f fenv, a)::rest) σ ε τ →
+  ∃ argTy retTy ε0, TyEquiv σ argTy ∧ TyEquiv ε ε0 ∧
+    HasTypeV f (.fun argTy ε0 retTy) ∧ StackWf rest retTy ε0 τ
+```
+
+proved by `induction` on the `StackWf` with the cons-stack fixed (the `conv` case folds
+via `TyEquiv.trans`; the matching frame case is `refl`; other frames/`nil` are
+`nomatch`/contradiction on the stack index). Six such lemmas (Trace/Assign/Arg/Apply/
+CallWith/Delimit). Then `preservation_V` replaces `cases hst` with: branch on `kont`
+(the kontinue constructor — *that* is a plain `cases` on the `Kontinue`, always valid),
+apply the matching inversion lemma to get the frame data at `(σ0, ε0)` up to `TyEquiv`,
+and proceed as today but threading the `σ≃σ0`/`ε≃ε0` equivs (via `hv.conv`, `HasType.conv`,
+and `StackWf.conv` on `rest`). This is cleaner than restructuring to `induction hst` and
+keeps each frame proof local. It is the genuine remaining metatheory work — six inversion
+lemmas + re-threading equivs through the four theorems — and is the concrete plan for the
+next session. (`progress`/`done_value`/`preservation_perform` likewise switch to
+`cases kont` + the inversion lemmas.)
+
 ## Concrete execution order
 1. Helpers `handlerTy`/`kontTy`/`execTy` (abbrevs) in Typing/Runtime.
 2. `HasType.handle` + `inv_handle` + `hasType_expr_form` arm + `rcases` bumps.
