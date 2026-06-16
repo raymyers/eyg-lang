@@ -270,19 +270,19 @@ unions, effects all present) and a *decidable* row-equivalence.
 **Deliverable:** `Eyg/Types/Scheme.lean` — type substitution, instantiation, and
 the primitive/builtin scheme tables.
 
-- [ ] Type substitution `Ty.subst` (into rows/effect rows) + lemmas
-      (compositionality; `subst` commutes with `RowEquiv`).
-- [ ] `Scheme` (∀-quantified `Ty`) with `instantiate : Scheme → Ty` (de Bruijn
-      open) mirroring `binding.instantiate`/`open`. **Defer `gen`
-      (generalization) to T6** — the pure/rows/effects slices (T3–T5) use only
-      *monomorphic* `let` plus polymorphic *builtin/primitive schemes*, which is
-      enough to exercise everything except let-polymorphism.
-- [ ] **Primitive schemes** for every non-application node, transcribed from
-      `contextual.gleam`'s `prim`/`cons`/`extend`/`overwrite`/`select`/`tag`/
-      `case_`/`nocases`/`perform`/`handle`. These ARE the typing rules for those
-      nodes; introduce each in the slice that needs it (data in T4, effects in T5).
-- [ ] **Builtin scheme table** from `builtins()` — start with the arithmetic
-      subset needed by T3 fixtures (`int_add`, …); grow per slice; complete in T6.
+- [x] Type substitution `Ty.subst` (into rows/effect rows) + lemmas
+      (`subst_subst` compositionality, `subst_id`, and `subst_tyEquiv` =
+      `subst` commutes with `RowEquiv`). **DELIVERED** in `Eyg/Types/Scheme.lean`.
+      Capture-free by construction (`Ty` has no internal binders).
+- [x] `Scheme` (∀-quantified `Ty`) with `instantiate : Scheme → List Ty → Ty`
+      (de Bruijn open) mirroring `binding.instantiate`. **DELIVERED** (`Scheme.mono`
+      for monomorphic). **`gen` (generalization) deferred to T6** as planned.
+- [~] **Primitive schemes** (`cons`/`extend`/`select`/`tag`/`case_`/`perform`/
+      `handle`…): **deferred** — introduced per slice that consumes them (data in
+      T4, effects in T5), as the plan directs.
+- [x] **Builtin scheme table** `Builtins.scheme` from `builtins()` — the T3
+      arithmetic/string/core subset (`equal`, `fix`, `int_*`, `string_*`).
+      **DELIVERED**; grow per slice; complete in T6.
 
 ## Milestone T3 — Slice 1: pure monomorphic core (first green theorem)
 
