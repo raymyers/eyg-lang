@@ -58,3 +58,31 @@ hence a milestone of its own rather than an inline lemma.
 
 The four row-free operators (Cons/Tag/NoCases + Empty/Tail) are already green, so
 T4's pipeline integration is proven; what remains is purely the row metatheory.
+
+## UPDATE — `Eyg/Types/Row.lean` delivered; the scoped-label refinement
+
+`RowContains` (membership along a row's `rowExtend` spine) and
+`tyEquiv_rowContains` (TyEquiv preserves membership both ways, field type up to
+TyEquiv) are **green and axiom-free**. Working out how `Case` consumes them
+pinned down the remaining obligation precisely — and it is the **scoped-labels**
+subtlety, exactly Leijen's reason for the `l ≠ l'` guard:
+
+- Redesign `HasTypeV.tagged` to carry `RowContains row label fieldTy` (membership)
+  rather than the head-only `TyEquiv (union (rowExtend label …)) τ`. Then:
+  - **miss** (`l ≠ matchLabel`): invert `tagged` ⇒ `RowContains natRow l f`;
+    `tyEquiv_rowContains_mp` to the Match input row; the head is `matchLabel ≠ l`
+    so membership lands in `matchTail` ⇒ re-type at `union matchTail`. Clean with
+    the current (unguarded) `RowContains`.
+  - **hit** (`l = matchLabel`): `branch : inner → ret`, and the payload `v` must be
+    typed at `inner` (the union's *head* field). If `RowContains` is unguarded it
+    could witness a **deeper** `matchLabel` occurrence with a different field type
+    ⇒ unsound. So `RowContains.tail` must carry `l ≠ l'` (first-occurrence /
+    visible binding), matching Leijen's scoping.
+- Adding the guard makes `tyEquiv_rowContains`'s `swapRow` cases need the
+  inequality witnesses (the swap reorders two *distinct* labels), so that proof
+  grows — this is the genuine scoped-label metatheory, milestone-sized.
+
+So the next slice is: guarded `RowContains` + re-green `tyEquiv_rowContains` +
+redesign `tagged`/`partialTag` + add `Case` (3 `partialMatch` arities + the
+hit/miss operation) + a `Tagged` canonical form. The unguarded version committed
+here is the stepping stone and validates the `tyEquiv_rowContains` shape.
