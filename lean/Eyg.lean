@@ -14,3 +14,4 @@ import Eyg.Semantics.FunctionalBigStep
 import Eyg.Semantics.Lts
 import Eyg.Semantics.Correspondence
 import Eyg.Semantics.Behavior
+import Eyg.Semantics.Metatheory

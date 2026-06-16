@@ -190,35 +190,50 @@ runs, and both agree with the LTS.
       interpreter →(exec, 104/104)→ FBS →(proof)→ LTS (S3) →(proof)→
       Behaviors (S4).
 
-## Milestone S6 — Metatheory & packaging (stretch)
+## Milestone S6 — Metatheory & packaging (stretch — partial; rest tracked)
 
 **Deliverable:** reusable equivalence machinery and the denotational option.
+`Eyg/Semantics/Metatheory.lean` lands the free wins; the rest stays deferred as
+the on-ramp to verified compilation.
 
 - [ ] **Value relation** `V : Value → Value → Prop` (structural on
-      records/variants/strings/ints, behavioral on closures) — the genuinely new
-      proof tool flagged in the difference-doc, needed before any
-      compiler/optimization correctness over closures.
-- [ ] Trace equivalence / bisimulation packaging via `LTS/TraceEq.lean` and
-      `LTS/Bisimulation.lean` (`Behaviors a = Behaviors b ↔ TraceEq`).
-- [ ] Optional: re-express effects denotationally with
-      `Foundations/Control/Monad/Free` (`FreeM` + `Free/Effects`) — EYG's
-      "script declares effects, runner interprets them" maps cleanly onto a free
-      monad with a fold-based handler; compare to the trace formulation.
-- [ ] One **shared builtin specification** reused by interpreter, FBS, and any
-      future target (difference-doc §builtins) so arithmetic/string/list
-      behavior is defined once.
+      records/variants/strings/ints, behavioral on closures) — *deferred by
+      design* (sequencing notes): the genuinely new proof tool, only pays off
+      with a compiler/target. The behavioural-closure case needs a step-indexed
+      / coinductive definition.
+- [x] Trace equivalence / bisimulation packaging via `LTS/TraceEq.lean`:
+      `MStateTraceEq`, `mstateTraceEq_equiv`, and `mstate_traceEq_sim` (trace
+      equivalence is a simulation, from `instDeterministic`). Determinism also
+      gives `ImageFinite` for free.
+- [ ] Optional denotational packaging via `Foundations/Control/Monad/Free` —
+      deferred (optional).
+- [x] **Shared builtin specification** — *satisfied by construction*: FBS
+      `eval`/`run` drive the interpreter's `step` → `callBuiltin`/`Builtin.run`,
+      so there is one builtin implementation shared by interpreter and FBS (and
+      reusable by any future target). Exercised by `FBS≡interpreter: 104/104`.
 
 ---
 
 ## Definition of done
 
-- `eval` total + monotone; `eygLTS` defined on the CEK config.
-- FBS↔LTS soundness/completeness and `Deterministic eygLTS` proved (no `sorry`).
-- `Behaviors` covers value / crash / divergence, with divergence via
-  `OmegaSequence`.
-- `interpreter_eq_fbs` proved over traces, closing the loop with
-  `eyg-interpreter.md`.
-- S6 items tracked separately as the on-ramp to verified compilation.
+- [x] `eval` total + monotone (`eval_mono`); `eygLTS` defined on the CEK machine
+      state (`MState`).
+- [x] FBS↔LTS soundness/completeness (`eval_sound_done`/`eval_sound_effect`/
+      `eval_complete`/`eval_iff_mtr`) and `Deterministic eygLTS` proved —
+      **no `sorry` anywhere in the project**.
+- [x] `Behaviors` covers value / crash / divergence, with divergence via
+      `OmegaSequence`; `tauDiverges_iff_timeout` ties divergence to `eval`.
+- [~] `interpreter_eq_fbs` over traces: a *kernel* theorem is precluded
+      (`partial def loop` is opaque). Established **executably** instead
+      (`FBS≡interpreter: 104/104`), with the proof-level knot tying the total
+      artifacts (`eval` → `Behaviors` → LTS). Documented in
+      `progress/2026-06-16-interpreter-bridge-partial-def.md`.
+- [x] S6 on-ramp: TraceEq/bisimulation packaging + shared-builtin done; value
+      relation and denotational packaging tracked as deferred.
+
+**Status (2026-06-16): core plan S0–S5 complete; S6 partially landed with the
+remainder tracked as the deliberately-deferred compiler on-ramp. Full build
+green, `lake exe spec` green (104/104 fixtures + FBS agreement), zero `sorry`.**
 
 ## Sequencing notes
 

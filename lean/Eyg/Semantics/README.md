@@ -86,4 +86,7 @@ middle ground").
   established *executably* (`FBS≡interpreter: 104/104` via `lake exe spec`) and
   the proof-level knot ties the **total** artifacts: `eval` → `Behaviors`
   (`eval_done_mem_behaviors` &c.) → LTS. No `sorry` in the project.
-* **S6 (stretch):** see `lean/plan/eyg-semantics.md`.
+* **S6 (stretch, partial):** `Metatheory.lean` — TraceEq/bisimulation packaging
+  (`mstate_traceEq_sim`, from determinism) and `ImageFinite`; shared-builtin spec
+  satisfied by construction (FBS drives the interpreter's `Builtin.run`). Value
+  relation and denotational packaging tracked as deferred (compiler on-ramp).
