@@ -431,6 +431,14 @@ T6 obligation.
 **Deliverable:** effect-row threading and handler soundness; **effect safety**.
 This is the milestone with no direct mechanization precedent — see the fork below.
 
+- [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
+      of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
+      of operation `l : (lift a, reply b)` in an effect row), `tyEquiv_effContains`
+      (`TyEquiv` preserves membership, lift/reply up to `TyEquiv`),
+      `tyEquiv_effContains_mp`, and `effContains_tyEquiv` (surface a handled op to the
+      row head — the inverse, for `Handle`). Axiom-free; the row machinery the effect
+      safety statement and the `Handle` discharge both need, built before the harder
+      `Perform`/`Handle`/frame-typing work so that layer is isolated.
 - [ ] **Un-pin the effect row.** Add typing rules `Perform` (singleton-row arrow
       `Fun(a, EffectExtend(l,(a,b),Empty), b)` — Koka's "operation as Var" trick,
       `references/algebraic-effects-handlers-soundness.md` §2) and `Handle`
