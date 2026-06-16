@@ -171,6 +171,60 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
         ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | h | h | h | ⟨_, h⟩ | h | ⟨_, h⟩ | ⟨_, h⟩ |
         ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> simp at h
 
+/-! ## T6 — per-builtin `Builtin.run` typing (the saturation obligation, in progress)
+
+The isolated `BuiltinAppPreserves`/`BuiltinAppNoBadCrash` hypotheses are discharged by
+proving, per builtin, that `Builtin.run` applied to arguments of the builtin's scheme
+domains yields a value of its scheme codomain (or a *sanctioned* `Unrepresentable`
+trap). These are mechanical — extract the typed args with the canonical-forms lemmas,
+compute `run`, type the result. A representative subset is proved here (arithmetic /
+string core); the full table + assembly into `BuiltinAppPreserves` is the rest of T6. -/
+
+/-- `int_to_string : Integer → String`. -/
+theorem run_int_to_string [BEq m] {a v : Value m} (ha : HasTypeV a .integer)
+    (h : Builtin.run "int_to_string" [a] = .ok v) : HasTypeV v .string := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  cases h; exact HasTypeV.str (.refl _)
+
+/-- `int_add : Integer → Integer → Integer` (or the sanctioned `Unrepresentable` trap). -/
+theorem run_int_add [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_add" [a, b] = .ok v) : HasTypeV v .integer := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha
+  obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  split at h
+  · cases h; exact HasTypeV.int (.refl _)
+  · exact absurd h (by simp)
+
+/-- `int_add`'s only failure is the sanctioned `Unrepresentable`. -/
+theorem run_int_add_noBad [BEq m] {a b : Value m} {e : Reason m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_add" [a, b] = .error e) : ¬ Reason.IsBad e := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha
+  obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  split at h
+  · exact absurd h (by simp)
+  · cases h; simp [Reason.IsBad]
+
+/-- `string_append : String → String → String`. -/
+theorem run_string_append [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .string) (hb : HasTypeV b .string)
+    (h : Builtin.run "string_append" [a, b] = .ok v) : HasTypeV v .string := by
+  obtain ⟨x, rfl⟩ := canonical_string ha
+  obtain ⟨y, rfl⟩ := canonical_string hb
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  cases h; exact HasTypeV.str (.refl _)
+
+/-- `string_length : String → Integer`. -/
+theorem run_string_length [BEq m] {a v : Value m} (ha : HasTypeV a .string)
+    (h : Builtin.run "string_length" [a] = .ok v) : HasTypeV v .integer := by
+  obtain ⟨s, rfl⟩ := canonical_string ha
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  cases h; exact HasTypeV.int (.refl _)
+
 /-- The builtin **application/saturation** preservation obligation, isolated as a
 hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
 and `int_add` may legitimately trap with the sanctioned `Unrepresentable`). When a
