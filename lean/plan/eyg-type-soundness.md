@@ -540,10 +540,22 @@ for the **whole** core language.
 - [ ] **Let-generalization** `gen` (deferred from T2), declaratively and
       **effect-safe** (only generalize effect tails that don't escape — mirror
       `close`/`close_eff`; Open Question #3). Extend the `Let` rule and re-green.
-- [ ] **Complete the builtin scheme table** (`fix`, `list_fold`, `binary_fold`,
-      all `string_*`/`int_*`, …) and the builtin-saturation preservation case
-      (saturated builtin yields its scheme's return type, via `Reduce`'s explicit
-      builtin rule).
+- [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
+      (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
+      confirmed mechanical*. Every builtin in the analyzer scheme table **except the
+      stack-coupled `fix`** now has its `run` typed green: `run_int_{add,subtract,
+      multiply,absolute,to_string,compare,divide,parse}`, `run_string_{append,length,
+      uppercase,lowercase,starts_with,ends_with}`, `run_equal` — each extracts the typed
+      args via the canonical-forms lemmas, computes `run`, and types the result
+      (`int`/`str`/`bool`/`result`/`ordTag`), with the `int_*` overflow and `int_parse`
+      traps shown to be the sanctioned `Unrepresentable`. Value-typing helpers added:
+      `hasTypeV_unit`/`hasTypeV_bool`/`hasTypeV_ok`/`hasTypeV_error`/`hasTypeV_ordTag`.
+      **Remaining:** `fix` (special — re-applies via a pushed frame, not `run`); and the
+      **assembly** into the isolated hypotheses `BuiltinAppPreserves`/
+      `BuiltinAppNoBadCrash` (case on `id`, extract args from `BuiltinPartialWf`, split
+      under-saturation accumulation vs. saturation, plus the special
+      `fix`/`list_fold`/`binary_fold` arms of `reduceCallBuiltin`). The grow-the-scheme-
+      table part is also here if any untyped builtins are added.
 - [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
 ## Milestone T7 — Packaging & corollaries
