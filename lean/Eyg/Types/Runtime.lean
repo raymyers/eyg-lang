@@ -64,8 +64,20 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
       HasTypeV (.Partial (.Builtin id) applied) τ
   /-- The empty list inhabits any list type. -/
   | listNil {elem τ} : Ty.TyEquiv (.list elem) τ → HasTypeV (.LinkedList []) τ
+  /-- A cons cell: head and tail share the element type. -/
+  | listCons {hd tl elem τ} :
+      HasTypeV hd elem → HasTypeV (.LinkedList tl) (.list elem) →
+      Ty.TyEquiv (.list elem) τ → HasTypeV (.LinkedList (hd :: tl)) τ
   /-- The empty record inhabits the empty-row record type. -/
   | recordNil {τ} : Ty.TyEquiv (.record .empty) τ → HasTypeV (.Record []) τ
+  /-- The unsaturated `Cons` (no args): `α → List α → List α`. -/
+  | partialConsNil {elem τ} :
+      Ty.TyEquiv (.fun elem .empty (.fun (.list elem) .empty (.list elem))) τ →
+      HasTypeV (.Partial .Cons []) τ
+  /-- `Cons` applied to its head: `List α → List α`. -/
+  | partialConsOne {hd elem τ} :
+      HasTypeV hd elem → Ty.TyEquiv (.fun (.list elem) .empty (.list elem)) τ →
+      HasTypeV (.Partial .Cons [hd]) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -123,7 +135,10 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | closure henv hbody he => exact .closure henv hbody (he.trans heq)
   | partialBuiltin hs hp he => exact .partialBuiltin hs hp (he.trans heq)
   | listNil he => exact .listNil (he.trans heq)
+  | listCons hh ht he => exact .listCons hh ht (he.trans heq)
   | recordNil he => exact .recordNil (he.trans heq)
+  | partialConsNil he => exact .partialConsNil (he.trans heq)
+  | partialConsOne hh he => exact .partialConsOne hh (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -135,36 +150,24 @@ the constructors whose *natural* head differs carry an impossible `TyEquiv` (e.g
 
 theorem canonical_integer {m : Type} {v : Value m} (h : HasTypeV v .integer) :
     ∃ n, v = .Integer n := by
-  cases h with
-  | int => exact ⟨_, rfl⟩
-  | str he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
-  | bin he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
-  | closure _ _ he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
-  | partialBuiltin _ _ he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
-  | listNil he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
-  | recordNil he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
+  cases h <;> rename_i he <;>
+    first | exact ⟨_, rfl⟩ | exact absurd (Ty.tyEquiv_integer_inv he) (by simp)
 
 theorem canonical_string {m : Type} {v : Value m} (h : HasTypeV v .string) :
     ∃ s, v = .String s := by
-  cases h with
-  | str => exact ⟨_, rfl⟩
-  | int he => have hc := Ty.tyEquiv_string_inv he; simp at hc
-  | bin he => have hc := Ty.tyEquiv_string_inv he; simp at hc
-  | closure _ _ he => have hc := Ty.tyEquiv_string_inv he; simp at hc
-  | partialBuiltin _ _ he => have hc := Ty.tyEquiv_string_inv he; simp at hc
-  | listNil he => have hc := Ty.tyEquiv_string_inv he; simp at hc
-  | recordNil he => have hc := Ty.tyEquiv_string_inv he; simp at hc
+  cases h <;> rename_i he <;>
+    first | exact ⟨_, rfl⟩ | exact absurd (Ty.tyEquiv_string_inv he) (by simp)
 
 theorem canonical_binary {m : Type} {v : Value m} (h : HasTypeV v .binary) :
     ∃ b, v = .Binary b := by
-  cases h with
-  | bin => exact ⟨_, rfl⟩
-  | int he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
-  | str he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
-  | closure _ _ he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
-  | partialBuiltin _ _ he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
-  | listNil he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
-  | recordNil he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
+  cases h <;> rename_i he <;>
+    first | exact ⟨_, rfl⟩ | exact absurd (Ty.tyEquiv_binary_inv he) (by simp)
+
+/-- A value at a list type is a `LinkedList`. -/
+theorem canonical_list {m : Type} {v : Value m} {elem : Ty} (h : HasTypeV v (.list elem)) :
+    ∃ es, v = .LinkedList es := by
+  cases h <;> rename_i he <;>
+    first | exact ⟨_, rfl⟩ | (obtain ⟨_, hc⟩ := Ty.tyEquiv_list_inv he; simp at hc)
 
 /-- A value at an arrow type is a closure or a (callable) partial — never a
 literal or a data structure. Callers `cases` the typing again to dispatch on the
@@ -176,10 +179,13 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   cases h with
   | closure _ _ _ => exact Or.inl ⟨_, _, _, rfl⟩
   | partialBuiltin _ _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialConsNil _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialConsOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | str he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | bin he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | listNil he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
+  | listCons _ _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | recordNil he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
 
 /-! ## Sanity checks -/

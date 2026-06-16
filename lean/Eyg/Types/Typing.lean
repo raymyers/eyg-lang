@@ -73,6 +73,9 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
       HasType Γ ⟨.Builtin id, a⟩ (s.instantiate args) ε
   /-- The empty list `Tail`, polymorphic in its element type (`prim(List(q0))`). -/
   | tail {Γ elem ε a} : HasType Γ ⟨.Tail, a⟩ (.list elem) ε
+  /-- List `Cons`: `∀α. α → List α → List α` (`cons() = pure2(q0, List q0, List q0)`). -/
+  | cons {Γ elem ε a} :
+      HasType Γ ⟨.Cons, a⟩ (.fun elem .empty (.fun (.list elem) .empty (.list elem))) ε
   /-- The empty record `Empty` (`prim(Record(Empty))`). -/
   | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal

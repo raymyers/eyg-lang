@@ -82,6 +82,10 @@ theorem tyEquiv_binary_inv {τ : Ty} (h : TyEquiv τ .binary) : τ = .binary := 
   have hs := tyEquiv_shape h
   cases τ <;> simp_all [shape]
 
+theorem tyEquiv_list_inv {τ elem : Ty} (h : TyEquiv τ (.list elem)) : ∃ elem', τ = .list elem' := by
+  have hs := tyEquiv_shape h
+  cases τ <;> simp_all [shape]
+
 theorem tyEquiv_record_inv {τ r : Ty} (h : TyEquiv τ (.record r)) : ∃ r', τ = .record r' := by
   have hs := tyEquiv_shape h
   cases τ <;> simp_all [shape]
