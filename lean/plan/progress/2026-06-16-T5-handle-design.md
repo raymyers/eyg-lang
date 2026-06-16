@@ -252,6 +252,57 @@ Site-by-site strategy for the remaining `Soundness.lean` cascade:
 Only the handled-`perform` dispatch need be isolated; all else is mechanical. The
 dry-run confirms the design is sound; the ~40-edit volume is the only obstacle.
 
+## ⚠ DEEPEST FINDING (2nd dry-run): `Resume` needs `StackWf` conversion-closure
+
+A second, fuller dry-run got `Typing`/`Generation`/`Machine`/`Runtime` green again and
+drove most of the `Soundness.lean` cascade, surfacing the real remaining obstacle
+(beyond volume):
+
+- **`preservation_V` must conclude `∃ε'`** (not fixed `ε`) — the `delimit`-pop,
+  `reduceDeep`, `Resume`, and handled-`perform` successors all sit at a *different*
+  ambient row. This forces wrapping its ~30 existing leaves with `⟨ε, …⟩` (mechanical;
+  `sed 's/exact ⟨_,/exact ⟨ε, _,/'` over the body does most of it, then fix the
+  `partialBuiltin` leaves `⟨ε, (hsat …).1 _ hr⟩` by hand).
+- **`partialPerformNil` in `preservation_V` is trivial given `hperf`**: `hr : reduceCall
+  … = .tau cfg'` is exactly `HandledPerformPreserves`'s premise, so
+  `exact hperf (HasTypeV.partialPerformNil he) hv hrest hr` — no `doPerformR` split
+  needed there (it *is* needed in `reduce1Run_done_value_typed` and
+  `reduceCall_perform_wait`, via `doPerformR_cases`).
+- **`reduceDeep` (`partialHandleOne`) IS provable directly**: choose the new `Delimit`
+  frame's endpoints `tail := ε`, `ret := retTy` (the frame's), so `hrest : StackWf rest
+  retTy ε τ` fits `StackWf.delimit` unchanged; convert only the *handler* value
+  (`hhandler.conv` over `handlerTy` congruence) and the *exec* value. Unit value typed
+  by `HasTypeV.record (fun _ _ hc => nomatch hc) (fun _ _ _ hc _ => nomatch hc) (.refl)`.
+- **`Resume` (`partialResume`) is BLOCKED** by a genuine gap: the stored segment has
+  endpoints `(ret, tail)` (the operation's types), but the call frame types the resume
+  at `kontTy reply tail ret ≃ fun argTy ε retTy` — i.e. `ret ≃ retTy`, `tail ≃ ε` only
+  *up to `TyEquiv`*. `stackWf_resume` needs `hk : StackWf rest ret tail τ`; the frame
+  gives `StackWf rest retTy ε τ`. **`StackWf` admits no endpoint conversion** — `nil :
+  StackWf [] σ ε σ` pins input = output, so neither `σ` nor `ε` can be moved by `TyEquiv`
+  (same for `StackSegWf`). Unlike `reduceDeep`, the segment is pre-built (in the isolated
+  dispatch), so the "choose endpoints" trick is unavailable.
+
+**Resolution for the next session (the one real design addition left).** The naive
+"thread the equivs into `stackWf_resume`" does **not** work: at the segment's `nil`/hole
+the base stack `k` would still need *input*-conversion (`StackWf k σmid' εmid' τ →
+StackWf k σmid εmid τ`), which is the same invalid move. Two real options:
+- **(a) Add a `conv` constructor to `StackWf`** (`TyEquiv σ σ' → TyEquiv ε ε' → StackWf
+  k σ ε τ → StackWf k σ' ε' τ`). Makes stacks conversion-closed by construction; the
+  cost is a `conv` case at every `cases hst` (handle by peel-and-recurse — standard).
+  This is the most robust and also subsumes any future row/shape mismatch.
+- **(b) Reformulate `partialResume`** so the stored segment's output endpoints are
+  *existential and tied by `TyEquiv` to the `kontTy`*, i.e. carry
+  `StackSegWf acc.reverse reply εtop σmid εmid` **plus** `TyEquiv σmid ret`/`TyEquiv εmid
+  tail` and bake the equivs into the segment via a `StackSegWf`-level conv (same `nil`
+  problem one level down) — so (b) ultimately also needs a segment `conv`. 
+
+Net: a **`conv` constructor on `StackWf`/`StackSegWf`** is the genuine missing piece
+(option a). It is a small, well-understood addition (mirror the value-level conv that
+`HasTypeV` already bakes in at its leaves) but it touches every `cases hst` site, so it
+belongs at the *start* of the next Handle session, before the rest of the (now fully
+mapped) cascade. Everything else — `reduceDeep`, `delimit`-pop, the `∃ε'` wrapping, the
+isolated `HandledPerformPreserves` — is confirmed mechanical.
+
 ## Concrete execution order
 1. Helpers `handlerTy`/`kontTy`/`execTy` (abbrevs) in Typing/Runtime.
 2. `HasType.handle` + `inv_handle` + `hasType_expr_form` arm + `rcases` bumps.
