@@ -142,9 +142,9 @@ finite executions.
       `trace` the emitted events.
 - [ ] `eval_complete`: if `eygLTS.MTr cfg trace cfg'` (terminal) then
       `∃ fuel, eval fuel cfg = done o`.
-- [ ] `Deterministic eygLTS`: the `Step` relation is a partial function
-      (single rule fires per config); discharge via case analysis on
-      `Control × Stack`. Feeds cslib's `deterministic_imageFinite`.
+- [x] `Deterministic eygLTS`: `instDeterministic` in `Correspondence.lean`,
+      via `cases h1 <;> cases h2 <;> simp_all` (`step` pins tau/perform; the
+      label pins reply). Feeds cslib's `deterministic_imageFinite`.
 - [ ] With determinism, upgrade the two directions to a single
       `eval_iff_mtr` characterization.
 
