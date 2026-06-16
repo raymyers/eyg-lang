@@ -212,6 +212,46 @@ first; then the `Delimit`/`Resume`/handled-`perform` cases are mechanical (the k
 (`preservation_V`, `reduce1Run_done_value_typed`, `progress`, `preservation_perform`)
 gains a `delimit` frame case under this restatement.
 
+## ✅ Implementation findings (from a full dry-run of the cascade)
+
+A complete attempt built **all the infrastructure green** (then reverted to keep the
+tree green, the `Soundness.lean` cascade being too large for one pass). Known-correct:
+- `Typing.handle` + `handleTy`/`handlerTy`/`execTy`/`kontTy` abbrevs; `inv_handle`;
+  the `hasType_expr_form` `Handle` arm (`iterate 18`), `Perform` arm → `Or.inl ⟨_,rfl⟩`.
+- `StackWf.delimit` (Machine) — **must NOT carry `EnvWf henv Γ`.** The frame's stored
+  env is never used for typing (the handler is a self-contained value), and at
+  `reduceDeep` the frame env is arbitrary, so requiring `EnvWf` makes it *unprovable*.
+  Drop it. Same for `StackSegWf.delimit`.
+- `StackSegWf` joins the `HasTypeV`/`EnvWf` **mutual block**; `stackSeg_append` /
+  `stackSeg_toStackWf` re-prove by `induction seg generalizing σin εin` + `cases hseg`
+  (mutual inductives forbid `induction hseg`). `stackWf_resume` (= `stackSeg_toStackWf`
+  after `move_eq`) types `Resume`'s `move acc k`.
+- `HasTypeV.partialHandleNil` (`handleTy …`), `partialHandleOne handler`
+  (`HasTypeV handler (handlerTy …)`, typed at `Fun(execTy,tail,ret)`), `partialResume`
+  (`StackSegWf acc.reverse reply εtop ret tail` + `TyEquiv (kontTy reply tail ret) τ`).
+  Plus their `HasTypeV.conv` and `canonical_arrow` cases (`Or.inr ⟨_,_,rfl⟩`). The old
+  uniform `stackWf_append`/`stackWf_move` are **deleted** (unprovable once `delimit`).
+
+Site-by-site strategy for the remaining `Soundness.lean` cascade:
+- **`stackWf_doPerformR_unhandled` is now false — delete it;** rework its 4 uses to
+  `cases hdp : doPerformR op arg env rest []` (`.error` → escape as T5c, `.ok` →
+  handled `.tau`).
+- **`reduce1Run_done_value_typed`**: every new case is a *contradiction* (the
+  reductions are `.tau`/`.perform`, never `.done (.value _)`).
+- **`progress`**: every new case just *exhibits a step* (`Or.inl`); escape → the 4th
+  (effect-escape) disjunct; plus the `Handle` eval case + `rcases`/`expr_form` `+1`.
+- **`preservation_perform`**: new cases are contradictions; `partialPerformNil`
+  case-splits `doPerformR` (escape = the wait, as T5c).
+- **`preservation_V`** (the real work): `delimit`-pop (value → `.tau (.V v, env, rest)`,
+  types at row `tail`, `∃ε'`); `partialHandleNil` → accumulate to `partialHandleOne`;
+  `partialHandleOne` → `reduceDeep` (`Apply exec :: Delimit :: rest`, via `StackWf.applyf`
+  + `StackWf.delimit` at row `EffectExtend(l,…,tail)`, `∃ε'`); `partialResume` →
+  `stackWf_resume`; **handled-`partialPerformNil` → the ONE isolated obligation**
+  (`HandledPerformPreserves`, threaded like `BuiltinAppPreserves` — the dispatch §5).
+
+Only the handled-`perform` dispatch need be isolated; all else is mechanical. The
+dry-run confirms the design is sound; the ~40-edit volume is the only obstacle.
+
 ## Concrete execution order
 1. Helpers `handlerTy`/`kontTy`/`execTy` (abbrevs) in Typing/Runtime.
 2. `HasType.handle` + `inv_handle` + `hasType_expr_form` arm + `rcases` bumps.
