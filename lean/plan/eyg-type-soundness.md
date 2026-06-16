@@ -64,6 +64,41 @@ And the dynamics we are proving sound:
 - `Eyg/Interpreter/{Value,Break,State}.lean` — `Value`, `Reason` (the crash
   outcomes a type system must exclude), and the machine `step`.
 
+### External references (summarized in `references/`)
+
+The relevant literature has been retrieved and distilled into
+`lean/plan/references/` — read these before the milestone they back:
+
+- [`references/progress-preservation-recipe.md`](./references/progress-preservation-recipe.md)
+  — Wright–Felleisen / TAPL / Software Foundations syntactic-soundness skeleton,
+  the lemma DAG, and how to phrase soundness for a **total/crash** semantics.
+  Backs the overall shape (T5/T6/T7) and the binder decision (T1).
+- [`references/row-types-scoped-labels.md`](./references/row-types-scoped-labels.md)
+  — Leijen, *Extensible Records with Scoped Labels*: the exact row-equality rules
+  (`eq-swap`/`eq-head`) and `rewrite_row` (Fig. 3) that EYG's `RowEquiv` mirrors,
+  plus a normalization (stable-sort) decision-procedure tip. Backs **T1**.
+- [`references/algebraic-effects-handlers-soundness.md`](./references/algebraic-effects-handlers-soundness.md)
+  — Koka / Links / Frank / Eff / Wrocław type-and-effect soundness: effect-row
+  threading, `perform`/`handle` rules, handler-frame + resumption typing, the
+  deep/shallow flag, and the effect-safety statement. Backs **T3/T4/T5/T6**.
+- [`references/abstract-machine-type-soundness.md`](./references/abstract-machine-type-soundness.md)
+  — CEK / typed-continuation soundness: continuation-stack typing as an
+  **answer-type transformer** (`K : A ⇒ B`), closure/environment typing that
+  replaces the substitution lemma, and why the step relation must be a transparent
+  inductive. Backs **T0/T4**.
+
+Key cross-cutting findings from the survey:
+- **No published Lean (or confirmed Coq/Agda) mechanization of syntactic
+  progress+preservation for a row-based handler calculus exists** — EYG's proof
+  would be novel. Closest templates: Eff (Twelf, set-based dirt), Wrocław-2018 &
+  Hazel/Tes (Coq/Iris, semantic), PEPM-2024 (intrinsically-typed Agda machine).
+- The machine-soundness sources type the configuration via **simulation against a
+  typed contextual semantics**, *not* by typing the CEK frames directly — so
+  typing EYG's `Delimit`/`Resume` frames (T4) is the genuinely novel obligation;
+  PEPM-2024's intrinsic-typing style is the nearest precedent. A lower-risk
+  alternative is the simulation route (don't type the machine config; prove it
+  simulates a typed contextual/`Red` semantics).
+
 ## ⚠️ Central architectural constraint (must be resolved in T0)
 
 **Preservation cannot be proved about the existing `step`.** The interpreter's
@@ -374,21 +409,30 @@ reason over a transparent reduction relation and bridge to `step` executably.
 This is the single most important thing to get right; everything downstream
 assumes it.
 
-**External references that would *help* (not strictly required):**
-- Leijen, *Extensible Records with Scoped Labels* — the exact row-equality
-  (`rewrite_row`) model and its metatheory; the cleanest precedent for T1's
-  `RowEquiv`.
-- Hillerström & Lindley / Biernacki et al. / the **Koka** and **Frank**
-  metatheory — type-and-effect soundness for **algebraic effects and handlers**
-  (the T4 handler-frame typing and T5/T6 effect safety are where these pay off).
-- Any mechanized **CEK / abstract-machine type-soundness** development (typed
-  continuation/stack invariants) — the `StackWf` "continuation as answer-type
-  transformer" pattern in T4.
-- Software-Foundations-style *Progress + Preservation* is the overall skeleton;
-  the EYG-specific deltas are rows, effects, and the environment-machine (vs.
-  substitution) — none of which need outside material we don't already have.
+**External references — retrieved and summarized in [`references/`](./references/):**
+- [`references/row-types-scoped-labels.md`](./references/row-types-scoped-labels.md)
+  — Leijen, *Extensible Records with Scoped Labels*: the exact row-equality
+  (`eq-swap`/`rewrite_row`) model and its metatheory; the cleanest precedent for
+  T1's `RowEquiv` (plus a stable-sort normalization tip for decidability).
+- [`references/algebraic-effects-handlers-soundness.md`](./references/algebraic-effects-handlers-soundness.md)
+  — Koka / Links / Frank / Eff / Wrocław metatheory: type-and-effect soundness for
+  algebraic effects and handlers (T3 `Perform`/`Handle` rules, T4 handler-frame +
+  resumption typing, the deep/shallow flag, T5/T6 effect safety).
+- [`references/abstract-machine-type-soundness.md`](./references/abstract-machine-type-soundness.md)
+  — CEK / typed-continuation soundness: the `StackWf` "continuation as answer-type
+  transformer" pattern and closure/environment typing for T4 (and why T0's `Red`
+  must be transparent).
+- [`references/progress-preservation-recipe.md`](./references/progress-preservation-recipe.md)
+  — Software-Foundations / Wright–Felleisen *Progress + Preservation* skeleton and
+  lemma DAG; how to phrase soundness for a total/crash semantics. The EYG-specific
+  deltas (rows, effects, environment-machine) are covered by the three above.
 
-If desired, I can pull short notes from the row-types and effect-handler papers
-before T4 (the handler-frame typing) — that is the milestone most likely to
-benefit from an external reference. The rest can proceed from the in-repo
-specification.
+**What the survey changed in our confidence:** the in-repo `gleam_analysis` spec
+remains sufficient for the *type system itself*, and the four summaries give
+concrete, transcribable rule shapes for every milestone. Two cautions surfaced:
+(1) **no existing Lean/Coq/Agda mechanization of row-based handler
+progress+preservation** — EYG's would be novel, so budget accordingly; (2) typing
+the CEK `Delimit`/`Resume` frames directly (T4) has **no direct precedent** (the
+literature types machines by *simulation* against a typed contextual semantics) —
+keep the simulation route as a fallback if direct frame-typing proves too costly.
+Both are reflected in the milestones above.
