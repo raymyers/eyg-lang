@@ -89,6 +89,17 @@ the row to *shrink* at a `Delimit` pop. ⚠ This is the one place the ambient `�
 invariant across a step — see "row-change subtlety" below.
 
 ### 4. `Resume` partial typing — the reified continuation
+**✅ KEYSTONE DELIVERED (T5d).** No new judgment is needed: `StackWf` is *already* a
+segment typing (`StackWf.nil : StackWf [] σ ε σ` is the identity). `Eyg/Types/Machine.lean`
+now has `stackWf_append`, `move_eq`, and `stackWf_move : StackWf acc.reverse σin ε σmid
+→ StackWf k σmid ε τ → StackWf (move acc k) σin ε τ` (axioms `propext` only). So
+`partialResume` simply stores `StackWf acc.reverse reply tail ret` (the captured
+delimited prefix as a `reply ⇒ ret` segment) + the `kontTy` `TyEquiv`, and the
+`Resume` reduction's `move acc k` successor is typed by `stackWf_move`. The original
+"segment transformer" higher-order formulation below is **not needed** — the concrete
+`StackWf`-segment + `stackWf_move` is simpler and is proved.
+
+Original (superseded) sketch:
 `resume = Partial (Resume acc iEnv) []` must type as `Fun(reply, tail, ret)` (the
 `kontTy`). When called with `r : reply`, it does `.V r, capturedEnv, move acc k`. So
 `acc` is a captured stack segment that takes a `reply`-value, under row `tail`, to…

@@ -69,6 +69,50 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
       StackWf rest retTy ε τout →
       StackWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy ε retTy) ε τout
 
+/-! ## Stack composition (keystone for `Resume`/`Handle`, T5d)
+
+`StackWf` is *already* a stack-**segment** typing: `StackWf.nil : StackWf [] σ ε σ` is
+the identity transformer, so `StackWf seg σin ε σmid` types `seg` as a transformer
+`σin ⇒ σmid` (its `nil`-base is the hole that the continuation plugs into). Hence the
+delimited continuation that `Resume` reifies (a captured stack prefix `acc`, re-pushed
+via `move`) needs no new typing judgment — just these two facts:
+
+* `stackWf_append` — composing two segment typings end-to-end (the hole of the first
+  is filled by the second);
+* `move_eq` — the interpreter's `move acc k` is `acc.reverse ++ k`.
+
+Together: `StackWf acc.reverse σin ε σmid → StackWf k σmid ε τ → StackWf (move acc k)
+σin ε τ`. This is what types `Resume`'s `move frames k` successor in the T5 `Handle`
+slice. Proved here, isolated, ahead of the cascade. -/
+
+/-- **Stack composition.** A segment `seg` typed `σin ⇒ σmid` (a `StackWf` whose
+`nil`-base is the plug point) followed by a stack `k` typed `σmid ⇒ τ` yields a stack
+`seg ++ k` typed `σin ⇒ τ`: the segment's identity base is replaced by `k`. -/
+theorem stackWf_append {m : Type} {seg k : Stack m} {σin σmid ε τ : Ty}
+    (hseg : StackWf seg σin ε σmid) (hk : StackWf k σmid ε τ) :
+    StackWf (seg ++ k) σin ε τ := by
+  induction hseg with
+  | nil => exact hk
+  | trace _ ih => exact .trace (ih hk)
+  | assign henv hbody _ ih => exact .assign henv hbody (ih hk)
+  | arg henv harg _ ih => exact .arg henv harg (ih hk)
+  | applyf hf _ ih => exact .applyf hf (ih hk)
+  | callwith harg _ ih => exact .callwith harg (ih hk)
+
+/-- The interpreter's `move acc k` (re-push popped frames) is `acc.reverse ++ k`. -/
+theorem move_eq {m : Type} (acc k : Stack m) : move acc k = acc.reverse ++ k := by
+  induction acc generalizing k with
+  | nil => rfl
+  | cons hd rest ih => obtain ⟨s, mt⟩ := hd; simp [move, ih, List.reverse_cons]
+
+/-- **Resume composition.** Feeding a reply into the reified continuation `move acc k`
+is well-typed: `acc.reverse` (the delimited prefix in original order) is a segment
+`σin ⇒ σmid`, composed onto the base stack `k` (`σmid ⇒ τ`). -/
+theorem stackWf_move {m : Type} {acc k : Stack m} {σin σmid ε τ : Ty}
+    (hseg : StackWf acc.reverse σin ε σmid) (hk : StackWf k σmid ε τ) :
+    StackWf (move acc k) σin ε τ := by
+  rw [move_eq]; exact stackWf_append hseg hk
+
 /-- A machine state is well-typed at answer type `τ` and effect row `ε`: the
 control yields an intermediate `τin` that the stack carries to `τ`. A `wait op env
 k` state (suspended performing `op`, awaiting a reply) is typed by **effect safety**

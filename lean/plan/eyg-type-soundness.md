@@ -473,8 +473,16 @@ This is the milestone with no direct mechanization precedent — see the fork be
       at `runR`/`BehaviorsR` (T6/T7). All sorry-free, axioms
       `propext`/`Classical.choice`/`Quot.sound`; `lake exe spec` 104/104; a sanity
       `example` types `perform "Log" "hi" : unit ! ⟨Log:(String,unit)⟩`.
-- [ ] **Type `Handle`.** ⚙ **Design worked out** in
-      `progress/2026-06-16-T5-handle-design.md` (the `handle` scheme; the `Delimit`
+- [~] **Type `Handle`.** ⚙ **Design worked out** in
+      `progress/2026-06-16-T5-handle-design.md`. **Keystone DELIVERED ahead of the
+      cascade** (T5d, `Eyg/Types/Machine.lean`): the `Resume` continuation typing needs
+      *no new judgment* — `StackWf` is already a stack-**segment** typing (its `nil` is
+      the identity transformer), so `stackWf_append` (compose two segments) + `move_eq`
+      (`move acc k = acc.reverse ++ k`) give `stackWf_move : StackWf acc.reverse σin ε
+      σmid → StackWf k σmid ε τ → StackWf (move acc k) σin ε τ` — exactly what types
+      `Resume`'s `move frames k` successor. Axioms `propext` only. This was the
+      highest-risk piece (continuation typing); it composes cleanly, so the rest of
+      `Handle` is wiring. Remaining: the `handle` scheme; the `Delimit`
       answer-type-transformer frame that discharges `l`; the `Resume` reified-
       continuation typing as a stack-*segment* transformer `reply ⇒ ret`; the
       generalization of `stackWf_doPerformR_unhandled` to a handled-`.tau`-vs-escape
