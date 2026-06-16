@@ -106,6 +106,8 @@ identity there). -/
 
 /-- Domain projection: the argument type of an arrow, else the type itself. -/
 def domOf : Ty → Ty | .fun a _ _ => a | t => t
+/-- Row projection under `union`, else the type itself. -/
+def unionRow : Ty → Ty | .union r => r | t => t
 /-- Effect-row projection of an arrow, else the type itself. -/
 def effOf : Ty → Ty | .fun _ e _ => e | t => t
 /-- Codomain projection of an arrow, else the type itself. -/
@@ -150,6 +152,21 @@ theorem tyEquiv_retOf {s t : Ty} (h : TyEquiv s t) : TyEquiv (retOf s) (retOf t)
   | congrList hb _ => exact .congrList hb
   | congrRecord hr _ => exact .congrRecord hr
   | congrUnion hr _ => exact .congrUnion hr
+  | congrPromise ha _ => exact .congrPromise ha
+  | congrRow hf ht _ _ => exact .congrRow hf ht
+  | congrEff ha hb ht _ _ _ => exact .congrEff ha hb ht
+  | swapRow hne => exact .swapRow hne
+  | swapEff hne => exact .swapEff hne
+
+theorem tyEquiv_unionRow {s t : Ty} (h : TyEquiv s t) : TyEquiv (unionRow s) (unionRow t) := by
+  induction h with
+  | refl _ => exact .refl _
+  | symm _ ih => exact .symm ih
+  | trans _ _ ih₁ ih₂ => exact .trans ih₁ ih₂
+  | congrFun ha he hr _ _ _ => exact .congrFun ha he hr
+  | congrList hb _ => exact .congrList hb
+  | congrRecord hr _ => exact .congrRecord hr
+  | congrUnion hr _ => exact hr
   | congrPromise ha _ => exact .congrPromise ha
   | congrRow hf ht _ _ => exact .congrRow hf ht
   | congrEff ha hb ht _ _ _ => exact .congrEff ha hb ht

@@ -86,6 +86,10 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   | partialTag {label elem tail τ} :
       Ty.TyEquiv (.fun elem .empty (.union (.rowExtend label elem tail))) τ →
       HasTypeV (.Partial (.Tag label) []) τ
+  /-- The unsaturated `NoCases`: `⟨⟩ → β`. -/
+  | partialNoCases {ret τ} :
+      Ty.TyEquiv (.fun (.union .empty) .empty ret) τ →
+      HasTypeV (.Partial .NoCases []) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -149,6 +153,7 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | partialConsOne hh he => exact .partialConsOne hh (he.trans heq)
   | tagged hv he => exact .tagged hv (he.trans heq)
   | partialTag he => exact .partialTag (he.trans heq)
+  | partialNoCases he => exact .partialNoCases (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -179,6 +184,15 @@ theorem canonical_list {m : Type} {v : Value m} {elem : Ty} (h : HasTypeV v (.li
   cases h <;> rename_i he <;>
     first | exact ⟨_, rfl⟩ | (obtain ⟨_, hc⟩ := Ty.tyEquiv_list_inv he; simp at hc)
 
+/-- **No value inhabits the empty union.** A tagged value's natural row is a
+`rowExtend` (≠ `empty`), and every other value's natural type is not a union — so
+the carried `TyEquiv` to `union empty` is impossible (head-shape mismatch under the
+union row). This makes `NoCases` vacuously safe. -/
+theorem canonical_union_empty {m : Type} {v : Value m}
+    (h : HasTypeV v (.union .empty)) : False := by
+  cases h <;> rename_i he <;>
+    (have hs := Ty.tyEquiv_shape (Ty.tyEquiv_unionRow he); simp [Ty.shape, Ty.unionRow] at hs)
+
 /-- A value at an arrow type is a closure or a (callable) partial — never a
 literal or a data structure. Callers `cases` the typing again to dispatch on the
 partial's switch. -/
@@ -192,6 +206,7 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialConsNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialConsOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialTag _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialNoCases _ => exact Or.inr ⟨_, _, rfl⟩
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | str he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc

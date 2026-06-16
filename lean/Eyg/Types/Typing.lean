@@ -80,6 +80,10 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   (`tag(l) = pure1(q0, Union(RowExtend l q0 q1))`). -/
   | tag {Γ l elem tail ε a} :
       HasType Γ ⟨.Tag l, a⟩ (.fun elem .empty (.union (.rowExtend l elem tail))) ε
+  /-- The empty-variant eliminator `NoCases`: `∀β. ⟨⟩ → β`
+  (`nocases() = pure1(Union(Empty), q0)`). -/
+  | nocases {Γ ret ε a} :
+      HasType Γ ⟨.NoCases, a⟩ (.fun (.union .empty) .empty ret) ε
   /-- The empty record `Empty` (`prim(Record(Empty))`). -/
   | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal
