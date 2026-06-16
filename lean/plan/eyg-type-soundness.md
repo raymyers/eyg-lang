@@ -556,6 +556,18 @@ for the **whole** core language.
       under-saturation accumulation vs. saturation, plus the special
       `fix`/`list_fold`/`binary_fold` arms of `reduceCallBuiltin`). The grow-the-scheme-
       table part is also here if any untyped builtins are added.
+      **Scoping finding (sharpens T6b):** `list_fold`/`binary_fold` are **not in the
+      analyzer scheme table**, so they are *out of scope* for `BuiltinAppPreserves` (a
+      `Partial (Builtin "list_fold")` is not typeable — `partialBuiltin` requires a
+      scheme). So among the stack-coupled specials, **only `fix` matters**, and it is the
+      genuinely hard one: `reduceCallBuiltin "fix" [builder]` produces an *internal*
+      `Partial (Builtin "fixed") [builder]` which has **no scheme** (analogous to
+      `Handle`'s internal `Resume`), so typing the fix successor needs bespoke handling
+      of the `fixed` partial, not the standard `partialBuiltin`. The clean route is to
+      isolate a `FixPreserves` sub-hypothesis and discharge `BuiltinAppPreserves` for the
+      ~13 general builtins via the (now-proven) `run_*` lemmas + the saturation/
+      accumulation case split. So T6b reduces to: the `BuiltinPartialWf`/arity plumbing
+      for the general builtins (mechanical, uses T6a) + the isolated `fix`.
 - [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
 ## Milestone T7 — Packaging & corollaries
