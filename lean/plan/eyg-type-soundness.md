@@ -305,7 +305,11 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       `Closure` via `EnvWf` + body typing, `Partial` builtin at its residual arrow
       via `BuiltinPartialWf`), `EnvWf : Env m → Ctx → Prop` (lock-step) with the
       **`envwf_lookup` lemma** (replaces the substitution lemma). **Continuation
-      half deferred to T3c**: `StackWf` (answer-type transformer) and `MStateWf`.
+      half DELIVERED** (T3c-i, `Eyg/Types/Machine.lean`): `StackWf` (answer-type
+      transformer, frames `nil`/`trace`/`assign`/`arg`/`applyf`/`callwith`) and
+      `MStateWf` (control yields `τin`; stack carries it to `τ`; `wait` pinned to
+      `False` until T5). `mStateWf_initial` bridges a well-typed program to its
+      initial state. Signatures now **fixed** (plan rule 1).
 - [x] **Canonical-forms lemmas** — **DELIVERED** (T3b): `canonical_integer`/
       `_string`/`_binary` (base ⇒ literal) and `canonical_arrow` (arrow ⇒ `Closure`
       or builtin `Partial`). Resting builtin partials are typed *only at arrows*, so
