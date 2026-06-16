@@ -5,4 +5,5 @@ import Eyg.Ir.Tree
 import Eyg.Interpreter.Value
 import Eyg.Interpreter.Break
 import Eyg.Interpreter.Cast
+import Eyg.Interpreter.Builtin
 import Eyg.Interpreter.State

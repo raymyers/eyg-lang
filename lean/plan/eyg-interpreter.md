@@ -194,31 +194,41 @@ rather than `do`-notation — the `Return` abbrev fixes the `Except` success typ
 so the do-monad couldn't be inferred (`Bind Return`). Builtins (M4) and effects
 (M5) still fall through the catch-all and are marked `TODO` there.
 
-## Milestone 4 — Builtins
+## Milestone 4 — Builtins  ✅ DONE (pending suite validation in M6)
 
-**Deliverable:** `Builtin.lean` implements all 29 builtins; `builtins_suite.json`
-passes (modulo effects, which land in M5).
+**Deliverable:** all 30 builtins implemented; `builtins_suite.json` passes
+(modulo effects, M5). Suite validation lands in M6; M4 is `#guard`-checked.
 
-- [ ] `callBuiltin : String → List Value → m → Scope → Stack → Return`
-      replacing the env-stored dict (decision #1); arity handling like
-      `call_builtin` (`state.gleam:214`): under-applied → `Partial`.
-- [ ] Arithmetic: `int_add/subtract/multiply` with `Integer.isSafe` guard →
-      `Unrepresentable` on overflow; `int_divide` (0 → `Error(unit)`);
-      `int_absolute`, `int_compare` (→ `Lt/Eq/Gt` tags), `int_parse`
-      (malformed → `Error`; out-of-range → `Unrepresentable`), `int_to_string`.
-- [ ] Strings: `string_append/split/split_once/replace/uppercase/lowercase/
-      starts_with/ends_with/length/to_binary/from_binary`. **Match the
-      cross-target quirks the Gleam code documents**: empty-pattern
-      `split_once` (`builtin.gleam:167`) and empty-`from` `replace`
-      (`builtin.gleam:191`) — the fixtures encode these.
-- [ ] Binary: `binary_from_integers/size/concat/compare/fold`.
-- [ ] Lists: `list_pop`, `list_fold` (note `list_fold`/`binary_fold` build a
-      continuation stack rather than recursing — `builtin.gleam:288,357`;
-      reproduce the frame layout so effects performed inside the folded fn
-      surface correctly).
-- [ ] Recursion: `fix`/`fixed` (`builtin.gleam:24-43`), `equal`, `never`.
-- [ ] String `length` semantics: confirm grapheme vs code-point counting
-      matches Gleam `string.length`; pick the model the fixtures expect.
+- [x] `callBuiltin` (`State.lean`, in the `call` mutual block) replaces the
+      env-stored dict (decision #1); arity via `Builtin.builtinArity`, under/over-
+      applied → `Partial` (`state.gleam:214`). 26 pure builtins in
+      `Builtin.run`; 4 stack-coupled (`fix/fixed/list_fold/binary_fold`) inline.
+- [x] Arithmetic: `int_add/subtract/multiply` w/ `Integer.isSafe` →
+      `Unrepresentable`; `int_divide` (0 → `Error unit`); `int_absolute`,
+      `int_compare` (`Lt/Eq/Gt`), `int_parse` (malformed→`Error`, unsafe→
+      `Unrepresentable`), `int_to_string`.
+- [x] Strings: `append/split/split_once/replace/uppercase/lowercase/starts_with/
+      ends_with/length/to_binary/from_binary`, incl. empty-pattern `split_once`
+      and empty-`from` `replace` quirks (over **scalar values**, not graphemes —
+      see notes).
+- [x] Binary: `binary_from_integers/size/concat/compare/fold`.
+- [x] Lists: `list_pop`, `list_fold` (continuation-stack frame layout
+      reproduced; `binary_fold` likewise).
+- [x] Recursion `fix`/`fixed`, `equal`, `never`.
+- [x] `#guard`: int_add, partial under-application, overflow break, divide-by-0,
+      int_to_string, string_append, equal, list_fold sum, **fix-based factorial
+      4 = 24** — all pass.
+
+**Notes / risks carried to M6 (where the fixtures decide):**
+- **`[BEq m]` now threads through the machine** (`eval/apply/call/callBuiltin/
+  step/loop/execute/resume`): `Value`'s derived `BEq` needs `[BEq m]`, and the
+  `equal` builtin uses it. Harmless at `m = Unit`.
+- **Unicode approximations** (Lean core lacks grapheme support): `string_length`
+  counts scalar values not graphemes; `string_replace` empty-`from` / `string_
+  uppercase`/`lowercase` use scalar/`Char` ops. May diverge from Gleam on
+  non-ASCII fixtures — revisit if M6 fails.
+- **`int_parse`** uses `String.toInt?`; confirm it matches Gleam `int.parse`
+  (sign/leading-zero/`+` handling) against the fixtures.
 
 ## Milestone 5 — Algebraic effects: perform / handle / resume
 

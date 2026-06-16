@@ -1,5 +1,6 @@
 import Eyg.Interpreter.Break
 import Eyg.Interpreter.Cast
+import Eyg.Interpreter.Builtin
 
 /-!
 # EYG CEK machine
@@ -82,7 +83,7 @@ abbrev Return (m : Type) := Except (Reason m) (Control m × Env m × Stack m)
 mutual
 
 /-- One expression → next configuration (`state.gleam:91`). -/
-partial def eval (exp : Tree.Node m) (env : Env m) (k : Stack m) : EvalReturn m :=
+partial def eval [BEq m] (exp : Tree.Node m) (env : Env m) (k : Stack m) : EvalReturn m :=
   let ann := exp.annotation
   let value : Value m → Return m := fun val => .ok (.V val, env, k)
   let res : Return m :=
@@ -118,7 +119,7 @@ partial def eval (exp : Tree.Node m) (env : Env m) (k : Stack m) : EvalReturn m 
   res.mapError (fun reason => (reason, ann, env, k))
 
 /-- A value meets the top continuation frame (`state.gleam:137`). -/
-partial def apply (val : Value m) (env : Env m) (k : Kontinue m) (ann : m) (rest : Stack m) :
+partial def apply [BEq m] (val : Value m) (env : Env m) (k : Kontinue m) (ann : m) (rest : Stack m) :
     EvalReturn m :=
   let res : Return m :=
     match k with
@@ -136,7 +137,7 @@ partial def apply (val : Value m) (env : Env m) (k : Kontinue m) (ann : m) (rest
 the structured-value operators (M3). Builtins (`Switch.Builtin`, M4) and effects
 (`Perform`/`Handle`/`Resume`, M5) are not yet wired and currently fall through
 the generic accumulation catch-all. -/
-partial def call (f : Value m) (arg : Value m) (ann : m) (env : Env m) (k : Stack m) : Return m :=
+partial def call [BEq m] (f : Value m) (arg : Value m) (ann : m) (env : Env m) (k : Stack m) : Return m :=
   match f with
   | .Closure param body captured =>
       .ok (.E body, (param, arg) :: captured, (Kontinue.Trace arg, ann) :: k)
@@ -172,10 +173,55 @@ partial def call (f : Value m) (arg : Value m) (ann : m) (env : Env m) (k : Stac
               if l == label then call branch inner ann env k
               else call otherwise arg ann env k
       | .NoCases, [] => .error (.NoMatch arg)
-      -- TODO(M4): `.Builtin key, applied => callBuiltin …`
+      | .Builtin key, applied => callBuiltin key (applied ++ [arg]) ann env k
       -- TODO(M5): `.Perform`/`.Handle`/`.Resume`
       | switch, applied => .ok (.V (.Partial switch (applied ++ [arg])), env, k)
   | term => .error (.NotAFunction term)
+
+/-- Dispatch a (fully-applied) builtin by name (`state.gleam:214`, decision #1).
+
+The 4 stack-coupled builtins push continuation frames and re-enter `call` here;
+the 26 pure builtins delegate to `Builtin.run`. Under/over-application (arg count
+≠ arity) accumulates as `Partial (Builtin key) applied`, matching the Gleam
+`_, _args -> Partial` fall-through. -/
+partial def callBuiltin [BEq m] (key : String) (applied : List (Value m)) (ann : m)
+    (env : Env m) (k : Stack m) : Return m :=
+  match key, applied with
+  | "fix", [builder] =>
+      call builder (.Partial (.Builtin "fixed") [builder]) ann env k
+  | "fixed", [builder, arg] =>
+      call builder (.Partial (.Builtin "fixed") [builder]) ann env
+        ((Kontinue.CallWith arg env, ann) :: k)
+  | "list_fold", [lst, st, func] =>
+      match Cast.asList lst with
+      | .error e => .error e
+      | .ok [] => .ok (.V st, env, k)
+      | .ok (element :: rest) =>
+          call func element ann env
+            ((Kontinue.CallWith st env, ann) ::
+             (Kontinue.Apply (.Partial (.Builtin "list_fold") [.LinkedList rest]) env, ann) ::
+             (Kontinue.CallWith func env, ann) :: k)
+  | "binary_fold", [bin, st, func] =>
+      match Cast.asBinary bin with
+      | .error e => .error e
+      | .ok bytes =>
+          if bytes.size == 0 then .ok (.V st, env, k)
+          else
+            let byte := bytes.get! 0
+            let rest := bytes.extract 1 bytes.size
+            call func (.Integer (Int.ofNat byte.toNat)) ann env
+              ((Kontinue.CallWith st env, ann) ::
+               (Kontinue.Apply (.Partial (.Builtin "binary_fold") [.Binary rest]) env, ann) ::
+               (Kontinue.CallWith func env, ann) :: k)
+  | _, _ =>
+      match Builtin.builtinArity key with
+      | none => .error (.UndefinedBuiltin key)
+      | some n =>
+          if applied.length == n then
+            match Builtin.run key applied with
+            | .error e => .error e
+            | .ok value => .ok (.V value, env, k)
+          else .ok (.V (.Partial (.Builtin key) applied), env, k)
 
 end
 
@@ -187,24 +233,24 @@ def ofEvalReturn : EvalReturn m → Next m
   | .error info => .Break (.error info)
 
 /-- One machine step (`state.gleam:76`). -/
-def step (c : Control m) (env : Env m) (k : Stack m) : Next m :=
+def step [BEq m] (c : Control m) (env : Env m) (k : Stack m) : Next m :=
   match c, k with
   | .E exp, k => ofEvalReturn (eval exp env k)
   | .V value, [] => .Break (.ok value)
   | .V value, (kont, ann) :: rest => ofEvalReturn (apply value env kont ann rest)
 
 /-- Drive the machine to a break (`expression.gleam:18`). -/
-partial def loop : Next m → Except (Debug m) (Value m)
+partial def loop [BEq m] : Next m → Except (Debug m) (Value m)
   | .Loop c e k => loop (step c e k)
   | .Break result => result
 
 /-- Execute an expression within a scope (`expression.gleam:26`). The builtin
 dict is gone (decision #1), so `builtin.default(scope)` is just `scope`. -/
-def execute (exp : Tree.Node m) (scope : Scope m) : Except (Debug m) (Value m) :=
+def execute [BEq m] (exp : Tree.Node m) (scope : Scope m) : Except (Debug m) (Value m) :=
   loop (step (.E exp) scope [])
 
 /-- Resume the loop with a value from a previous break (`expression.gleam:10`). -/
-def resume (value : Value m) (env : Env m) (k : Stack m) : Except (Debug m) (Value m) :=
+def resume [BEq m] (value : Value m) (env : Env m) (k : Stack m) : Except (Debug m) (Value m) :=
   loop (step (.V value) env k)
 
 /-! ## Sanity checks (Milestone 2) -/
@@ -248,6 +294,45 @@ section
 #guard (execute
   (Tree.match_ (Tree.tagged "None" (Tree.integer 7))
     [("Some", Tree.lambda "x" (Tree.variable_ "x"))]) []).toOption == none
+
+/-! ### Builtins (Milestone 4) -/
+
+-- int_add: 2 + 3 ⟶ 5
+#guard (execute (Tree.add (Tree.integer 2) (Tree.integer 3)) []).toOption == some (.Integer 5)
+-- partial builtin: `int_add(2)` stays Partial (under-applied)
+#guard (execute (Tree.apply (Tree.builtin "int_add") (Tree.integer 2)) []).toOption
+  == some (.Partial (.Builtin "int_add") [.Integer 2])
+-- overflow: 2^53 + 1 ⟶ Unrepresentable break
+#guard (execute (Tree.add (Tree.integer 9007199254740991) (Tree.integer 1)) []).toOption == none
+-- int_divide by zero ⟶ Error(unit)
+#guard (execute (Tree.apply (Tree.apply (Tree.builtin "int_divide") (Tree.integer 7))
+  (Tree.integer 0)) []).toOption == some (error unit)
+-- int_to_string
+#guard (execute (Tree.apply (Tree.builtin "int_to_string") (Tree.integer (-42))) []).toOption
+  == some (.String "-42")
+-- string_append
+#guard (execute (Tree.apply (Tree.apply (Tree.builtin "string_append") (Tree.string "ab"))
+  (Tree.string "cd")) []).toOption == some (.String "abcd")
+-- equal
+#guard (execute (Tree.apply (Tree.apply (Tree.builtin "equal") (Tree.integer 1))
+  (Tree.integer 1)) []).toOption == some true'
+-- list_fold sums [1,2,3] with int_add, seed 0 ⟶ 6
+#guard (execute (Tree.call (Tree.builtin "list_fold")
+  [Tree.list [Tree.integer 1, Tree.integer 2, Tree.integer 3], Tree.integer 0,
+   Tree.builtin "int_add"]) []).toOption == some (.Integer 6)
+-- fix-based recursion: factorial 4 ⟶ 24
+-- fix(\self. \n. match int_compare(n, 0) { Eq -> 1 | _ -> n * self(n-1) })
+private def fact : Tree.Node Unit :=
+  let selfNMinus1 := Tree.apply (Tree.variable_ "self")
+    (Tree.subtract (Tree.variable_ "n") (Tree.integer 1))
+  let body := Tree.lambda "self" (Tree.lambda "n"
+    (Tree.match_ (Tree.apply (Tree.apply (Tree.builtin "int_compare") (Tree.variable_ "n"))
+        (Tree.integer 0))
+      [("Eq", Tree.lambda "_" (Tree.integer 1)),
+       ("Lt", Tree.lambda "_" (Tree.multiply (Tree.variable_ "n") selfNMinus1)),
+       ("Gt", Tree.lambda "_" (Tree.multiply (Tree.variable_ "n") selfNMinus1))]))
+  Tree.apply (Tree.apply (Tree.builtin "fix") body) (Tree.integer 4)
+#guard (execute fact []).toOption == some (.Integer 24)
 end
 
 end Eyg.Interpreter
