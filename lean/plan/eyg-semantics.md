@@ -212,6 +212,51 @@ the on-ramp to verified compilation.
       so there is one builtin implementation shared by interpreter and FBS (and
       reusable by any future target). Exercised by `FBS≡interpreter: 104/104`.
 
+## Milestone S7 — Review findings: crash / unhandled-effect coverage (unfinished)
+
+Raised by the 2026-06-16 diff review (commits `8123d47f..3c66765c`). The core
+development is sound — full build green, `lake exe spec` 104/104 + FBS agreement,
+zero `sorry`, axioms clean (`propext`/`Classical.choice`/`Quot.sound` only). The
+following are coverage/coherence gaps, all clustered on the **crash / unhandled
+effect** path, not proof defects.
+
+- [ ] **Crash-outcome conformance is untested against the spec.** All 104
+      `spec/evaluation/*.json` fixtures expect a `value`; **none** expects a
+      `break`/error, and every effect fixture supplies matching replies. So the
+      `FBS≡interpreter: 104/104` cross-check never exercises the `eval`
+      `.done (.crash reason)` branch, nor the `.effect ≡ .error UnhandledEffect`
+      reconciliation case in `Spec.Harness.fbsAgreesInterp`. The harness *decoder*
+      supports `break` expectations (`UndefinedVariable`/`UndefinedBuiltin`/
+      `NotImplemented`→`Vacant`), but the authoritative suite has zero negative
+      fixtures. Net: "matches the interpreter/spec on every fixture" currently
+      means the **value path only**; crash agreement (FBS ↔ interpreter ↔ spec) is
+      unverified. *Fix:* add negative fixtures (and an unhandled-effect-at-top-
+      level fixture) upstream, or add dedicated `#guard`s cross-checking `eval`'s
+      crash against `execute`'s error on the same term.
+
+- [ ] **Doc vs. model: `UnhandledEffect` is documented as a crash but modeled as
+      an open perform.** `Basic.lean` (`Outcome` doc) and `README.md` list
+      "`UnhandledEffect` at top level" as a `crash` example, but the model never
+      produces it: `eval` maps `UnhandledEffect` to `.effect` (suspended),
+      `MState.outcome?` returns `none`, and the LTS lets a `wait` state `reply`
+      with *any* value (an open-system reading). The interpreter `execute`, by
+      contrast, returns `.error UnhandledEffect` — a closed crash. The two are
+      reconciled only by the ad-hoc `fbsAgreesInterp` case, not at the `Behaviors`
+      level. *Fix:* correct the docs and decide the intended reading (open
+      boundary vs. closed top-level crash); they currently disagree.
+
+- [ ] **`Behaviors` cannot classify a top-level unhandled effect; `eval_effect_
+      mem_behaviors` is misnamed.** Unlike its siblings `eval_done_mem_behaviors`
+      / `timeout_mem_behaviors` (which conclude `… ∈ Behaviors cfg`),
+      `eval_effect_mem_behaviors` concludes an `MTr`-to-`wait`, *not* a
+      `Behaviors` membership — because `Behavior` has only `terminates` and
+      `diverges`, no constructor for "ends suspended at an unanswered effect." So
+      the "tie the knot: interpreter → eval → Behaviors" claim has a hole exactly
+      at the effect case. *Fix:* either add a `Behavior.suspended op lift`
+      constructor (open reading) or fold a top-level unhandled effect into a
+      `crash` outcome (closed reading), then rename/retarget the lemma so its name
+      matches its conclusion.
+
 ---
 
 ## Definition of done
