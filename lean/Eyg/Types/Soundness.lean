@@ -612,17 +612,22 @@ def ReplyContract {m : Type} [BEq m] (ε : Ty) : MState m → Label m → Prop
 /-! ## Preservation -/
 
 /-- **Preservation**: a well-typed state stays well-typed under `Reduce` (modulo
-the T6 builtin-application obligation `hsat`). `tau` splits into the `.E`/`.V` cases;
-`perform` lands a well-typed `wait` (effect safety: `op ∈ ε`, via
-`preservation_perform`); `reply` resumes with a reply value typed by the
-`ReplyContract` (`hrep`) — vacuous for the `tau`/`perform` transitions, and never
-exercised by closed `evalR` (which makes `perform` terminal). -/
+the T6 builtin-application obligation `hsat`). The successor is well-typed at *some*
+ambient row `ε'` — the same `ε` for the pure/data/`Perform` fragment, but the row
+**shrinks** across an effect-discharging `Delimit` pop (T5 `Handle`), so the row is an
+*output* not an invariant. This loses nothing for soundness: `soundness_value`
+concludes the ε-free `HasTypeV v τ`. `tau` splits into the `.E`/`.V` cases; `perform`
+lands a well-typed `wait` (effect safety: `op ∈ ε`, `preservation_perform`); `reply`
+resumes with a reply value typed by the `ReplyContract` (`hrep`) — vacuous for
+`tau`/`perform`, and never exercised by closed `evalR` (which makes `perform`
+terminal). -/
 theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
     {s s' : MState m} {μ : Label m} {τ ε : Ty}
     (hwf : MStateWf s τ ε) (hr : Reduce s μ s') (hrep : ReplyContract ε s μ) :
-    MStateWf s' τ ε := by
+    ∃ ε', MStateWf s' τ ε' := by
   cases hr with
   | tau h =>
+      refine ⟨ε, ?_⟩
       rename_i cfg cfg'
       obtain ⟨c, env, k⟩ := cfg
       cases c with
@@ -633,11 +638,11 @@ theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
           | cons kontann rest =>
               obtain ⟨kont, ann⟩ := kontann
               exact preservation_V hsat hwf h
-  | perform h => exact preservation_perform hwf h
+  | perform h => exact ⟨ε, preservation_perform hwf h⟩
   | reply =>
       obtain ⟨a, b, replyTy, hEff, hbr, hStack⟩ := hwf
       simp only [ReplyContract] at hrep
-      exact ⟨replyTy, (hrep a b hEff).conv hbr, hStack⟩
+      exact ⟨ε, replyTy, (hrep a b hEff).conv hbr, hStack⟩
 
 /-! ## Soundness: a well-typed run never crashes; its result is typed
 
@@ -784,7 +789,8 @@ theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) :
       cases hrr : reduce1Run cfg with
       | tau cfg' =>
           rw [hrr] at h
-          exact ih (preservation hsat hwf (Reduce.tau hrr) trivial) h
+          obtain ⟨ε', hwf'⟩ := preservation hsat hwf (Reduce.tau hrr) trivial
+          exact ih hwf' h
       | done o =>
           rw [hrr] at h
           cases o with
