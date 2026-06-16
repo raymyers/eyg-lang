@@ -84,6 +84,13 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   (`nocases() = pure1(Union(Empty), q0)`). -/
   | nocases {Γ ret ε a} :
       HasType Γ ⟨.NoCases, a⟩ (.fun (.union .empty) .empty ret) ε
+  /-- Variant decomposition `Case l`: `(α→⟨e⟩β) → (⟨r⟩→⟨e⟩β) → (⟨l:α|r⟩→⟨e⟩β)`
+  (`case_(l) = pure2(branch, otherwise, exec)`). -/
+  | case_ {Γ l inner eff ret tail ε a} :
+      HasType Γ ⟨.Case l, a⟩
+        (.fun (.fun inner eff ret) .empty
+          (.fun (.fun (.union tail) eff ret) .empty
+            (.fun (.union (.rowExtend l inner tail)) eff ret))) ε
   /-- The empty record `Empty` (`prim(Record(Empty))`). -/
   | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal

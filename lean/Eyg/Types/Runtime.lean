@@ -1,5 +1,6 @@
 import Eyg.Types.Typing
 import Eyg.Types.TyEquivInv
+import Eyg.Types.Row
 import Eyg.Interpreter.State
 
 /-!
@@ -90,6 +91,25 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   | partialNoCases {ret τ} :
       Ty.TyEquiv (.fun (.union .empty) .empty ret) τ →
       HasTypeV (.Partial .NoCases []) τ
+  /-- `Case l` with no args: the full match scheme
+  `(inner →⟨e⟩ r) → (⟨tail⟩ →⟨e⟩ r) → (⟨l:inner|tail⟩ →⟨e⟩ r)`. -/
+  | partialMatchNil {label inner eff ret tail τ} :
+      Ty.TyEquiv (.fun (.fun inner eff ret) .empty
+        (.fun (.fun (.union tail) eff ret) .empty
+          (.fun (.union (.rowExtend label inner tail)) eff ret))) τ →
+      HasTypeV (.Partial (.Match label) []) τ
+  /-- `Case l` with the branch applied. -/
+  | partialMatchOne {label branch inner eff ret tail τ} :
+      HasTypeV branch (.fun inner eff ret) →
+      Ty.TyEquiv (.fun (.fun (.union tail) eff ret) .empty
+        (.fun (.union (.rowExtend label inner tail)) eff ret)) τ →
+      HasTypeV (.Partial (.Match label) [branch]) τ
+  /-- `Case l` with both branches applied: `⟨l:inner|tail⟩ →⟨e⟩ r`. -/
+  | partialMatchTwo {label branch otherwise inner eff ret tail τ} :
+      HasTypeV branch (.fun inner eff ret) →
+      HasTypeV otherwise (.fun (.union tail) eff ret) →
+      Ty.TyEquiv (.fun (.union (.rowExtend label inner tail)) eff ret) τ →
+      HasTypeV (.Partial (.Match label) [branch, otherwise]) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -154,6 +174,9 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | tagged hv he => exact .tagged hv (he.trans heq)
   | partialTag he => exact .partialTag (he.trans heq)
   | partialNoCases he => exact .partialNoCases (he.trans heq)
+  | partialMatchNil he => exact .partialMatchNil (he.trans heq)
+  | partialMatchOne hb he => exact .partialMatchOne hb (he.trans heq)
+  | partialMatchTwo hb ho he => exact .partialMatchTwo hb ho (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -193,6 +216,12 @@ theorem canonical_union_empty {m : Type} {v : Value m}
   cases h <;> rename_i he <;>
     (have hs := Ty.tyEquiv_shape (Ty.tyEquiv_unionRow he); simp [Ty.shape, Ty.unionRow] at hs)
 
+/-- A value at a union type is a `Tagged` value. -/
+theorem canonical_union {m : Type} {v : Value m} {row : Ty} (h : HasTypeV v (.union row)) :
+    ∃ label inner, v = .Tagged label inner := by
+  cases h <;> rename_i he <;>
+    first | exact ⟨_, _, rfl⟩ | (have hs := Ty.tyEquiv_shape he; simp [Ty.shape] at hs)
+
 /-- A value at an arrow type is a closure or a (callable) partial — never a
 literal or a data structure. Callers `cases` the typing again to dispatch on the
 partial's switch. -/
@@ -207,6 +236,9 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialConsOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialTag _ => exact Or.inr ⟨_, _, rfl⟩
   | partialNoCases _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialMatchNil _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialMatchOne _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialMatchTwo _ _ _ => exact Or.inr ⟨_, _, rfl⟩
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | str he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
