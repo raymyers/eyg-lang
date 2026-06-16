@@ -338,11 +338,13 @@ The following minor items are non-blocking but worth tidying:
 - [ ] **(optional) `move` is `List.reverseAux`.** `State.lean:85` hand-rolls
       `frames.reverse ++ k`. Kept for one-to-one parity with Gleam's `state.move`;
       fine to leave, but a one-liner alias would do.
-- [ ] **(low-confidence) `binary_from_integers` negative inputs.**
-      `Builtin.lean:183` uses `UInt8.ofNat (i.toNat % 256)`; `Int.toNat` clamps
-      negatives to 0, so a negative element becomes byte 0 rather than wrapping
-      mod 256. No fixture exercises negatives, so unverified against Gleam —
-      confirm the intended truncation semantics if negatives are ever in scope.
+- [x] **`binary_from_integers` negative inputs.** Confirmed against
+      `builtin.gleam:319` (`<<i, acc:bits>>` = low 8 bits, two's-complement, so
+      `-1 → 255`). Fixed: now `UInt8.ofNat (i % 256).toNat` — `Int % 256` is
+      already non-negative in Lean, dropping the buggy `i.toNat` clamp that
+      mapped every negative to byte 0. Locked with a `#guard`
+      (`[-1, 256, 300] → <<255, 0, 44>>`). No spec fixture exercises negatives,
+      so this is covered only by the new guard.
 
 ## Risks / watch-list
 

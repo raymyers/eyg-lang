@@ -180,7 +180,10 @@ def run [BEq m] (id : String) (args : List (Value m)) : Except (Reason m) (Value
   | "binary_from_integers", [a] => do
       let elements ← Cast.asList a
       let ints ← elements.mapM Cast.asInteger
-      .ok (.Binary (ByteArray.mk (ints.map (fun i => UInt8.ofNat (i.toNat % 256))).toArray))
+      -- Gleam builds `<<i, …:bits>>`, i.e. the low 8 bits of each `i`
+      -- (two's-complement for negatives: `-1 → 255`). `Int % 256` is already
+      -- non-negative in Lean, so this matches without an `Int.toNat` clamp.
+      .ok (.Binary (ByteArray.mk (ints.map (fun i => UInt8.ofNat (i % 256).toNat)).toArray))
   | "binary_size", [a] => do
       let b ← Cast.asBinary a; .ok (.Integer (Int.ofNat b.size))
   | "binary_concat", [a, b] => do
@@ -195,5 +198,13 @@ def run [BEq m] (id : String) (args : List (Value m)) : Except (Reason m) (Value
       | [] => .ok (error unit)
       | head :: tail => .ok (ok (mkRecord [("head", head), ("tail", .LinkedList tail)]))
   | _, _ => .error (.UndefinedBuiltin id)
+
+/-! ## Smoke checks -/
+
+-- `binary_from_integers` takes the low 8 bits of each element (Gleam `<<i>>`):
+-- `-1 → 255`, `256 → 0`, `300 → 44`.
+#guard (run (m := Unit) "binary_from_integers"
+    [.LinkedList [.Integer (-1), .Integer 256, .Integer 300]]).toOption
+  == some (.Binary (ByteArray.mk #[255, 0, 44]))
 
 end Eyg.Interpreter.Builtin
