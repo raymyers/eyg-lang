@@ -71,6 +71,10 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   | builtin {Γ id s args ε a} :
       Builtins.scheme id = some s →
       HasType Γ ⟨.Builtin id, a⟩ (s.instantiate args) ε
+  /-- The empty list `Tail`, polymorphic in its element type (`prim(List(q0))`). -/
+  | tail {Γ elem ε a} : HasType Γ ⟨.Tail, a⟩ (.list elem) ε
+  /-- The empty record `Empty` (`prim(Record(Empty))`). -/
+  | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal
   ones (Leijen's `∼=` in the application rule) so row order never blocks a rule. -/
   | conv {Γ e τ τ' ε ε'} :

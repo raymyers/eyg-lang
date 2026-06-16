@@ -106,10 +106,17 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
         refine ⟨τin, HasTypeV.partialBuiltin (args := args) hs ?_ heq, hst⟩
         rw [harrow]; exact BuiltinPartialWf.nil
       · exact absurd hr (by simp)
+  | Tail =>
+      simp only [reduce1Run, reduceEval] at hr; cases hr
+      obtain ⟨elem, heq⟩ := inv_tail hty
+      exact ⟨τin, HasTypeV.listNil heq, hst⟩
+  | Empty =>
+      simp only [reduce1Run, reduceEval] at hr; cases hr
+      exact ⟨τin, HasTypeV.recordNil (inv_empty hty), hst⟩
   | _ =>
       exfalso
       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
-        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> simp at h
+        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | h | h <;> simp at h
 
 /-- The builtin **application/saturation** preservation obligation, isolated as a
 hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
@@ -361,10 +368,12 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
       | Lambda x b => exact Or.inl ⟨_, rfl⟩
       | Apply f a => exact Or.inl ⟨_, rfl⟩
       | Let x d b => exact Or.inl ⟨_, rfl⟩
+      | Tail => exact Or.inl ⟨_, rfl⟩
+      | Empty => exact Or.inl ⟨_, rfl⟩
       | _ =>
           exfalso
           rcases hasType_expr_form hty with ⟨_, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, _, hh⟩ |
-            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ <;> simp at hh
+            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | hh | hh <;> simp at hh
   | V w =>
       cases k with
       | nil => exact Or.inr (Or.inl ⟨w, rfl⟩)

@@ -103,7 +103,8 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
     (∃ x, e.expr = .Variable x) ∨ (∃ x b, e.expr = .Lambda x b) ∨
     (∃ f arg, e.expr = .Apply f arg) ∨ (∃ x d b, e.expr = .Let x d b) ∨
     (∃ n, e.expr = .Integer n) ∨ (∃ s, e.expr = .String s) ∨
-    (∃ b, e.expr = .Binary b) ∨ (∃ id, e.expr = .Builtin id) := by
+    (∃ b, e.expr = .Binary b) ∨ (∃ id, e.expr = .Builtin id) ∨
+    e.expr = .Tail ∨ e.expr = .Empty := by
   induction h with
   | var => exact Or.inl ⟨_, rfl⟩
   | lam => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
@@ -112,8 +113,29 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
   | int => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))
   | str => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))
   | bin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))))
-  | builtin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨_, rfl⟩))))))
+  | builtin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))))
+  | tail => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))))
+  | empty =>
+      exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl))))))))
   | conv _ _ _ ih => exact ih
+
+/-- Inversion for `Tail`: a type equivalent to some list type. -/
+theorem inv_tail {Γ : Ctx} {a : m} {τ ε : Ty}
+    (h : HasType Γ (⟨.Tail, a⟩ : Tree.Node m) τ ε) : ∃ elem, Ty.TyEquiv (.list elem) τ := by
+  generalize he : (⟨.Tail, a⟩ : Tree.Node m) = e at h
+  induction h with
+  | tail => exact ⟨_, .refl _⟩
+  | conv _ hτ _ ih => obtain ⟨elem, heq⟩ := ih he; exact ⟨elem, heq.trans hτ⟩
+  | _ => simp at he
+
+/-- Inversion for `Empty`: a type equivalent to the empty record. -/
+theorem inv_empty {Γ : Ctx} {a : m} {τ ε : Ty}
+    (h : HasType Γ (⟨.Empty, a⟩ : Tree.Node m) τ ε) : Ty.TyEquiv (.record .empty) τ := by
+  generalize he : (⟨.Empty, a⟩ : Tree.Node m) = e at h
+  induction h with
+  | empty => exact .refl _
+  | conv _ hτ _ ih => exact (ih he).trans hτ
+  | _ => simp at he
 
 theorem inv_app {Γ : Ctx} {f arg : Tree.Node m} {a : m} {τ ε : Ty}
     (h : HasType Γ (⟨.Apply f arg, a⟩ : Tree.Node m) τ ε) :

@@ -62,6 +62,10 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
       BuiltinPartialWf (s.instantiate args) applied (.fun a ε r) →
       Ty.TyEquiv (.fun a ε r) τ →
       HasTypeV (.Partial (.Builtin id) applied) τ
+  /-- The empty list inhabits any list type. -/
+  | listNil {elem τ} : Ty.TyEquiv (.list elem) τ → HasTypeV (.LinkedList []) τ
+  /-- The empty record inhabits the empty-row record type. -/
+  | recordNil {τ} : Ty.TyEquiv (.record .empty) τ → HasTypeV (.Record []) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -118,6 +122,8 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | bin he => exact .bin (he.trans heq)
   | closure henv hbody he => exact .closure henv hbody (he.trans heq)
   | partialBuiltin hs hp he => exact .partialBuiltin hs hp (he.trans heq)
+  | listNil he => exact .listNil (he.trans heq)
+  | recordNil he => exact .recordNil (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -135,6 +141,8 @@ theorem canonical_integer {m : Type} {v : Value m} (h : HasTypeV v .integer) :
   | bin he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
   | closure _ _ he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
   | partialBuiltin _ _ he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
+  | listNil he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
+  | recordNil he => have hc := Ty.tyEquiv_integer_inv he; simp at hc
 
 theorem canonical_string {m : Type} {v : Value m} (h : HasTypeV v .string) :
     ∃ s, v = .String s := by
@@ -144,6 +152,8 @@ theorem canonical_string {m : Type} {v : Value m} (h : HasTypeV v .string) :
   | bin he => have hc := Ty.tyEquiv_string_inv he; simp at hc
   | closure _ _ he => have hc := Ty.tyEquiv_string_inv he; simp at hc
   | partialBuiltin _ _ he => have hc := Ty.tyEquiv_string_inv he; simp at hc
+  | listNil he => have hc := Ty.tyEquiv_string_inv he; simp at hc
+  | recordNil he => have hc := Ty.tyEquiv_string_inv he; simp at hc
 
 theorem canonical_binary {m : Type} {v : Value m} (h : HasTypeV v .binary) :
     ∃ b, v = .Binary b := by
@@ -153,6 +163,8 @@ theorem canonical_binary {m : Type} {v : Value m} (h : HasTypeV v .binary) :
   | str he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
   | closure _ _ he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
   | partialBuiltin _ _ he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
+  | listNil he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
+  | recordNil he => have hc := Ty.tyEquiv_binary_inv he; simp at hc
 
 /-- A value at an arrow type is a closure or a (callable) builtin partial. -/
 theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
@@ -165,6 +177,8 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | str he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | bin he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
+  | listNil he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
+  | recordNil he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
 
 /-! ## Sanity checks -/
 
