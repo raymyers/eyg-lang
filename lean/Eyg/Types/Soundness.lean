@@ -225,6 +225,87 @@ theorem run_string_length [BEq m] {a v : Value m} (ha : HasTypeV a .string)
   simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
   cases h; exact HasTypeV.int (.refl _)
 
+/-- The unit value inhabits the unit (empty record) type. -/
+theorem hasTypeV_unit [BEq m] : HasTypeV (Eyg.Interpreter.unit : Value m) Ty.unit := by
+  refine HasTypeV.record ?_ ?_ (.refl _)
+  · intro l f hc; cases hc
+  · intro l f v hc hg; cases hc
+
+/-- A boolean value inhabits the `boolean` union type. -/
+theorem hasTypeV_bool [BEq m] (b : Bool) : HasTypeV (Eyg.Interpreter.bool b : Value m) Ty.boolean := by
+  cases b with
+  | true =>
+      refine HasTypeV.tagged (tail := .rowExtend "False" Ty.unit .empty) hasTypeV_unit ?_
+      simp only [Ty.boolean, Ty.union', Ty.rows]; exact .refl _
+  | false =>
+      refine HasTypeV.tagged (tail := .rowExtend "True" Ty.unit .empty) hasTypeV_unit ?_
+      simp only [Ty.boolean, Ty.union', Ty.rows]
+      exact Ty.TyEquiv.congrUnion
+        (Ty.TyEquiv.swapRow (l := "False") (l' := "True") (f := Ty.unit) (f' := Ty.unit)
+          (t := .empty) (by decide))
+
+/-- `int_subtract : Integer → Integer → Integer` (or `Unrepresentable`). -/
+theorem run_int_subtract [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_subtract" [a, b] = .ok v) : HasTypeV v .integer := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha; obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  split at h
+  · cases h; exact HasTypeV.int (.refl _)
+  · exact absurd h (by simp)
+
+/-- `int_multiply : Integer → Integer → Integer` (or `Unrepresentable`). -/
+theorem run_int_multiply [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .integer) (hb : HasTypeV b .integer)
+    (h : Builtin.run "int_multiply" [a, b] = .ok v) : HasTypeV v .integer := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha; obtain ⟨y, rfl⟩ := canonical_integer hb
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  split at h
+  · cases h; exact HasTypeV.int (.refl _)
+  · exact absurd h (by simp)
+
+/-- `int_absolute : Integer → Integer`. -/
+theorem run_int_absolute [BEq m] {a v : Value m} (ha : HasTypeV a .integer)
+    (h : Builtin.run "int_absolute" [a] = .ok v) : HasTypeV v .integer := by
+  obtain ⟨x, rfl⟩ := canonical_integer ha
+  simp only [Builtin.run, Cast.asInteger, bind, Except.bind] at h
+  cases h; exact HasTypeV.int (.refl _)
+
+/-- `string_uppercase : String → String`. -/
+theorem run_string_uppercase [BEq m] {a v : Value m} (ha : HasTypeV a .string)
+    (h : Builtin.run "string_uppercase" [a] = .ok v) : HasTypeV v .string := by
+  obtain ⟨s, rfl⟩ := canonical_string ha
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  cases h; exact HasTypeV.str (.refl _)
+
+/-- `string_lowercase : String → String`. -/
+theorem run_string_lowercase [BEq m] {a v : Value m} (ha : HasTypeV a .string)
+    (h : Builtin.run "string_lowercase" [a] = .ok v) : HasTypeV v .string := by
+  obtain ⟨s, rfl⟩ := canonical_string ha
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  cases h; exact HasTypeV.str (.refl _)
+
+/-- `equal : α → α → Boolean` (the result type is `boolean` regardless of the args). -/
+theorem run_equal [BEq m] {a b v : Value m}
+    (h : Builtin.run "equal" [a, b] = .ok v) : HasTypeV v Ty.boolean := by
+  simp only [Builtin.run] at h; cases h; exact hasTypeV_bool _
+
+/-- `string_starts_with : String → String → Boolean`. -/
+theorem run_string_starts_with [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .string) (hb : HasTypeV b .string)
+    (h : Builtin.run "string_starts_with" [a, b] = .ok v) : HasTypeV v Ty.boolean := by
+  obtain ⟨x, rfl⟩ := canonical_string ha; obtain ⟨y, rfl⟩ := canonical_string hb
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  cases h; exact hasTypeV_bool _
+
+/-- `string_ends_with : String → String → Boolean`. -/
+theorem run_string_ends_with [BEq m] {a b v : Value m}
+    (ha : HasTypeV a .string) (hb : HasTypeV b .string)
+    (h : Builtin.run "string_ends_with" [a, b] = .ok v) : HasTypeV v Ty.boolean := by
+  obtain ⟨x, rfl⟩ := canonical_string ha; obtain ⟨y, rfl⟩ := canonical_string hb
+  simp only [Builtin.run, Cast.asString, bind, Except.bind] at h
+  cases h; exact hasTypeV_bool _
+
 /-- The builtin **application/saturation** preservation obligation, isolated as a
 hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
 and `int_add` may legitimately trap with the sanctioned `Unrepresentable`). When a
