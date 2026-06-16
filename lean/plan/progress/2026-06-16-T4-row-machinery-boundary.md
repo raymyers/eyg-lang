@@ -112,3 +112,37 @@ with the original `tagged` typing). `canonical_union` added.
 
 The variant work is the template; records add only the `RecordWf` lock-step
 relation and the `recordGet`/`recordInsert` ↔ row correspondence.
+
+## UPDATE 3 — `Select` DONE (lock-step `RecordWf`); `Extend`/`Overwrite` blockers
+
+`Select` is green: lock-step `RecordWf` + `recordWf_get` (no `MissingField`),
+`canonical_record`, `tyEquiv_recordRow`. Two distinct blockers found for
+`Extend`/`Overwrite`:
+
+1. **Semantic divergence (decision #3).** Interpreter records are sorted-unique
+   (`recordInsert` replaces a present key); the type system free-extends (scoped
+   duplicates). `extend l` on a record with `l` ⇒ type `{l:new,l:old}` but value
+   `{l:new}`. Observably sound (only `Select` eliminates, reading the first field)
+   but breaks lock-step `RecordWf` (value has one `l`, row has two).
+2. **The clean fix is kernel-blocked.** A *one-direction first-occurrence
+   membership* typing — `∀ l f, RowContains row l f → ∃ v, recordGet fields l =
+   some v ∧ HasTypeV v f` — handles duplicates perfectly (both sides read the first
+   occurrence) and resolves (1). But as a `HasTypeV` constructor it nests `Exists`
+   over the recursive `HasTypeV`, which the **kernel rejects** ("invalid nested
+   inductive datatype 'Exists'"). So it cannot be a constructor.
+
+**Paths for the next session** (a real design call):
+- Make `RecordWf` a duplicate-aware **inductive** (add a `shadow` constructor for a
+  row entry whose label already occurs earlier — no field needed), keeping it in the
+  mutual block. Then `recordWf_get` + a `recordInsert`-realizes-`rowExtend` lemma
+  (incl. the sorted-position↔head `TyEquiv` reorder) give `Extend`/`Overwrite`.
+- OR add `Ty.WfRow` (deferred from T1) forbidding duplicate labels in *record* rows,
+  and thread it — but the analyzer's `extend` scheme does **not** enforce this, so
+  this diverges from the reference.
+- OR define the membership relation as a **separate** (non-mutual) inductive
+  `RecordMember : List (String×Value) → Ty → (Value → Ty → Prop) → Prop`
+  parameterized by the value-typing predicate, instantiated with `HasTypeV` after
+  the mutual block (avoids the nesting). Likely the cleanest unblock.
+
+`Select` (committed) proves the record pipeline works; only the duplicate-aware
+record-construction typing remains for `Extend`/`Overwrite`.
