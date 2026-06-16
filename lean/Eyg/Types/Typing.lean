@@ -76,6 +76,10 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   /-- List `Cons`: `∀α. α → List α → List α` (`cons() = pure2(q0, List q0, List q0)`). -/
   | cons {Γ elem ε a} :
       HasType Γ ⟨.Cons, a⟩ (.fun elem .empty (.fun (.list elem) .empty (.list elem))) ε
+  /-- Variant injection `Tag l`: `∀α r. α → ⟨l : α | r⟩`
+  (`tag(l) = pure1(q0, Union(RowExtend l q0 q1))`). -/
+  | tag {Γ l elem tail ε a} :
+      HasType Γ ⟨.Tag l, a⟩ (.fun elem .empty (.union (.rowExtend l elem tail))) ε
   /-- The empty record `Empty` (`prim(Record(Empty))`). -/
   | empty {Γ ε a} : HasType Γ ⟨.Empty, a⟩ (.record .empty) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal

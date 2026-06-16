@@ -117,10 +117,14 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, heq⟩ := inv_cons hty
       exact ⟨τin, HasTypeV.partialConsNil heq, hst⟩
+  | Tag l =>
+      simp only [reduce1Run, reduceEval] at hr; cases hr
+      obtain ⟨elem, tail, heq⟩ := inv_tag hty
+      exact ⟨τin, HasTypeV.partialTag heq, hst⟩
   | _ =>
       exfalso
       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
-        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | h | h | h <;> simp at h
+        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | h | h | h | ⟨_, h⟩ <;> simp at h
 
 /-- The builtin **application/saturation** preservation obligation, isolated as a
 hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
@@ -181,6 +185,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
             exact ⟨_, HasTypeV.listCons hh hvl hR, hrest⟩
+        | partialTag he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, HasTypeV.tagged (hv.conv hA.symm) hR, hrest⟩
   | callwith harg hrest =>
       rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hv with
@@ -204,6 +212,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
             exact ⟨_, HasTypeV.listCons hh hvl hR, hrest⟩
+        | partialTag he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, HasTypeV.tagged (harg.conv hA.symm) hR, hrest⟩
 
 /-! ## Effect safety for the pure core: no `.perform`
 
@@ -234,6 +246,7 @@ theorem reduceCall_ne_perform [BEq m] {f arg : Value m} {ann : m} {env : Env m} 
     | partialConsNil _ => exact absurd h (by simp [reduceCall])
     | partialConsOne _ _ =>
         simp only [reduceCall] at h; split at h <;> exact absurd h (by simp)
+    | partialTag _ => exact absurd h (by simp [reduceCall])
 
 /-- A well-typed state's `reduce1Run` is never `.perform` (pure-core effect safety). -/
 theorem not_perform [BEq m] {cfg : Config m} {τ ε : Ty}
@@ -333,6 +346,8 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                 | partialConsOne _ _ =>
                     simp only [reduce1Run, reduceApply, reduceCall] at h
                     split at h <;> exact absurd h (by simp)
+                | partialTag _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
           | callwith harg hrest =>
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
@@ -345,6 +360,8 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                 | partialConsOne _ _ =>
                     simp only [reduce1Run, reduceApply, reduceCall] at h
                     split at h <;> exact absurd h (by simp)
+                | partialTag _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
 
 /-- **Soundness (value typing through evaluation).** A well-typed configuration's
 fuel-bounded evaluation, if it terminates with a value, terminates with a value of
@@ -415,10 +432,11 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
       | Tail => exact Or.inl ⟨_, rfl⟩
       | Empty => exact Or.inl ⟨_, rfl⟩
       | Cons => exact Or.inl ⟨_, rfl⟩
+      | Tag l => exact Or.inl ⟨_, rfl⟩
       | _ =>
           exfalso
           rcases hasType_expr_form hty with ⟨_, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, _, hh⟩ |
-            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | hh | hh | hh <;> simp at hh
+            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | hh | hh | hh | ⟨_, hh⟩ <;> simp at hh
   | V w =>
       cases k with
       | nil => exact Or.inr (Or.inl ⟨w, rfl⟩)
@@ -449,6 +467,7 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                     obtain ⟨hD, _, _⟩ := Ty.tyEquiv_fun_components he
                     obtain ⟨es, rfl⟩ := canonical_list (hw.conv hD.symm)
                     exact Or.inl ⟨_, rfl⟩
+                | partialTag _ => exact Or.inl ⟨_, rfl⟩
           | @callwith _ arg fenv _ _ _ _ _ harg hrest =>
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
@@ -470,5 +489,6 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                     obtain ⟨hD, _, _⟩ := Ty.tyEquiv_fun_components he
                     obtain ⟨es, rfl⟩ := canonical_list (harg.conv hD.symm)
                     exact Or.inl ⟨_, rfl⟩
+                | partialTag _ => exact Or.inl ⟨_, rfl⟩
 
 end Eyg.Types

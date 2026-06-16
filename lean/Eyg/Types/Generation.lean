@@ -104,7 +104,7 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
     (∃ f arg, e.expr = .Apply f arg) ∨ (∃ x d b, e.expr = .Let x d b) ∨
     (∃ n, e.expr = .Integer n) ∨ (∃ s, e.expr = .String s) ∨
     (∃ b, e.expr = .Binary b) ∨ (∃ id, e.expr = .Builtin id) ∨
-    e.expr = .Tail ∨ e.expr = .Empty ∨ e.expr = .Cons := by
+    e.expr = .Tail ∨ e.expr = .Empty ∨ e.expr = .Cons ∨ (∃ l, e.expr = .Tag l) := by
   induction h with
   | var => exact Or.inl ⟨_, rfl⟩
   | lam => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
@@ -119,7 +119,9 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
   | empty => iterate 9 apply Or.inr
              exact Or.inl rfl
   | cons => iterate 10 apply Or.inr
-            exact rfl
+            exact Or.inl rfl
+  | tag => iterate 11 apply Or.inr
+           exact ⟨_, rfl⟩
   | conv _ _ _ ih => exact ih
 
 /-- Inversion for `Tail`: a type equivalent to some list type. -/
@@ -148,6 +150,16 @@ theorem inv_cons {Γ : Ctx} {a : m} {τ ε : Ty}
   induction h with
   | cons => exact ⟨_, .refl _⟩
   | conv _ hτ _ ih => obtain ⟨elem, heq⟩ := ih he; exact ⟨elem, heq.trans hτ⟩
+  | _ => simp at he
+
+/-- Inversion for `Tag l`: a type equivalent to some `α → ⟨l : α | r⟩`. -/
+theorem inv_tag {Γ : Ctx} {l : String} {a : m} {τ ε : Ty}
+    (h : HasType Γ (⟨.Tag l, a⟩ : Tree.Node m) τ ε) :
+    ∃ elem tail, Ty.TyEquiv (.fun elem .empty (.union (.rowExtend l elem tail))) τ := by
+  generalize he : (⟨.Tag l, a⟩ : Tree.Node m) = e at h
+  induction h with
+  | tag => cases he; exact ⟨_, _, .refl _⟩
+  | conv _ hτ _ ih => obtain ⟨elem, tail, heq⟩ := ih he; exact ⟨elem, tail, heq.trans hτ⟩
   | _ => simp at he
 
 theorem inv_app {Γ : Ctx} {f arg : Tree.Node m} {a : m} {τ ε : Ty}

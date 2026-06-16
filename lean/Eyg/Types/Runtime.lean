@@ -78,6 +78,14 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   | partialConsOne {hd elem τ} :
       HasTypeV hd elem → Ty.TyEquiv (.fun (.list elem) .empty (.list elem)) τ →
       HasTypeV (.Partial .Cons [hd]) τ
+  /-- A tagged value inhabits a union row containing its label. -/
+  | tagged {label v elem tail τ} :
+      HasTypeV v elem → Ty.TyEquiv (.union (.rowExtend label elem tail)) τ →
+      HasTypeV (.Tagged label v) τ
+  /-- The unsaturated `Tag l`: `α → ⟨l : α | r⟩`. -/
+  | partialTag {label elem tail τ} :
+      Ty.TyEquiv (.fun elem .empty (.union (.rowExtend label elem tail))) τ →
+      HasTypeV (.Partial (.Tag label) []) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -139,6 +147,8 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | recordNil he => exact .recordNil (he.trans heq)
   | partialConsNil he => exact .partialConsNil (he.trans heq)
   | partialConsOne hh he => exact .partialConsOne hh (he.trans heq)
+  | tagged hv he => exact .tagged hv (he.trans heq)
+  | partialTag he => exact .partialTag (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -181,6 +191,8 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialBuiltin _ _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialConsNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialConsOne _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialTag _ => exact Or.inr ⟨_, _, rfl⟩
+  | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | str he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | bin he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
