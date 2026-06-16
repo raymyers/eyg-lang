@@ -32,7 +32,7 @@ The Lean port mirrors these Gleam modules one-for-one:
 | `break.gleam` | `Break.lean` | failure reasons |
 | `cast.gleam` | `Cast.lean` | value coercions used by builtins |
 | `state.gleam` | `State.lean` | CEK machine: `step`/`eval`/`apply`/`call`/`perform`/`deep` |
-| `builtin.gleam` | `Builtin.lean` | the 29 builtins + default env |
+| `builtin.gleam` | `Builtin.lean` | the 30 builtins + default env |
 | `expression.gleam` | `Expression.lean` | `execute`/`resume`/`call` drivers |
 
 Test data (the contract): `spec/evaluation/{core,builtins,effects}_suite.json`,
@@ -318,7 +318,7 @@ prefix decodes to the `baguqeera…` base32 head before running the suite.
 `spec evaluation: 104/104 fixtures passed` /
 `ir round-trip: 21/21 | CID match: 21/21` (exit 0).
 
-## Milestone 8 — Post-completion cleanup  ⬜ UNFINISHED (review findings)
+## Milestone 8 — Post-completion cleanup  🔶 IN PROGRESS (review findings)
 
 A diff review of M0–M7 (`559ae428^..c53d36ba`) re-ran the suite — **104/104 and
 21/21 CID confirmed, exit 0** (note: the first attempt was a false pass — macOS
@@ -326,21 +326,15 @@ lacks `timeout`, so `lake exe spec` never ran; verify by reading the printed
 counts, not just the exit code). The port is otherwise a clean, faithful mirror.
 The following minor items are non-blocking but worth tidying:
 
-- [ ] **Two sources of truth for the builtin set.** `builtinNames`
-      (`State.lean:47`) and `builtinArity` (`Builtin.lean:35`) independently
-      enumerate the same 30 builtins; they must stay in lockstep or `eval` and
-      `callBuiltin` disagree (a name in one but not the other → a node that
-      passes the `isBuiltin` gate then dies with `UndefinedBuiltin`, or vice
-      versa). Collapse to one: `def isBuiltin id := (Builtin.builtinArity id).isSome`
-      and delete the `builtinNames` list entirely. (They agree today — that's why
-      the suite is green — but the duplication is a latent drift hazard.)
-- [ ] **Stale comments referencing "M7 part B" as future work.**
-      `Harness.lean:308` (`-- … CID-string equality is tracked as M7 part B`) and
-      the `encodeB64` doc at `Harness.lean:168` both describe CID equality as not
-      yet done — but M7 is complete and the code right below line 308 *does* check
-      and report `CID match`. Update/remove these leftovers.
-- [ ] **Doc nit:** the source-of-truth table calls it "the 29 builtins" while the
-      rest of the plan and the code use 30 (26 pure + 4 stack-coupled). Pick 30.
+- [x] **Two sources of truth for the builtin set.** Collapsed: `isBuiltin` is now
+      `(Builtin.builtinArity id).isSome` (`State.lean`) and the duplicate
+      `builtinNames` list is deleted. `builtinArity` (`Builtin.lean`, mirroring
+      Gleam's `builtin.all`) is the single source. Suite still 104/104 + 21/21.
+- [x] **Stale comments referencing "M7 part B" as future work.** Fixed both:
+      the `encodeB64` doc and the IR-suite comment in `Harness.lean` now describe
+      CID equality as implemented (it is, and the runner reports `CID match`).
+- [x] **Doc nit:** source-of-truth table now reads "the 30 builtins" (26 pure +
+      4 stack-coupled), matching the code.
 - [ ] **(optional) `move` is `List.reverseAux`.** `State.lean:85` hand-rolls
       `frames.reverse ++ k`. Kept for one-to-one parity with Gleam's `state.move`;
       fine to leave, but a one-liner alias would do.

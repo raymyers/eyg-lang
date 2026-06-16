@@ -164,8 +164,8 @@ def decodeFixture (j : Json) : Except String Fixture := do
 /-! ## IR encoder & round-trip (dag_json.to_data_model) -/
 
 /-- Encode bytes as base64 (standard alphabet, no padding); inverse of
-`decodeB64`. Used only for round-trip — canonical-byte ordering for CIDs is M7
-part B. -/
+`decodeB64`. Used for IR round-trip; canonical CID block bytes come from
+`toBlock`/`Json.compress`, not from this encoder. -/
 def encodeB64 (bytes : ByteArray) : String := Id.run do
   let tbl := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".toList.toArray
   let mut out := ""
@@ -305,7 +305,7 @@ def run : IO UInt32 := do
         passed := passed + p; total := total + t; fails := fails ++ fs
   IO.println s!"spec evaluation: {passed}/{total} fixtures passed"
   for f in fails do IO.println s!"  FAIL {f}"
-  -- IR suite: structural round-trip (CID-string equality is tracked as M7 part B)
+  -- IR suite: structural round-trip and CIDv1-string equality
   let irContents ← IO.FS.readFile "../spec/ir_suite.json"
   let mut irPassed := 0
   let mut irCid := 0

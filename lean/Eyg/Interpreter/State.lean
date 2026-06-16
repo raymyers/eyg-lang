@@ -42,19 +42,10 @@ open Eyg.Ir
 
 /-! ## Builtin name set (decision #1) -/
 
-/-- The identifiers registered in Gleam's `builtin.default` env (`builtin.all`).
-An `ir.Builtin id` node is valid iff `id` is in this set. -/
-def builtinNames : List String :=
-  ["equal", "fix", "fixed", "never",
-   "int_compare", "int_add", "int_subtract", "int_multiply", "int_divide",
-   "int_absolute", "int_parse", "int_to_string",
-   "string_append", "string_split", "string_split_once", "string_replace",
-   "string_uppercase", "string_lowercase", "string_starts_with",
-   "string_ends_with", "string_length", "string_to_binary", "string_from_binary",
-   "binary_from_integers", "binary_size", "binary_concat", "binary_compare",
-   "binary_fold", "list_pop", "list_fold"]
-
-def isBuiltin (id : String) : Bool := builtinNames.contains id
+/-- An `ir.Builtin id` node is valid iff `id` is a registered builtin. The
+single source of truth is `Builtin.builtinArity` (which mirrors Gleam's
+`builtin.all`): an identifier is a builtin exactly when it has an arity. -/
+def isBuiltin (id : String) : Bool := (Builtin.builtinArity id).isSome
 
 /-! ## Machine configuration types (state.gleam:18-47) -/
 
