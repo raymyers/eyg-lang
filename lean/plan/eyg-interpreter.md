@@ -72,25 +72,35 @@ observable behavior identical.
 
 ---
 
-## Milestone 0 — Scaffolding & IR types
+## Milestone 0 — Scaffolding & IR types  ✅ DONE
 
 **Deliverable:** `Eyg/Ir/Tree.lean` compiles; the IR mirrors
 `gleam_ir/.../tree.gleam` exactly and can represent every `source` node in the
 spec fixtures.
 
-- [ ] Add an `Eyg.Interpreter`/`Eyg.Ir` namespace layout under `lean/Eyg/`.
-- [ ] Define `inductive Expr (m)` with all constructors from `tree.gleam`:
-      `Variable, Lambda, Apply, Let, Binary (ByteArray), Integer (Int),
-      String, Tail, Cons, Vacant, Empty, Extend, Select, Overwrite, Tag, Case,
-      NoCases, Perform, Handle, Builtin, ContentReference, ReleaseReference,
-      RelativeReference`.
-- [ ] Define `Node m := Expr m × m` and constructor helpers (`variable`,
-      `lambda`, …) mirroring the Gleam smart constructors.
-- [ ] Decide `Int` model: EYG ints are native machine ints with a target
-      "safe range" guard (`gleam_ir/.../integer.gleam`). Use Lean `Int` plus an
-      `Integer.isSafe : Int → Bool` (magnitude ≤ 2^53−1) so overflow yields
-      `Unrepresentable`, matching JS-target behavior the spec encodes.
-- [ ] `#eval`/`deriving Repr, BEq` smoke check on a hand-built term.
+- [x] Add an `Eyg.Interpreter`/`Eyg.Ir` namespace layout under `lean/Eyg/`.
+      (`Eyg.Ir.Tree` namespace; file `lean/Eyg/Ir/Tree.lean`, wired into `Eyg.lean`.)
+- [x] Define `inductive Expr (m)` with all 23 constructors from `tree.gleam`.
+- [x] Define `Node m` and constructor helpers (`variable_`, `lambda`, …, plus
+      composites `func/call/block/list/record/match_/get/tagged/true'/false'/
+      add/subtract/multiply`) mirroring the Gleam smart constructors.
+- [x] `Int` model: Lean `Int` + `Eyg.Ir.Integer.isSafe` (magnitude ≤ 2^53−1).
+- [x] `deriving Repr, BEq, DecidableEq, Inhabited` + `native_decide`/`decide`
+      smoke checks on hand-built terms.
+
+**Notes / deviations actually taken:**
+- `Node` is a **single-field `structure` in a `mutual` block with `Expr`**, not
+  the planned `Expr m × m` `Prod` alias. Reason: Lean's `DecidableEq` deriving
+  cannot see through `Prod` (nested inductive) and bails, but direct mutual
+  recursion `Expr → Node → Expr` derives cleanly. `DecidableEq` is needed
+  transitively by `Value` (M1), so it is established here. Projections are
+  `Node.expr` / `Node.annotation` instead of `.1` / `.2`.
+- Renames to dodge Lean reserved tokens: smart constructor `variable` →
+  `variable_`, `let`/`case`/`match` helpers → `let_`/`case_`/`match_`,
+  `true`/`false` → `true'`/`false'`; structure field `meta` → `annotation`.
+- `Cid := String` (canonical CIDv1 string); references all fail with `Undefined*`
+  for the spec so no richer model is needed yet.
+- Local `Repr ByteArray` instance (core lacks one) so the tree can `deriving Repr`.
 
 ## Milestone 1 — Values, environments, continuations
 
