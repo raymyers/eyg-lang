@@ -109,3 +109,61 @@ and `tyEquiv_fun_inv` + component inversion is still needed to read off `argTy`.
 The builtin-saturation preservation case stays a **T6** obligation (and `int_add`
 can legitimately trap with `Unrepresentable`); the T3 green theorem is over the
 pure λ/let/literal core, where no builtin partial is ever applied.
+
+---
+
+## UPDATE (infrastructure complete; recipe validated by hand)
+
+All supporting lemmas are now green and axiom-clean:
+- `HasTypeV` with conversion **baked into each constructor** (not a recursive
+  `convV`) + `HasTypeV.conv` (derived) + canonical forms by pure `cases`.
+- Generation lemmas `inv_{int,str,bin,var,builtin,lambda,let,app}` (T3c-ii(a)).
+- `TyEquiv` head inversions + **component inversion** `tyEquiv_fun_components`.
+- `envwf_lookup`, `StackWf`/`MStateWf`, `mStateWf_initial`.
+
+**Key simplification discovered — no `stackWf_conv`, no `StackWf.nil` change needed.**
+The earlier worry (a produced value's natural type only `∼=` the stack's incoming
+type) dissolves: instead of converting the *stack's* incoming type, convert the
+*control/value/result* type to **exactly** what the stack expects, using
+`HasType.conv` / `HasTypeV.conv` (both available). The crux closure-application
+case, fully hand-checked:
+
+> State `(.V argval, _, (Apply f fenv,ann)::rest)`; `StackWf.applyf` gives
+> `HasTypeV f (.fun argTy ε retTy)` and `StackWf rest retTy ε τ`, with
+> `HasTypeV argval argTy`. `canonical_arrow f ⇒ Closure x body cenv`. Invert
+> `HasTypeV (Closure …)` ⇒ `EnvWf cenv Γc`, `HasType ((x,mono argTy0)::Γc) body
+> retTy0 εb0`, `heq : TyEquiv (.fun argTy0 εb0 retTy0) (.fun argTy ε retTy)`;
+> `tyEquiv_fun_components heq ⇒ argTy0∼argTy, εb0∼ε, retTy0∼retTy`.
+> Successor `(.E body, (x,argval)::cenv, (Trace argval,ann)::rest)`:
+> - bind `x` at **argTy0** (not argTy): `HasTypeV.conv argval (argTy∼argTy0)` ⇒
+>   `EnvWf ((x,argval)::cenv) ((x,mono argTy0)::Γc)`;
+> - body: `HasType.conv hbody (retTy0∼retTy) (εb0∼ε)` ⇒
+>   `HasType ((x,mono argTy0)::Γc) body retTy ε`;  ← convert the RESULT to retTy
+> - stack: `StackWf.trace hrest` (incoming `retTy`, exactly what `rest` wants). ✓
+
+The same "produce the value/result at the stack's exact expected type" pattern
+handles `lam`/`int`/`str`/`bin`/`var` eval (use the generation lemma's `TyEquiv`
+directly in the value constructor) and the `Arg`/`Assign`/`Trace`/`CallWith`
+frames. The `var` case's "value found in env" comes from `envwf_lookup` — that is
+exactly the **no-`UndefinedVariable`-crash** content of soundness.
+
+### Two small consistency lemmas the `Builtin` *node* case needs
+
+`(.E (.Builtin id), …) → (.V (.Partial (.Builtin id) []), …)` is a `tau` only if
+`isBuiltin id` (else the machine crashes `UndefinedBuiltin`). So well-typedness
+(`Builtins.scheme id = some s`) must imply:
+1. `isBuiltin id = true` (the analyzer table ⊆ the interpreter's arity table), and
+2. `s.instantiate args` is an **arrow** (every builtin scheme is a function), so
+   `HasTypeV.partialBuiltin … BuiltinPartialWf.nil …` types the `[]`-partial.
+Both are finite per-`id` facts over the T3 subset (`decide`/case split).
+
+### Net remaining for the green theorem
+1. (optional) the two `Builtin`-node consistency lemmas (or omit `Builtin` from the
+   T3 theorem and keep it λ/let/literal-only — even simpler, fully sorry-free).
+2. Write `preservation` (`tau` split per the recipe; `reply` via `MStateWf wait =
+   False`; `perform` via `reduce1Run_not_perform`, itself immediate since no
+   `HasTypeV` rule types a `Perform` partial so `canonical_arrow` never yields one).
+3. `progress` (each well-typed non-value `reduce1Run` is `.tau`/value, never a bad
+   crash) and `soundness` over `evalR` (fold preservation across fuel).
+The **builtin application/saturation** case (`reduceCall` on a `Partial Builtin`)
+remains the T6 obligation.

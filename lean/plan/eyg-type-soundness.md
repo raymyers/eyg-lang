@@ -330,14 +330,19 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       term) — **DELIVERED** in T3a; optional `#guard` against `gleam_analysis`
       `type_at` deferred.
 
-**T3 status:** judgment (T3a), runtime value typing + canonical forms (T3b), and
-continuation/state typing `StackWf`/`MStateWf` (T3c-i) are all green. The
-`preservation`/`progress`/`soundness` proofs (T3c-ii/iii) are next; their design —
-the `tau` case split mirroring `reduce1Run` frame-by-frame, the
-`reduce1Run_not_perform` effect-safety obligation, and the required `StackWf.nil`
-`TyEquiv`-closure / `stackWf_conv` (which depends on finishing T1b normalization
-for component inversion) — is recorded in
-`progress/2026-06-16-T3c-preservation-design.md`.
+**T3 status:** judgment (T3a), runtime value typing + canonical forms (T3b),
+continuation/state typing `StackWf`/`MStateWf` (T3c-i), and the `HasType`
+generation/inversion lemmas (T3c-ii(a)) are all green and axiom-clean. **All
+infrastructure preservation needs is now in place**, and the crux
+closure-application case has been hand-validated against it. A key simplification
+was found: convert the produced *value/result* type to the stack's exact expected
+type (via `HasType.conv`/`HasTypeV.conv`), which removes the need for any
+`stackWf_conv` or `StackWf.nil` change (and hence the normalization dependency).
+The remaining work — write `preservation` (the `tau` split per the validated
+recipe; `reply` vacuous; `perform` impossible), `progress`, `soundness` over
+`evalR` — and the full recipe are in
+`progress/2026-06-16-T3c-preservation-design.md`. Builtin **saturation** stays a
+T6 obligation.
 
 ## Milestone T4 — Slice 2: records, unions, rows
 
