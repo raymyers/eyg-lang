@@ -98,8 +98,10 @@ rules with the interpreter.
 - [x] `eval (fuel+1) cfg` = one `step` then recurse; `eval 0 _ = timeout`.
       Reuses the interpreter's `step` from `State.lean` (so all step rules are
       shared). `#guard`s cross-check value/crash/timeout/effect cases.
-- [ ] `eval` is monotone in fuel: more fuel never changes a non-`timeout`
-      result (`evalMono`). This is the workhorse lemma for everything downstream.
+- [x] `eval` is monotone in fuel: more fuel never changes a non-`timeout`
+      result (`eval_succ_mono` for +1, `eval_mono` for `≤`). The workhorse lemma
+      for everything downstream. Corollary `eval_timeout_antitone` (timeout is
+      downward-closed in fuel) lands the S4 divergence handle early.
 - [x] `run : Config → oracle → Result` iterates resumptions against a list of
       `(label, lift, reply)` replies (mirrors the spec harness's effect-folding);
       `#guard`ed on a resume-through-`Get` example.

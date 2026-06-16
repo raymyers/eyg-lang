@@ -64,6 +64,70 @@ def Result.isTimeout : Result m → Bool
   | .timeout => true
   | _ => false
 
+/-! ## Monotonicity in fuel
+
+The workhorse lemma: more fuel never changes a result that already finished
+(was not a `timeout`). The proof is purely about the fuel recursion — it never
+inspects `step`, only whether it returned `Loop` (recurse) or `Break` (stop) —
+so it is independent of the builtin/effect details. -/
+
+/-- One controlled unfold of `eval` at successor fuel (definitional). -/
+theorem eval_succ [BEq m] (n : Nat) (c : Control m) (e : Env m) (k_ : Stack m) :
+    eval (n + 1) (c, e, k_) =
+      match step c e k_ with
+      | .Loop c' e' k' => eval n (c', e', k')
+      | .Break (.ok v) => .done (.value v)
+      | .Break (.error (.UnhandledEffect op lift, _, env, k')) =>
+          .effect op lift (fun reply => (.V reply, env, k'))
+      | .Break (.error (reason, _, _, _)) => .done (.crash reason) := rfl
+
+/-- One extra unit of fuel preserves any non-`timeout` result. -/
+theorem eval_succ_mono [BEq m] :
+    ∀ (n : Nat) (cfg : Config m) (r : Result m),
+      eval n cfg = r → r ≠ .timeout → eval (n + 1) cfg = r := by
+  intro n
+  induction n with
+  | zero =>
+      intro cfg r h hne
+      simp only [eval] at h
+      exact absurd h.symm hne
+  | succ k ih =>
+      rintro ⟨c, e, k_⟩ r h hne
+      rw [eval_succ] at h ⊢
+      cases hs : step c e k_ with
+      | Loop c' e' k' =>
+          simp only [hs] at h ⊢
+          exact ih (c', e', k') r h hne
+      | Break res =>
+          simp only [hs] at h ⊢
+          -- `res` must become concrete for the dead `Loop` arm to iota-reduce away.
+          cases res with
+          | ok v => exact h
+          | error dbg =>
+              obtain ⟨reason, _ann, _env, _kk⟩ := dbg
+              cases reason <;> exact h
+
+/-- Monotonicity: a non-`timeout` result is stable under any increase in fuel. -/
+theorem eval_mono [BEq m] {n n' : Nat} (hle : n ≤ n') {cfg : Config m} {r : Result m}
+    (h : eval n cfg = r) (hne : r ≠ .timeout) : eval n' cfg = r := by
+  induction hle with
+  | refl => exact h
+  | step _ ih => exact eval_succ_mono _ cfg r ih hne
+
+/-- `timeout` is downward-closed in fuel: if a larger budget still times out, so
+does every smaller one. The contrapositive of `eval_mono`; used by divergence
+(S4), where "diverges" means "times out at every fuel". -/
+theorem eval_timeout_antitone [BEq m] {n n' : Nat} (hle : n ≤ n') {cfg : Config m}
+    (h : eval n' cfg = .timeout) : eval n cfg = .timeout := by
+  cases hr : eval n cfg with
+  | timeout => rfl
+  | done o =>
+      have hstable := eval_mono hle hr (by simp)
+      rw [h] at hstable; simp at hstable
+  | effect op lift resume =>
+      have hstable := eval_mono hle hr (by simp)
+      rw [h] at hstable; simp at hstable
+
 /-! ## Running against an oracle of effect replies
 
 `run` mirrors `Spec.Harness.runFixture`'s effect-folding: execute, and whenever
