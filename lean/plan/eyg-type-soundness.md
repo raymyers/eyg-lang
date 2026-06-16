@@ -373,9 +373,21 @@ T6 obligation.
 
 **Deliverable:** extend the T3 files with structured data; re-green the theorems.
 
-- [ ] Add typing rules (primitive schemes from T2) for `Empty`/`Extend`/`Select`/
-      `Overwrite`/`Tag`/`Case`/`NoCases`/`Cons`/`Tail`, using `RowEquiv` on the row
-      arguments.
+- [~] Add typing rules (primitive schemes from T2) for the data nodes. **`Empty`/
+      `Tail` DELIVERED** (T4a) — value-producing, threaded green through the whole
+      pipeline (`HasType.tail/empty`, `HasTypeV.listNil/recordNil`, `inv_tail/empty`,
+      `preservation_E`/`progress` cases). **Operators `Cons`/`Extend`/`Select`/
+      `Overwrite`/`Tag`/`Case`/`NoCases` remain (T4b)** — they produce `Partial`s and
+      do the operation in `reduceCall`, so they need: (1) per-operator `HasType` rules
+      (instantiate the `cons()/extend()/select()/…` schemes); (2) operator-`Partial`
+      and result-value (`LinkedList`/`Record`/`Tagged`) `HasTypeV` cases; (3)
+      **`canonical_arrow` extended** beyond `Closure ∨ Partial-Builtin` to the
+      operator partials, and `preservation_V`'s function-value split updated to
+      dispatch on the switch (the closure case is untouched; each operator's
+      `reduceCall` arm proves its operation preserves); (4) the **sorted-record ↔ row
+      reconciliation** (T1 deferred item) for `Extend`/`Select`/`Overwrite`. Suggested
+      order: `Cons` (lists, no rows) → `Tag`/`Case`/`NoCases` (variants) →
+      `Extend`/`Select`/`Overwrite` (records, needs the row reconciliation).
 - [ ] Extend `HasTypeV` (`Record` fields realize a record row via the T1 sorted-row
       hinge; `Tagged l v` inhabits a union row containing `l`; `LinkedList`) and the
       canonical-forms lemmas (record row ⇒ `.Record`; union row ⇒ `.Tagged`).
