@@ -90,6 +90,81 @@ theorem tyEquiv_union_inv {τ r : Ty} (h : TyEquiv τ (.union r)) : ∃ r', τ =
   have hs := tyEquiv_shape h
   cases τ <;> simp_all [shape]
 
+/-! ## Component inversion for arrows (no-confusion up to `TyEquiv`)
+
+`tyEquiv_*_inv` recover only the head. The `StackWf` conversion lemma also needs
+the **components** of an arrow: `TyEquiv (.fun a e r) (.fun a' e' r')` must give
+`a ∼= a'`, `e ∼= e'`, `r ∼= r'`. The slick proof avoids normalization: project
+each component with a total function that is the identity off `.fun`, and show the
+projection is a `TyEquiv` congruence. The arrow case yields the stored component
+premise; every other case re-applies its own constructor (the projection is
+identity there). -/
+
+/-- Domain projection: the argument type of an arrow, else the type itself. -/
+def domOf : Ty → Ty | .fun a _ _ => a | t => t
+/-- Effect-row projection of an arrow, else the type itself. -/
+def effOf : Ty → Ty | .fun _ e _ => e | t => t
+/-- Codomain projection of an arrow, else the type itself. -/
+def retOf : Ty → Ty | .fun _ _ r => r | t => t
+
+theorem tyEquiv_domOf {s t : Ty} (h : TyEquiv s t) : TyEquiv (domOf s) (domOf t) := by
+  induction h with
+  | refl _ => exact .refl _
+  | symm _ ih => exact .symm ih
+  | trans _ _ ih₁ ih₂ => exact .trans ih₁ ih₂
+  | congrFun ha _ _ _ _ _ => exact ha
+  | congrList hb _ => exact .congrList hb
+  | congrRecord hr _ => exact .congrRecord hr
+  | congrUnion hr _ => exact .congrUnion hr
+  | congrPromise ha _ => exact .congrPromise ha
+  | congrRow hf ht _ _ => exact .congrRow hf ht
+  | congrEff ha hb ht _ _ _ => exact .congrEff ha hb ht
+  | swapRow hne => exact .swapRow hne
+  | swapEff hne => exact .swapEff hne
+
+theorem tyEquiv_effOf {s t : Ty} (h : TyEquiv s t) : TyEquiv (effOf s) (effOf t) := by
+  induction h with
+  | refl _ => exact .refl _
+  | symm _ ih => exact .symm ih
+  | trans _ _ ih₁ ih₂ => exact .trans ih₁ ih₂
+  | congrFun _ he _ _ _ _ => exact he
+  | congrList hb _ => exact .congrList hb
+  | congrRecord hr _ => exact .congrRecord hr
+  | congrUnion hr _ => exact .congrUnion hr
+  | congrPromise ha _ => exact .congrPromise ha
+  | congrRow hf ht _ _ => exact .congrRow hf ht
+  | congrEff ha hb ht _ _ _ => exact .congrEff ha hb ht
+  | swapRow hne => exact .swapRow hne
+  | swapEff hne => exact .swapEff hne
+
+theorem tyEquiv_retOf {s t : Ty} (h : TyEquiv s t) : TyEquiv (retOf s) (retOf t) := by
+  induction h with
+  | refl _ => exact .refl _
+  | symm _ ih => exact .symm ih
+  | trans _ _ ih₁ ih₂ => exact .trans ih₁ ih₂
+  | congrFun _ _ hr _ _ _ => exact hr
+  | congrList hb _ => exact .congrList hb
+  | congrRecord hr _ => exact .congrRecord hr
+  | congrUnion hr _ => exact .congrUnion hr
+  | congrPromise ha _ => exact .congrPromise ha
+  | congrRow hf ht _ _ => exact .congrRow hf ht
+  | congrEff ha hb ht _ _ _ => exact .congrEff ha hb ht
+  | swapRow hne => exact .swapRow hne
+  | swapEff hne => exact .swapEff hne
+
+/-- **Arrow component inversion.** Recover the three component equivalences. -/
+theorem tyEquiv_fun_components {a e r a' e' r' : Ty}
+    (h : TyEquiv (.fun a e r) (.fun a' e' r')) :
+    TyEquiv a a' ∧ TyEquiv e e' ∧ TyEquiv r r' :=
+  ⟨tyEquiv_domOf h, tyEquiv_effOf h, tyEquiv_retOf h⟩
+
+/-- A type equivalent to an arrow *is* an arrow with `TyEquiv` components. -/
+theorem tyEquiv_fun_inv' {τ a e r : Ty} (h : TyEquiv τ (.fun a e r)) :
+    ∃ a' e' r', τ = .fun a' e' r' ∧ TyEquiv a' a ∧ TyEquiv e' e ∧ TyEquiv r' r := by
+  obtain ⟨a', e', r', rfl⟩ := tyEquiv_fun_inv h
+  obtain ⟨ha, he, hr⟩ := tyEquiv_fun_components h
+  exact ⟨a', e', r', rfl, ha, he, hr⟩
+
 /-! ## Sanity checks -/
 
 -- A type equivalent to `boolean` is itself a `union`.
