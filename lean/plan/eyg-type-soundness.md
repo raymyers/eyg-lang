@@ -335,13 +335,22 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       a value of the answer type `τ` (type preserved through the whole run). Fuel
       induction over `preservation` + `reduce1Run_done_value_typed` (`StackWf.nil`
       pins `τ` at the empty stack; saturated builtins defer to `hsat`).
-- [ ] **`progress` / no-bad-crash half** — remaining T3c piece: a well-typed
-      non-terminal state steps (`reduce1Run` is `.tau`/`.done value`, never a *bad*
-      crash, never `.perform`). Needs the `Builtins.scheme id = some s → isBuiltin id`
-      consistency lemma (for the `Builtin`-node `UndefinedBuiltin`), `envwf_lookup`
-      (for the `Variable` `UndefinedVariable`), and a builtin no-bad-crash hypothesis
-      (`Unrepresentable` permitted). Then `soundness` = value-typed **and**
-      crash-free.
+- [x] **`progress`** — **DELIVERED** (T3c-iii), sorry-free, axioms clean: a
+      well-typed state steps (`.tau`), is a terminal value, or terminates with a
+      *sanctioned* crash (`Unrepresentable`, `¬ Reason.IsBad`) — never a bad crash
+      (`Vacant`/`NotAFunction`/`NoMatch`/`MissingField`/`UndefinedVariable`/
+      `IncorrectTerm`/`UndefinedBuiltin`/…), never `.perform`. Uses
+      `builtin_scheme_isBuiltin` (analyzer table ⊆ interpreter table), `envwf_lookup`
+      (no `UndefinedVariable`), and the isolated T6 hypothesis `BuiltinAppNoBadCrash`.
+
+**T3 is the green derisking checkpoint — DONE for the pure monomorphic core:**
+`preservation` + `progress` + `soundness_value` over the transparent `Reduce`/
+`evalR`, all sorry-free, axioms `propext`/`Classical.choice`/`Quot.sound`. A
+well-typed pure-core program never goes wrong (no bad crash, no unhandled effect)
+and its result is typed. The two T6 obligations are cleanly isolated as the
+hypotheses `BuiltinAppPreserves` / `BuiltinAppNoBadCrash` (builtin saturation via
+`Builtin.run`). The full judgment signatures are fixed, so T4/T5/T6 extend by
+**adding constructors/cases**.
 - [x] Sanity `example`s typing real fixtures (`(\x.x) 1 : integer`, an arithmetic
       term) — **DELIVERED** in T3a; optional `#guard` against `gleam_analysis`
       `type_at` deferred.
@@ -458,13 +467,18 @@ checker / compiler.
 
 ## Definition of done
 
-- [ ] **T0:** transparent `Reduce` + `BehaviorsR`/`evalR`; `Reduce≡step` green on every
-      fixture; the opaque-`partial def` blocker is resolved by reasoning over `Reduce`.
-- [ ] **T1–T2:** full `Ty`; `RowEquiv`/`EffEquiv` proved an equivalence (and
-      decidable via normalization); schemes + the builtin table.
-- [ ] **T3 (the derisking checkpoint):** `progress`+`preservation`+`soundness`
-      green and sorry-free for the **pure monomorphic core**, with the *final*
-      judgment signatures (so later slices only add cases).
+- [~] **T0:** transparent `Reduce` + `evalR` ✅; `Reduce≈step` via build-time
+      `#guard`s ✅; the opaque-`partial def` blocker resolved by reasoning over
+      `Reduce` ✅. `BehaviorsR` + the dedicated `lake exe spec Reduce≡step` line:
+      deferred.
+- [~] **T1–T2:** full `Ty` ✅; `RowEquiv`/`EffEquiv` proved an equivalence ✅ (+ the
+      head/component inversion lemmas the proof needs ✅); schemes + builtin table ✅.
+      `RowEquiv` decidability via normalization: deferred (not needed for the proof).
+- [x] **T3 (the derisking checkpoint):** `progress`+`preservation`+`soundness_value`
+      **green and sorry-free for the pure monomorphic core**, axioms clean, with the
+      *final* judgment signatures (so later slices only add cases). The two builtin
+      saturation obligations are isolated as the hypotheses `BuiltinAppPreserves` /
+      `BuiltinAppNoBadCrash` (T6).
 - [ ] **T4/T5/T6:** each re-greens `soundness` for its larger fragment — data,
       then effects+handlers (**incl. effect safety**: emitted `perform` ∈ row),
       then let-polymorphism + full builtins.
