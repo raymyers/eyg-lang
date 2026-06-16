@@ -11,3 +11,7 @@ lean/plan/eyg-difference-semantics.md packages/gleam_interpreter/src/eyg/interpr
 ---
 
 Save my instructions to you in this convo to lean/plan/SEED.md with `---` lines between.
+
+---
+
+/goal Execute `lean/plan/eyg-interpreter-STEP.md` until PLAN complete.
