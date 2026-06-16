@@ -291,13 +291,15 @@ the primitive/builtin scheme tables.
 the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
 **This milestone proves the entire pipeline end-to-end before any hard feature.**
 
-- [ ] `HasType : Ctx → Node m → Ty → Ty → Prop` (env, term, type, **effect row** —
-      present now, pinned to `empty` in this slice), `Ctx = List (String ×
-      Scheme)`. Rules for this slice only: `Variable`, `Lambda` (arrow with body's
-      row in the middle; the lambda value itself pure), `Apply` (effect threading
-      per `do_infer`), monomorphic `Let`, `Integer`/`String`/`Binary`, arithmetic
-      `Builtin`. Plus the **`RowEquiv`/`EffEquiv` conversion rule** (so row order
-      never blocks a rule).
+- [x] `HasType : Ctx → Node m → Ty → Ty → Prop` (env, term, type, **effect row** —
+      present now; pure-core terms typeable at any `ε`, pinned to `empty` in the
+      soundness statement), `Ctx = List (String × Scheme)`. **DELIVERED** in
+      `Eyg/Types/Typing.lean` (T3a): rules `var`, `lam`, `app` (effect threading —
+      the function's latent effect = ambient `ε`, per `do_infer`'s
+      `unify(test_eff, eff)`), monomorphic `let_`, `int`/`str`/`bin`, `builtin`
+      (instantiate `Builtins.scheme`), and the **`TyEquiv` conversion rule**.
+      Sanity-typing `example`s for `(\x.x) 1`, `let`, `int_add 2 3`, value
+      `ε`-generality, and a row-reorder conversion — all green.
 - [ ] Runtime typing with **full signatures**: `HasTypeV : Value m → Ty → Prop`
       (literals, `Closure` via `EnvWf` + body typing — `references/abstract-
       machine-type-soundness.md` §3; `Partial` at its residual arrow), `EnvWf : Env
@@ -313,8 +315,13 @@ the pure fragment, and a complete `progress`+`preservation`+`soundness` for it.
       ¬ μ.IsCrashMove`) **over `Reduce`**, by `cases` on `Reduce`.
 - [ ] **`soundness` over `BehaviorsR`** for the pure fragment: well-typed ⇒ never
       `crash`; terminal value has type `τ`. **Green, sorry-free, axioms clean.**
-- [ ] Sanity `example`s typing real fixtures (`(\x.x) 1 : integer`, an arithmetic
-      term); optional `#guard` against `gleam_analysis` `type_at`.
+- [x] Sanity `example`s typing real fixtures (`(\x.x) 1 : integer`, an arithmetic
+      term) — **DELIVERED** in T3a; optional `#guard` against `gleam_analysis`
+      `type_at` deferred.
+
+**T3 status:** the typing judgment (T3a) is green. The runtime-typing layer
+(`HasTypeV`/`EnvWf`/`StackWf`/`MStateWf`), canonical-forms lemmas, and the
+`preservation`/`progress`/`soundness` proofs are the next T3 sub-slices.
 
 ## Milestone T4 — Slice 2: records, unions, rows
 
