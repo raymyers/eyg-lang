@@ -403,7 +403,17 @@ T6 obligation.
       these need a record-value typing (`RecordWf`: sorted fields realize a row) and
       the sorted-record↔row reconciliation (the record analog of the variant row
       work, with the `recordInsert`/`recordGet` sorting). Re-green `soundness` for the
-      full data fragment.
+      full data fragment. **`Select` DELIVERED** via `RecordWf` + `recordWf_get` (no
+      `MissingField`), `canonical_record`, `tyEquiv_recordRow`. **⚠ FINDING
+      (Extend/Overwrite):** the interpreter keeps records *sorted-unique*
+      (`recordInsert` replaces a present key — decision #3) while the type system
+      uses *scoped rows* (free extension keeps duplicates). So `extend l` on a record
+      already carrying `l` **diverges**: type `{l:new, l:old}` (new visible) vs value
+      `{l:new}` (old dropped). **Observably sound** (the visible field agrees, and the
+      only core eliminator `Select` reads the first/visible field) but breaks
+      lock-step `RecordWf`. To re-green `Extend`/`Overwrite`, either make `RecordWf`
+      **duplicate-collapsing** or have `Ty.WfRow` forbid duplicate record labels.
+      Recorded in `progress/2026-06-16-T4-row-machinery-boundary.md`.
 
 ## Milestone T5 — Slice 3: effects & handlers (the novel part)
 
