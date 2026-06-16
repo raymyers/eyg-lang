@@ -1,4 +1,5 @@
 import Eyg.Interpreter.Break
+import Eyg.Interpreter.Cast
 
 /-!
 # EYG CEK machine
@@ -131,16 +132,49 @@ partial def apply (val : Value m) (env : Env m) (k : Kontinue m) (ann : m) (rest
 
 /-- Apply a function value `f` to argument `arg` (`state.gleam:152`).
 
-Milestone 2: `Closure`, generic `Partial` accumulation, and `NotAFunction`.
-The specific `Partial`-switch arms are filled in by later milestones. -/
+`Closure` binds the param and enters the body; the `Partial`-switch arms run
+the structured-value operators (M3). Builtins (`Switch.Builtin`, M4) and effects
+(`Perform`/`Handle`/`Resume`, M5) are not yet wired and currently fall through
+the generic accumulation catch-all. -/
 partial def call (f : Value m) (arg : Value m) (ann : m) (env : Env m) (k : Stack m) : Return m :=
   match f with
   | .Closure param body captured =>
       .ok (.E body, (param, arg) :: captured, (Kontinue.Trace arg, ann) :: k)
   | .Partial switch applied =>
-      -- TODO(M3-M5): specific arms (Cons/Extend/Select/Match/Builtin/Perform/…)
-      -- go here, before this generic accumulation catch-all.
-      .ok (.V (.Partial switch (applied ++ [arg])), env, k)
+      match switch, applied with
+      | .Cons, [item] =>
+          match Cast.asList arg with
+          | .error e => .error e
+          | .ok elements => .ok (.V (.LinkedList (item :: elements)), env, k)
+      | .Extend label, [value] =>
+          match Cast.asRecord arg with
+          | .error e => .error e
+          | .ok fields => .ok (.V (.Record (recordInsert fields label value)), env, k)
+      | .Overwrite label, [value] =>
+          match Cast.asRecord arg with
+          | .error e => .error e
+          | .ok fields =>
+              match recordGet fields label with
+              | none => .error (.MissingField label)
+              | some _ => .ok (.V (.Record (recordInsert fields label value)), env, k)
+      | .Select label, [] =>
+          match Cast.asRecord arg with
+          | .error e => .error e
+          | .ok fields =>
+              match recordGet fields label with
+              | none => .error (.MissingField label)
+              | some value => .ok (.V value, env, k)
+      | .Tag label, [] => .ok (.V (.Tagged label arg), env, k)
+      | .Match label, [branch, otherwise] =>
+          match Cast.asTagged arg with
+          | .error e => .error e
+          | .ok (l, inner) =>
+              if l == label then call branch inner ann env k
+              else call otherwise arg ann env k
+      | .NoCases, [] => .error (.NoMatch arg)
+      -- TODO(M4): `.Builtin key, applied => callBuiltin …`
+      -- TODO(M5): `.Perform`/`.Handle`/`.Resume`
+      | switch, applied => .ok (.V (.Partial switch (applied ++ [arg])), env, k)
   | term => .error (.NotAFunction term)
 
 end
@@ -189,6 +223,31 @@ section
     (Tree.integer 2)) []).toOption == some (.Integer 1)
 -- unbound variable ⟶ break (UndefinedVariable)
 #guard (execute (Tree.variable_ "z") []).toOption == none
+
+/-! ### Structured values (Milestone 3) -/
+
+-- record select: `{a:1, b:2}.b` ⟶ 2
+#guard (execute (Tree.get (Tree.record [("a", Tree.integer 1), ("b", Tree.integer 2)]) "b")
+  []).toOption == some (.Integer 2)
+-- select missing field ⟶ break
+#guard (execute (Tree.get (Tree.record [("a", Tree.integer 1)]) "z") []).toOption == none
+-- overwrite existing field: `{a:1}` with `a:9` ⟶ {a:9}
+#guard (execute (Tree.apply (Tree.apply (Tree.overwrite "a") (Tree.integer 9))
+  (Tree.record [("a", Tree.integer 1)])) []).toOption == some (mkRecord [("a", .Integer 9)])
+-- overwrite missing field ⟶ break (MissingField)
+#guard (execute (Tree.apply (Tree.apply (Tree.overwrite "z") (Tree.integer 9))
+  (Tree.record [("a", Tree.integer 1)])) []).toOption == none
+-- list cons: `[1, 2]` ⟶ LinkedList [1, 2]
+#guard (execute (Tree.list [Tree.integer 1, Tree.integer 2]) []).toOption
+  == some (.LinkedList [.Integer 1, .Integer 2])
+-- variant + match: `match Some(1) { Some -> x | _ -> 0 }` style ⟶ 1
+#guard (execute
+  (Tree.match_ (Tree.tagged "Some" (Tree.integer 1))
+    [("Some", Tree.lambda "x" (Tree.variable_ "x"))]) []).toOption == some (.Integer 1)
+-- match falls through to the otherwise branch
+#guard (execute
+  (Tree.match_ (Tree.tagged "None" (Tree.integer 7))
+    [("Some", Tree.lambda "x" (Tree.variable_ "x"))]) []).toOption == none
 end
 
 end Eyg.Interpreter

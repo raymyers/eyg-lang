@@ -171,21 +171,28 @@ metadata variable. `eval`/`apply` use a local `let res : Return …` then
 exactly. `eval`/`apply`/`call` are `partial def` in one `mutual` block
 (anticipating M5's `fix`-driven non-termination; only `loop` truly needs it).
 
-## Milestone 3 — Structured values: records, variants, lists, matching
+## Milestone 3 — Structured values: records, variants, lists, matching  ✅ DONE
 
-**Deliverable:** every `Switch` case in `call` is implemented; the
-record/variant/list/pattern-match fixtures in `core_suite.json` pass.
+**Deliverable:** every structured-value `Switch` case in `call` is implemented;
+the record/variant/list/pattern-match fixtures in `core_suite.json` pass.
+(Suite-level validation lands in M6; M3 is checked by `#guard`s for now.)
 
-- [ ] Implement `call`'s `Partial` cases exactly as `state.gleam:160-207`:
-      `Cons` (prepend, `cast.as_list`), `Extend`/`Overwrite` (`cast.as_record`,
-      `Overwrite` requires existing field → else `MissingField`), `Select`
-      (`MissingField` on absent), `Tag`→`Tagged`, `Match` (compare label, call
-      branch vs otherwise), `NoCases`→`NoMatch`.
-- [ ] Port `Cast.lean` (`cast.gleam`): `asInteger/asString/asBinary/asList/
-      asRecord/asTagged/...`, each producing `IncorrectTerm`/`MissingField` on
-      mismatch.
-- [ ] Verify arity accumulation: a `Partial` under-applied stays `Partial`
-      (`state.gleam:203`).
+- [x] Implemented `call`'s `Partial` arms (`state.gleam:160-207`): `Cons`
+      (`Cast.asList`, prepend), `Extend`/`Overwrite` (`Cast.asRecord`,
+      `recordInsert`; `Overwrite` requires existing field via `recordGet` else
+      `MissingField`), `Select` (`recordGet`/`MissingField`), `Tag`→`Tagged`,
+      `Match` (compare label, `call` branch vs otherwise), `NoCases`→`NoMatch`.
+- [x] `Cast.lean` (`cast.gleam`): `asInteger/asString/asBinary/asList/asRecord/
+      asTagged`, each `IncorrectTerm` on mismatch.
+- [x] Arity accumulation verified: under-applied `Partial` stays `Partial` via
+      the generic catch-all (`state.gleam:203`).
+- [x] `#guard` checks: record select / missing-field break / overwrite (hit &
+      miss) / list literal / variant match (hit & otherwise) — all pass.
+
+**Notes:** `call`'s `Partial` block uses explicit `match` on `Cast` results
+rather than `do`-notation — the `Return` abbrev fixes the `Except` success type,
+so the do-monad couldn't be inferred (`Bind Return`). Builtins (M4) and effects
+(M5) still fall through the catch-all and are marked `TODO` there.
 
 ## Milestone 4 — Builtins
 
