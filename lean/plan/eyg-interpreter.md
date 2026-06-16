@@ -281,32 +281,42 @@ grapheme clusters. Added a combining-mark-aware `graphemes` helper in
 routed both builtins through it. `string_split_once`/`string_replace`
 empty-pattern quirks already passed (ASCII fixtures).
 
-## Milestone 7 — IR codec & `ir_suite.json` (encode / decode / CID)
+## Milestone 7 — IR codec & `ir_suite.json` (encode / decode / CID)  ✅ DONE — 21/21 CID
 
 **Deliverable:** dag-json round-trips and CIDs match `ir_suite.json`.
 
-- [ ] `Eyg/Ir/DagJson.lean`: encoder + decoder mirroring
-      `gleam_ir/.../dag_json.gleam`; assert decode∘encode round-trips and that
-      decoding every fixture `source` succeeds.
-- [ ] `Eyg/Ir/Cid.lean`: canonical block encoding (`to_block`) → CIDv1.
-      **Hard part / sequence last:** computing the `cid` strings needs SHA-256
-      + multihash + CIDv1 + base32 (`gleam_ir/.../cid.gleam`). Options, in order
-      of preference: (a) find/port a Lean SHA-256; (b) treat `Sha256` as an
-      injected effect like Gleam does and feed precomputed digests; (c) defer
-      CID-string equality and only verify structural round-trip first.
-- [ ] **DoD:** `ir_suite.json` CIDs reproduced (or, if deferred, round-trip +
-      decode coverage green with CID equality tracked as a follow-up).
+- [x] Encoder + decoder mirroring `dag_json.gleam` (in `Eyg/Spec/Harness.lean`:
+      `decodeNode`/`encodeNode`); every fixture `source` decodes and
+      `decode ∘ encode` round-trips (21/21).
+- [x] `Eyg/Ir/Cid.lean`: canonical block encoding (`toBlock`, via
+      `Json.compress` over a sorted-key object) → CIDv1. **Chose option (a):**
+      a from-scratch Lean **SHA-256** (FIPS 180-4, verified against the
+      `"abc"`/empty test vectors), plus base32-lower, LEB128 varint, the
+      sha2-256 multihash, and the dag-json codec `0x0129` → multibase `b…`.
+- [x] **DoD met:** `ir round-trip: 21/21 | CID match: 21/21`.
+
+**Notes:** the canonical dag-json bytes fall out of `Lean.Json.compress`, whose
+backing object is a `Std.TreeMap` ordered by `String.compare` — bytewise, which
+matches dag-json key ordering for the IR's single-ASCII-char node keys (and the
+nested single-key bytes/CID objects). Hand-verified the version+codec varint
+prefix decodes to the `baguqeera…` base32 head before running the suite.
 
 ---
 
-## Definition of done
+## Definition of done  ✅ ALL MET
 
-- `lake build` clean; `Eyg/Interpreter/*` mirrors the Gleam modules.
-- The Lean harness passes **every** fixture in
-  `spec/evaluation/{core,builtins,effects}_suite.json`.
-- `ir_suite.json` round-trips; CIDs match (or the gap is explicitly tracked).
-- A short `notes/`-style header in each Lean module points at the Gleam file it
-  mirrors, so drift is reviewable.
+- [x] `lake build` clean; `Eyg/Interpreter/*` mirrors the Gleam modules
+      (`Tree`, `Value`, `Break`, `Cast`, `Builtin`, `State`; drivers `execute`/
+      `resume` in `State`).
+- [x] The Lean harness passes **every** fixture in
+      `spec/evaluation/{core,builtins,effects}_suite.json` — **104/104**
+      (`lake exe spec`).
+- [x] `ir_suite.json` round-trips (21/21) **and** CIDs match (21/21).
+- [x] Each Lean module opens with a header pointing at the Gleam file it mirrors.
+
+**How to run:** `cd lean && lake exe spec` →
+`spec evaluation: 104/104 fixtures passed` /
+`ir round-trip: 21/21 | CID match: 21/21` (exit 0).
 
 ## Risks / watch-list
 

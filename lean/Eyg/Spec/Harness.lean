@@ -1,4 +1,5 @@
 import Eyg.Interpreter.State
+import Eyg.Ir.Cid
 import Lean.Data.Json
 
 /-!
@@ -160,6 +161,101 @@ def decodeFixture (j : Json) : Except String Fixture := do
   let expected ← decodeExpectation j
   .ok ⟨name, source, effects, expected⟩
 
+/-! ## IR encoder & round-trip (dag_json.to_data_model) -/
+
+/-- Encode bytes as base64 (standard alphabet, no padding); inverse of
+`decodeB64`. Used only for round-trip — canonical-byte ordering for CIDs is M7
+part B. -/
+def encodeB64 (bytes : ByteArray) : String := Id.run do
+  let tbl := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".toList.toArray
+  let mut out := ""
+  let mut acc : Nat := 0
+  let mut nbits : Nat := 0
+  for b in bytes.toList do
+    acc := (acc <<< 8) ||| b.toNat
+    nbits := nbits + 8
+    while nbits ≥ 6 do
+      nbits := nbits - 6
+      out := out.push tbl[((acc >>> nbits) &&& 0x3F)]!
+  if nbits > 0 then
+    out := out.push tbl[((acc <<< (6 - nbits)) &&& 0x3F)]!
+  return out
+
+/-- Encode an IR node back to the dag-json data model (`dag_json.to_data_model`).
+Key order is not canonicalised — `decodeNode` reads fields by name. -/
+partial def encodeNode (nd : Tree.Node Unit) : Json :=
+  let lbl (x : String) : String × Json := ("l", Json.str x)
+  let o := Json.mkObj
+  let cidLink (c : Tree.Cid) : Json := Json.mkObj [("/", Json.str c)]
+  match nd.expr with
+  | .Variable x => o [("0", Json.str "v"), lbl x]
+  | .Lambda x b => o [("0", Json.str "f"), lbl x, ("b", encodeNode b)]
+  | .Apply f a => o [("0", Json.str "a"), ("f", encodeNode f), ("a", encodeNode a)]
+  | .Let x v t => o [("0", Json.str "l"), lbl x, ("v", encodeNode v), ("t", encodeNode t)]
+  | .Binary b => o [("0", Json.str "x"),
+      ("v", Json.mkObj [("/", Json.mkObj [("bytes", Json.str (encodeB64 b))])])]
+  | .Integer i => o [("0", Json.str "i"), ("v", Json.num (.fromInt i))]
+  | .String s => o [("0", Json.str "s"), ("v", Json.str s)]
+  | .Tail => o [("0", Json.str "ta")]
+  | .Cons => o [("0", Json.str "c")]
+  | .Vacant => o [("0", Json.str "z")]
+  | .Empty => o [("0", Json.str "u")]
+  | .Extend x => o [("0", Json.str "e"), lbl x]
+  | .Select x => o [("0", Json.str "g"), lbl x]
+  | .Overwrite x => o [("0", Json.str "o"), lbl x]
+  | .Tag x => o [("0", Json.str "t"), lbl x]
+  | .Case x => o [("0", Json.str "m"), lbl x]
+  | .NoCases => o [("0", Json.str "n")]
+  | .Perform x => o [("0", Json.str "p"), lbl x]
+  | .Handle x => o [("0", Json.str "h"), lbl x]
+  | .Builtin x => o [("0", Json.str "b"), lbl x]
+  | .ContentReference c => o [("0", Json.str "#"), ("l", cidLink c)]
+  | .ReleaseReference p r c =>
+      o [("0", Json.str "@"), ("p", Json.str p), ("r", Json.num (.fromInt r)), ("l", cidLink c)]
+  | .RelativeReference loc => o [("0", Json.str "."), ("i", Json.str loc)]
+
+/-- An `ir_suite.json` fixture: a source node and its expected CIDv1 string. -/
+structure IrFixture where
+  name : String
+  source : Tree.Node Unit
+  cid : String
+
+def decodeIrFixture (j : Json) : Except String IrFixture := do
+  .ok ⟨← strField j "name", ← decodeNode (← field j "source"), ← strField j "cid"⟩
+
+/-- Canonical dag-json block bytes for a node: compact JSON with sorted keys
+(`Json.compress` over the sorted-key object). Mirrors `dag_json.to_block`. -/
+def toBlock (nd : Tree.Node Unit) : ByteArray := (encodeNode nd).compress.toUTF8
+
+/-- Check a fixture: structural round-trip and CIDv1-string equality. -/
+def runIrFixture (fx : IrFixture) : Bool × Bool :=
+  let roundTrip := (decodeNode (encodeNode fx.source)).toOption == some fx.source
+  let cidOk := Eyg.Ir.Cid.cidOfBlock (toBlock fx.source) == fx.cid
+  (roundTrip, cidOk)
+
+/-- Returns `(roundTripPassed, cidPassed, total, failures)`. -/
+def runIrSuiteJson (file : String) (j : Json) : Nat × Nat × Nat × List String := Id.run do
+  let mut passed := 0
+  let mut cidPassed := 0
+  let mut total := 0
+  let mut fails : List String := []
+  match j.getArr? with
+  | .error e => return (0, 0, 1, [s!"{file}: not a JSON array: {e}"])
+  | .ok arr =>
+    for fxJson in arr do
+      total := total + 1
+      match decodeIrFixture fxJson with
+      | .error e =>
+          let nm := (strField fxJson "name").toOption.getD "?"
+          fails := fails ++ [s!"{file}: {nm}: decode error: {e}"]
+      | .ok fx =>
+          let (rt, cid) := runIrFixture fx
+          if rt then passed := passed + 1
+          else fails := fails ++ [s!"{file}: {fx.name}: round-trip mismatch"]
+          if cid then cidPassed := cidPassed + 1
+          else fails := fails ++ [s!"{file}: {fx.name}: CID mismatch"]
+  return (passed, cidPassed, total, fails)
+
 /-! ## Runner -/
 
 /-- Run a fixture: execute, fold effect replies through `resume`, compare. -/
@@ -209,7 +305,21 @@ def run : IO UInt32 := do
         passed := passed + p; total := total + t; fails := fails ++ fs
   IO.println s!"spec evaluation: {passed}/{total} fixtures passed"
   for f in fails do IO.println s!"  FAIL {f}"
-  if passed == total ∧ total > 0 then pure 0 else pure 1
+  -- IR suite: structural round-trip (CID-string equality is tracked as M7 part B)
+  let irContents ← IO.FS.readFile "../spec/ir_suite.json"
+  let mut irPassed := 0
+  let mut irCid := 0
+  let mut irTotal := 0
+  let mut irFails : List String := []
+  match Json.parse irContents with
+  | .error e => irFails := [s!"ir_suite.json: JSON parse error: {e}"]; irTotal := 1
+  | .ok j =>
+      let (p, c, t, fs) := runIrSuiteJson "ir_suite.json" j
+      irPassed := p; irCid := c; irTotal := t; irFails := fs
+  IO.println s!"ir round-trip: {irPassed}/{irTotal} | CID match: {irCid}/{irTotal}"
+  for f in irFails do IO.println s!"  FAIL {f}"
+  if passed == total ∧ total > 0 ∧ irPassed == irTotal ∧ irCid == irTotal ∧ irTotal > 0
+    then pure 0 else pure 1
 
 end Eyg.Spec
 
