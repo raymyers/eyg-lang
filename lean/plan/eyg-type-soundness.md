@@ -388,12 +388,15 @@ T6 obligation.
       reconciliation** (T1 deferred item) for `Extend`/`Select`/`Overwrite`. Suggested
       order: `Cons` (lists, no rows) → `Tag`/`Case`/`NoCases` (variants) →
       `Extend`/`Select`/`Overwrite` (records, needs the row reconciliation).
-- [ ] Extend `HasTypeV` (`Record` fields realize a record row via the T1 sorted-row
-      hinge; `Tagged l v` inhabits a union row containing `l`; `LinkedList`) and the
-      canonical-forms lemmas (record row ⇒ `.Record`; union row ⇒ `.Tagged`).
-- [ ] Extend `preservation`/`progress` with the new `Reduce` cases — `Select l` on a
-      record returns field `l` (no `MissingField`), `Case` matches a present tag
-      (no `NoMatch`). Re-green `soundness` for the data fragment.
+- [~] Extend `HasTypeV` and canonical forms. **DELIVERED:** `listNil`/`listCons` +
+      `canonical_list`; `tagged` (union membership) + `partialTag`; `recordNil`.
+      **Remaining:** non-empty `Record` fields realize a record row (sorted-row
+      hinge); union-row ⇒ `.Tagged` canonical form (for `Case`).
+- [~] Extend `preservation`/`progress` with the new `Reduce` cases. **DELIVERED:**
+      `Cons` and `Tag` operations green (no `IncorrectTerm` crash on `Cons`, via
+      `canonical_list`). **Remaining:** `Case` (no `NoMatch`), `Select l` (no
+      `MissingField`), `Extend`/`Overwrite`. Re-green `soundness` for the full data
+      fragment.
 
 ## Milestone T5 — Slice 3: effects & handlers (the novel part)
 
