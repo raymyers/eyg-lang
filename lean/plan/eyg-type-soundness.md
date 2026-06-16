@@ -240,25 +240,25 @@ set `BehaviorsR`, and an executable cross-check that `Reduce` agrees with the op
 **Deliverable:** `Eyg/Types/Ty.lean` — the **full** EYG type language (records,
 unions, effects all present) and a *decidable* row-equivalence.
 
-- [ ] `inductive Ty` mirroring `isomorphic.Type`: `var`, `fun (arg eff ret)`,
+- [x] `inductive Ty` mirroring `isomorphic.Type`: `var`, `fun (arg eff ret)`,
       `binary`, `integer`, `string`, `list`, `record (row)`, `union (row)`,
       `empty`, `rowExtend (label) (field) (tail)`,
       `effectExtend (label) (lift) (reply) (tail)`, `never`, `promise`.
-      **Type variables: de Bruijn** (Open Question #2; canonical types, decidable
-      type equality, no α-renaming — `references/progress-preservation-recipe.md`
-      §5).
-- [ ] Smart constructors: `unit = record empty`, `boolean`, `result`, `option`,
-      `rows`, `record`, `union` (mirror `isomorphic.gleam`).
-- [ ] **Row well-formedness / kinding** `Ty.WfRow`/`Ty.WfEff` — distinguish *value
-      rows* (under `record`/`union`) from *effect rows* (under `fun`'s middle slot
-      / `effectExtend`). Keep minimal.
-- [ ] **`RowEquiv` / `EffEquiv`** = Leijen's row equality (`eq-head` congruence +
-      `eq-swap` *only when labels differ*; `references/row-types-scoped-labels.md`).
-      **Recommended route: define a stable-sort `normalizeRow` and prove
-      `RowEquiv r s ↔ normalizeRow r = normalizeRow s`** — this gives the
-      equivalence (refl/symm/trans/congruence) and **decidability** via plain `Eq`,
-      far cheaper than chaining `swap`/`trans`. The `l ≠ l'` guard is load-bearing
-      (keeps duplicate labels ordered) — make it a decidable obligation.
+      **Type variables: de Bruijn** (`Ty.var : Nat → Ty`); `deriving DecidableEq`.
+      **DELIVERED** in `Eyg/Types/Ty.lean`.
+- [x] Smart constructors: `unit = record empty`, `boolean`, `result`, `option`,
+      `rows`, `record'`, `union'` (mirror `isomorphic.gleam`). **DELIVERED.**
+- [~] **Row well-formedness / kinding** `Ty.WfRow`/`Ty.WfEff` — **deferred** to T1b
+      (introduce alongside the typing judgment in T3, where value-row vs. effect-row
+      kinding is actually consumed). Keep minimal.
+- [x] **`RowEquiv` / `EffEquiv`** = Leijen's row equality — **DELIVERED** as
+      `TyEquiv` (the congruence closure of `refl`/`symm`/`trans`, per-constructor
+      congruence incl. `eq-head` `congrRow`/`congrEff`, and `swapRow`/`swapEff` with
+      the load-bearing `l ≠ l'` guard). `tyEquiv_equivalence : Equivalence TyEquiv`
+      (axiom-free); `RowEquiv`/`EffEquiv` are aliases. **The stable-sort
+      `normalizeRow` + `RowEquiv ↔ normalizeRow r = normalizeRow s` decidability is
+      the T1b follow-up** — the declarative soundness proof needs only the relation
+      and its equivalence laws (decidability is for the algorithmic layer, T8).
 - [ ] Reconcile with the interpreter's **canonical (sorted, unique-key) records**
       (`recordInsert`/`mkRecord`): a lemma that a sorted field list realizes a row
       `RowEquiv`-equal to any permutation — the hinge for `Select`/`Extend`/
