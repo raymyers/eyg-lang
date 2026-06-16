@@ -102,27 +102,45 @@ spec fixtures.
   for the spec so no richer model is needed yet.
 - Local `Repr ByteArray` instance (core lacks one) so the tree can `deriving Repr`.
 
-## Milestone 1 — Values, environments, continuations
+## Milestone 1 — Values, environments, continuations  ✅ DONE
 
 **Deliverable:** `Value.lean` + the machine-state types compile as one mutual
-inductive with derived `DecidableEq`.
+inductive with derived structural equality.
 
-- [ ] `mutual inductive` block for:
+- [x] `mutual inductive` block for `Value` / `Switch` / `Kontinue`
+      (`Eyg/Interpreter/Value.lean`). `Stack` is **not** in the block — it is a
+      `List (Kontinue m × m)` alias (see deviation below).
   - `Value`: `Binary, Integer, String, LinkedList (List Value),
-    Record (record repr), Tagged (String) Value, Closure (param) (body : Node)
-    (captured : Scope), Partial Switch (List Value)`.
-  - `Switch`: `Cons, Extend String, Overwrite String, Select String, Tag String,
-    Match String, NoCases, Perform String, Handle String, Resume Context,
-    Builtin String` (`value.gleam:20`).
-  - `Kontinue`: `Arg (Node) (Scope), Apply Value Scope, Assign String (Node)
-    Scope, CallWith Value Scope, Delimit String Value Scope Bool, Trace Value`
-    (`state.gleam:63`).
-- [ ] Type aliases: `Scope := List (String × Value)`,
-      `Stack := List (Kontinue × m)` (Gleam's `Empty | Stack(k,meta,rest)`),
-      `Context := Stack × Scope` (the captured resumption inside `Resume`).
-- [ ] `deriving DecidableEq, Repr`; add `unit`, `true`, `false`, `ok`, `error`,
-      `some`, `none`, `tag` helpers from `value.gleam`.
-- [ ] Confirm record equality is order-insensitive (decision #3).
+    Record (List (String × Value)), Tagged, Closure (param) (body : Tree.Node)
+    (env : Scope), Partial Switch (List Value)`.
+  - `Switch`: all 11 cases; `Resume` carries
+    `(frames : List (Kontinue m × m)) (env : Scope)` = state.gleam `Context(m)`.
+  - `Kontinue`: `Arg, Apply, Assign, CallWith, Delimit … Bool, Trace`.
+- [x] Aliases: `Scope := List (String × Value)`, `Env := Scope` (decision #1, no
+      builtin dict), `Stack := List (Kontinue m × m)`,
+      `Context := Stack × Scope`.
+- [x] `deriving Repr, BEq, Inhabited`; helpers `unit, tag, true', false', bool,
+      ok, error, some', none'` + record helpers `recordInsert/recordGet/mkRecord`.
+- [x] `Break.lean`: `Reason` (12 cases) `deriving Repr, BEq, Inhabited`.
+- [x] Record equality is order-insensitive — `native_decide` smoke checks pass.
+
+**Notes / deviations actually taken:**
+- **`BEq`, not `DecidableEq` (revision of decision #2).** `DecidableEq` deriving
+  cannot see through `List`/`Prod` nesting, and `Value` recurses through `List`
+  in four places (LinkedList, Record, Partial args, Closure/Resume env). The
+  harness only needs **Bool** structural comparison, which `deriving BEq`
+  provides and *does* derive through `List`. Prop-level `DecidableEq` is deferred
+  (only needed for the semantics proofs in `eyg-semantics.md`); revisit there,
+  e.g. via a hand-rolled instance or a direct-recursion list encoding.
+- **Records kept canonical** (sorted-by-key, unique) via `recordInsert`/
+  `mkRecord` so derived `BEq` is order-insensitive (decision #3). Every
+  record-building site in M3/M4 must route through these.
+- **`Stack` is a `List (Kontinue m × m)` alias**, matching Gleam's
+  `Empty | Stack(k,meta,rest)` and the `do_perform`/`move` list accumulator; this
+  also keeps `Stack` out of the mutual block.
+- Reserved-token renames: `some`→`some'`, `none`→`none'`, `true`/`false`→
+  `true'`/`false'`; `Reason` field `module`→`module_`; `Kontinue` field
+  `then`→`then_`.
 
 ## Milestone 2 — Core CEK machine (no effects/builtins yet)
 
