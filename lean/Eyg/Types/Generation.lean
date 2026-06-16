@@ -94,6 +94,27 @@ theorem inv_let {Γ : Ctx} {x : String} {defn body : Tree.Node m} {a : m} {τ ε
         HasType.conv hbody hτ hε⟩
   | _ => simp at he
 
+/-- **Typeable nodes are exactly the pure-core forms.** A well-typed node's
+expression is one of the eight rules' shapes — used to discharge the untypeable
+`reduceEval` arms (`Vacant`, `Tail`, `Cons`, `Select`, …) in the preservation
+`tau` split. Grows as later slices add rules. -/
+theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    (h : HasType Γ e τ ε) :
+    (∃ x, e.expr = .Variable x) ∨ (∃ x b, e.expr = .Lambda x b) ∨
+    (∃ f arg, e.expr = .Apply f arg) ∨ (∃ x d b, e.expr = .Let x d b) ∨
+    (∃ n, e.expr = .Integer n) ∨ (∃ s, e.expr = .String s) ∨
+    (∃ b, e.expr = .Binary b) ∨ (∃ id, e.expr = .Builtin id) := by
+  induction h with
+  | var => exact Or.inl ⟨_, rfl⟩
+  | lam => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
+  | app => exact Or.inr (Or.inr (Or.inl ⟨_, _, rfl⟩))
+  | let_ => exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl⟩)))
+  | int => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))
+  | str => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))
+  | bin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))))
+  | builtin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨_, rfl⟩))))))
+  | conv _ _ _ ih => exact ih
+
 theorem inv_app {Γ : Ctx} {f arg : Tree.Node m} {a : m} {τ ε : Ty}
     (h : HasType Γ (⟨.Apply f arg, a⟩ : Tree.Node m) τ ε) :
     ∃ argTy, HasType Γ f (.fun argTy ε τ) ε ∧ HasType Γ arg argTy ε := by
