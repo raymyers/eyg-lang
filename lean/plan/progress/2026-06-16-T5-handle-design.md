@@ -89,17 +89,32 @@ the row to *shrink* at a `Delimit` pop. ⚠ This is the one place the ambient `�
 invariant across a step — see "row-change subtlety" below.
 
 ### 4. `Resume` partial typing — the reified continuation
-**✅ KEYSTONE DELIVERED (T5d).** No new judgment is needed: `StackWf` is *already* a
-segment typing (`StackWf.nil : StackWf [] σ ε σ` is the identity). `Eyg/Types/Machine.lean`
-now has `stackWf_append`, `move_eq`, and `stackWf_move : StackWf acc.reverse σin ε σmid
-→ StackWf k σmid ε τ → StackWf (move acc k) σin ε τ` (axioms `propext` only). So
-`partialResume` simply stores `StackWf acc.reverse reply tail ret` (the captured
-delimited prefix as a `reply ⇒ ret` segment) + the `kontTy` `TyEquiv`, and the
-`Resume` reduction's `move acc k` successor is typed by `stackWf_move`. The original
-"segment transformer" higher-order formulation below is **not needed** — the concrete
-`StackWf`-segment + `stackWf_move` is simpler and is proved.
+**⚠ CORRECTION (found by attempting the impl).** The T5d shortcut "`StackWf` *is* the
+segment typing" holds **only while every frame keeps the ambient row constant** — true
+for the 6 pre-`Handle` frames, but **`StackWf.delimit` changes the row** (discharges
+`l`: `EffectExtend(l,…,tail) → tail`). `stackWf_append`/`stackWf_move` are proved with a
+*uniform* `ε` for `seg` and `k`; once `seg` may contain a `delimit`, its bottom row (at
+the nil/hole, where `k` splices in) differs from its top row, and `StackWf`'s single
+`ε` index does not expose that bottom row — so the uniform-`ε` append lemma cannot even
+be *stated* to match `k`'s row. And the captured `acc` for a **deep** handler always
+re-pushes the matching `Delimit`, so `acc.reverse` *does* contain a `delimit`. Hence:
+- `stackWf_append`/`stackWf_move` (T5d) stay valid **only for delimit-free segments**
+  (still useful — most captured prefixes between a `perform` and its handler are
+  delimit-free *except* the final re-pushed `Delimit`).
+- The higher-order "segment transformer" alternative (`partialResume` storing a
+  `∀ k, StackWf k … → StackWf (move acc k) …` function) is **illegal**: `StackWf` left
+  of `→` inside a constructor is a non-positive occurrence in the mutual block.
+- **Fix:** a dedicated first-order `StackSegWf seg σin εin σout εout` inductive
+  (mirror the 7 `StackWf` frames, but track **both** endpoint type+row; `delimit`'s
+  output row is `tail`), in the `HasTypeV`/`EnvWf` mutual block (it references
+  `HasTypeV`). Then `stackSeg_append : StackSegWf seg σin εin σmid εmid → StackWf k σmid
+  εmid τ → StackWf (seg ++ k) σin εin τ` and the `move` corollary. `partialResume`
+  stores `StackSegWf acc.reverse reply εtop ret tail`; the `Resume` successor types via
+  the corollary with the handler's continuation `k` at row `tail`.
 
-Original (superseded) sketch:
+This is the single remaining hard design point. Everything else (rules, `partialHandle*`,
+`StackWf.delimit`, the per-site `delimit` cases, the dispatch lemma §5) is mechanical
+once `StackSegWf` exists. Original (superseded) sketch:
 `resume = Partial (Resume acc iEnv) []` must type as `Fun(reply, tail, ret)` (the
 `kontTy`). When called with `r : reply`, it does `.V r, capturedEnv, move acc k`. So
 `acc` is a captured stack segment that takes a `reply`-value, under row `tail`, to…
