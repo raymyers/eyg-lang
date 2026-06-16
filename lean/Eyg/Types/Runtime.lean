@@ -121,6 +121,16 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   | partialSelect {label fieldTy tail τ} :
       Ty.TyEquiv (.fun (.record (.rowExtend label fieldTy tail)) .empty fieldTy) τ →
       HasTypeV (.Partial (.Select label) []) τ
+  /-- `Extend l` with no args: `∀α r. α → {r} → {l:α|r}`. -/
+  | partialExtendNil {label fieldTy row τ} :
+      Ty.TyEquiv (.fun fieldTy .empty
+        (.fun (.record row) .empty (.record (.rowExtend label fieldTy row)))) τ →
+      HasTypeV (.Partial (.Extend label) []) τ
+  /-- `Extend l` with the field value applied: `{r} → {l:α|r}`. -/
+  | partialExtendOne {label v fieldTy row τ} :
+      HasTypeV v fieldTy →
+      Ty.TyEquiv (.fun (.record row) .empty (.record (.rowExtend label fieldTy row))) τ →
+      HasTypeV (.Partial (.Extend label) [v]) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -189,6 +199,8 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | partialMatchTwo hb ho he => exact .partialMatchTwo hb ho (he.trans heq)
   | record hpres hmatch he => exact .record hpres hmatch (he.trans heq)
   | partialSelect he => exact .partialSelect (he.trans heq)
+  | partialExtendNil he => exact .partialExtendNil (he.trans heq)
+  | partialExtendOne hvf he => exact .partialExtendOne hvf (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -251,6 +263,42 @@ theorem record_get {m : Type} {fields : List (String × Value m)} {row : Ty} {l 
   | none => exact absurd hg (hpres l f hc)
   | some v => exact ⟨v, rfl, hmatch l f v hc hg⟩
 
+/-- Inserting `l ↦ v` makes `recordGet … l = v` (the sorted-insert ↔ lookup hinge). -/
+theorem recordInsert_get_eq {m : Type} (fields : List (String × Value m)) (l : String)
+    (v : Value m) : recordGet (recordInsert fields l v) l = some v := by
+  induction fields with
+  | nil => simp [recordInsert, recordGet]
+  | cons hd rest ih =>
+      obtain ⟨k, vk⟩ := hd
+      simp only [recordInsert]
+      split
+      · simp [recordGet]
+      · next h1 =>
+          split
+          · simp [recordGet]
+          · simp only [recordGet]
+            split
+            · next hh => exact absurd hh h1
+            · exact ih
+
+/-- Inserting `l ↦ v` leaves `recordGet … l'` unchanged for `l' ≠ l`. -/
+theorem recordInsert_get_ne {m : Type} (fields : List (String × Value m)) {l l' : String}
+    (v : Value m) (hne : (l' == l) = false) :
+    recordGet (recordInsert fields l v) l' = recordGet fields l' := by
+  induction fields with
+  | nil => simp [recordInsert, recordGet, hne]
+  | cons hd rest ih =>
+      obtain ⟨k, vk⟩ := hd
+      simp only [recordInsert]
+      split
+      · next hlk => obtain rfl := eq_of_beq hlk; simp [recordGet, hne]
+      · split
+        · simp [recordGet, hne]
+        · simp only [recordGet]
+          split
+          · rfl
+          · exact ih
+
 /-- A value at an arrow type is a closure or a (callable) partial — never a
 literal or a data structure. Callers `cases` the typing again to dispatch on the
 partial's switch. -/
@@ -269,6 +317,8 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialMatchOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialMatchTwo _ _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialSelect _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialExtendNil _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialExtendOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | record _ _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc

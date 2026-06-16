@@ -376,8 +376,8 @@ T6 obligation.
 - [~] Add typing rules (primitive schemes from T2) for the data nodes. **`Empty`/
       `Tail` DELIVERED** (T4a) — value-producing, threaded green through the whole
       pipeline (`HasType.tail/empty`, `HasTypeV.listNil/recordNil`, `inv_tail/empty`,
-      `preservation_E`/`progress` cases). **Operators `Cons`/`Extend`/`Select`/
-      `Overwrite`/`Tag`/`Case`/`NoCases` remain (T4b)** — they produce `Partial`s and
+      `preservation_E`/`progress` cases). **`Cons`/`Tag`/`Case`/`NoCases`/`Select`/
+      `Extend` DELIVERED; only `Overwrite` remains (T4b)** — they produce `Partial`s and
       do the operation in `reduceCall`, so they need: (1) per-operator `HasType` rules
       (instantiate the `cons()/extend()/select()/…` schemes); (2) operator-`Partial`
       and result-value (`LinkedList`/`Record`/`Tagged`) `HasTypeV` cases; (3)
@@ -404,16 +404,20 @@ T6 obligation.
       the sorted-record↔row reconciliation (the record analog of the variant row
       work, with the `recordInsert`/`recordGet` sorting). Re-green `soundness` for the
       full data fragment. **`Select` DELIVERED** via `RecordWf` + `recordWf_get` (no
-      `MissingField`), `canonical_record`, `tyEquiv_recordRow`. **⚠ FINDING
-      (Extend/Overwrite):** the interpreter keeps records *sorted-unique*
-      (`recordInsert` replaces a present key — decision #3) while the type system
-      uses *scoped rows* (free extension keeps duplicates). So `extend l` on a record
-      already carrying `l` **diverges**: type `{l:new, l:old}` (new visible) vs value
-      `{l:new}` (old dropped). **Observably sound** (the visible field agrees, and the
-      only core eliminator `Select` reads the first/visible field) but breaks
-      lock-step `RecordWf`. To re-green `Extend`/`Overwrite`, either make `RecordWf`
-      **duplicate-collapsing** or have `Ty.WfRow` forbid duplicate record labels.
-      Recorded in `progress/2026-06-16-T4-row-machinery-boundary.md`.
+      `MissingField`), `canonical_record`, `tyEquiv_recordRow`. **`Extend` DELIVERED**
+      (T4c): `HasType.extend` (∀α r. α → {r} → {l:α|r}), `HasTypeV.partialExtendNil`/
+      `partialExtendOne`, `inv_extend`, `recordInsert_get_eq`/`recordInsert_get_ne`,
+      and the `preservation_V`/`progress` cases — green through
+      `preservation`+`progress`+`soundness_value`. **The ⚠ FINDING is resolved:**
+      `RecordWf` is **lookup/predicate-based** (`hpres`/`hmatch` over `recordGet`),
+      so it is duplicate-collapsing by construction — the value `{l:new}` realizes
+      the type `{l:new, l:old}` because both `recordGet` views agree on the visible
+      first field (`recordInsert_get_eq`) and the tail row re-types via
+      `tyEquiv_recordRow`/`tyEquiv_rowContains`. **Remaining:** `Overwrite` (same
+      shape as `Extend` but requires the field already present —
+      `recordGet fields l = some _`; `MissingField` excluded by the same `recordWf_get`
+      used for `Select`). Original finding recorded in
+      `progress/2026-06-16-T4-row-machinery-boundary.md`.
 
 ## Milestone T5 — Slice 3: effects & handlers (the novel part)
 
