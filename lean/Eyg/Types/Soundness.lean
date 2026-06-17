@@ -581,6 +581,58 @@ structure HandlerObligations (m : Type) [BEq m] : Prop where
     reduceCall (.Partial (.Resume acc iEnv) []) v ann fenv rest = .tau cfg' →
     ∃ ε', MStateWf (.run cfg') τ ε'
 
+/-! ### Discharging the handler obligations — the EXACT-row content
+
+The `HandlerObligations` fields quantify over a general `Ty.EffWeaken εf ε`, but the
+handler dispatches are only *reachable* with the **exact** ambient (a `Resume` is applied
+at the handler's discharged row `tail`; a handle's exec runs at exactly its declared row).
+The lemmas below prove the dispatches under that exact-row hypothesis (`TyEquiv εf ε`) —
+the genuine proof content. Wiring them into the *general* obligation needs an extra
+invariant (handler-installed frames carry exact rows) **or** a generalized `StackWf.delimit`
+that discharges `l` from the ambient `ε` (with `tail ⊑ ε`) rather than a fixed `tail`; that
+design step is the remaining follow-up (see `2026-06-17-T5-handle-discharge.md`). -/
+
+/-- **`Resume` dispatch, exact row.** Feeding the reply `v` into the reified continuation
+`move acc rest` is well-typed: the captured segment `acc.reverse` (`reply ⇒ ret`) composes
+onto `rest` (converted to the segment's output endpoint `(ret, tail)` — possible because the
+weakening is exact, so `ε ≈ tail`). -/
+theorem resume_preserves_exact [BEq m] {acc : Stack m} {iEnv : Env m} {v : Value m}
+    {ann : m} {fenv : Env m} {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m}
+    (hres : HasTypeV (.Partial (.Resume acc iEnv) [] : Value m) (.fun argTy εf retTy))
+    (hv : HasTypeV v argTy) (hexact : Ty.TyEquiv εf ε) (hrest : StackWf rest retTy ε τ)
+    (hr : reduceCall (.Partial (.Resume acc iEnv) []) v ann fenv rest = .tau cfg') :
+    ∃ ε', MStateWf (.run cfg') τ ε' := by
+  cases hres with
+  | partialResume hseg he =>
+      obtain ⟨ha, heff, hr'⟩ := Ty.tyEquiv_fun_components he
+      rw [show reduceCall (.Partial (.Resume acc iEnv) []) v ann fenv rest
+          = .tau (.V v, iEnv, move acc rest) from rfl] at hr
+      cases hr
+      exact ⟨_, _, hv.conv ha.symm,
+        stackWf_resume hseg (StackWf.conv hrest hr'.symm (heff.trans hexact).symm)⟩
+
+/-- **`Handle` install dispatch, exact row.** `reduceDeep` pushes `Apply exec :: Delimit l
+handler :: rest`: the exec runs under the handled row `⟨l:(lift,reply)|tail⟩`, the `Delimit`
+discharges `l` (handler typed at `handlerTy`), and `rest` carries `ret` at the discharged
+row `tail` (reachable because the weakening is exact, `ε ≈ tail`). -/
+theorem install_preserves_exact [BEq m] {l : String} {handler v : Value m}
+    {ann : m} {fenv : Env m} {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m}
+    (hh : HasTypeV (.Partial (.Handle l) [handler] : Value m) (.fun argTy εf retTy))
+    (hv : HasTypeV v argTy) (hexact : Ty.TyEquiv εf ε) (hrest : StackWf rest retTy ε τ)
+    (hr : reduceCall (.Partial (.Handle l) [handler]) v ann fenv rest = .tau cfg') :
+    ∃ ε', MStateWf (.run cfg') τ ε' := by
+  cases hh with
+  | partialHandleOne hhandler he =>
+      obtain ⟨ha, heff, hr'⟩ := Ty.tyEquiv_fun_components he
+      rw [show reduceCall (.Partial (.Handle l) [handler]) v ann fenv rest
+          = .tau (.V unit, fenv,
+              (Kontinue.Apply v fenv, ann) :: (Kontinue.Delimit l handler fenv false, ann) :: rest)
+          from rfl] at hr
+      cases hr
+      exact ⟨_, _, hasTypeV_unit,
+        StackWf.applyf (hv.conv ha.symm) (Ty.effWeaken_refl _)
+          (StackWf.delimit hhandler (StackWf.conv hrest hr'.symm (heff.trans hexact).symm))⟩
+
 /-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
 application case is the crux; the builtin-application case defers to `hsat`; the three
 effect-partial dispatches defer to `hho`. The successor row is an *output* `∃ε'` —
