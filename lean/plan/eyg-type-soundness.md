@@ -220,11 +220,15 @@ set `BehaviorsR`, and an executable cross-check that `Reduce` agrees with the op
       `step` (a `Match`/`fix`/`deep` move = two `Reduce` steps), so agreement is at
       the observable-outcome level, not one-step-to-one-step — see
       `progress/2026-06-16-T0-transparent-reduce-substrate.md`.
-- [~] **`Reduce`-based observable layer**: `evalR : Nat → Config m → Result`
+- [x] **`Reduce`-based observable layer**: `evalR : Nat → Config m → Result`
       (fuel-structural, reuses FBS `Result`) **DELIVERED** (+ `runR` for an effect
       oracle). `BehaviorsR : Config m → Set Behavior` (the `MTr`-over-`Reduce`
-      mirror of S4 `Behaviors`) is **deferred** to the next T0 slice — it is what
-      T7 concludes about.
+      mirror of S4 `Behaviors`) **DELIVERED** (`Eyg/Semantics/BehaviorR.lean`):
+      `reduceLTS := ⟨Reduce⟩`, `BehaviorsR` (the three-shape mirror over
+      `reduceLTS.MTr` + the transparent `MState.terminalR?`), and the tie-the-knot
+      `evalR_sound_done`/`evalR_done_mem_behaviorsR` (a terminating `evalR` is a
+      terminating member of `BehaviorsR` — a *kernel* theorem, `reduce1Run` being
+      transparent). Axioms clean. It is what T7 concludes about.
 - [x] **`Reduce` is deterministic** (`reduce_run_det`) and total in the untyped
       sense (`progressR`: every state is a crash/value terminal or has a `Reduce`
       move). Both green, axioms clean.
@@ -598,11 +602,20 @@ for the **whole** core language.
 
 **Deliverable:** `Eyg/Types/Soundness.lean` — the headline statements + hygiene.
 
-- [ ] `soundness : HasType [] prog τ ε → ∀ b ∈ BehaviorsR (Config.initial prog),
+- [~] `soundness : HasType [] prog τ ε → ∀ b ∈ BehaviorsR (Config.initial prog),
       b` is `terminates trace (value v)` with `HasTypeV v τ`, or
       `suspended`/`diverges` with **every** `perform op` in the trace satisfying
       `op ∈ ε`, and **never** `terminates _ (crash _)`. (T5/T6 preservation+progress
       folded over the trace + `outcome_unique`.)
+      **Partial: the value case DELIVERED** — `soundness_evalR_value`
+      (`Eyg/Types/Soundness.lean`): a closed well-typed program whose `evalR`
+      terminates with a value yields a value of type `τ` (via `mStateWf_initial` +
+      `soundness_value_fix`), modulo the isolated `fix`. The `BehaviorsR` substrate +
+      `evalR_done_mem_behaviorsR` (`Eyg/Semantics/BehaviorR.lean`) connect `evalR` to
+      `BehaviorsR`. **Remaining:** fold `progress`/`preservation` over a full
+      `BehaviorsR.MTr` trace (needs the `MTr ⟶ evalR` direction + effect-row threading
+      across the trace) to conclude the no-crash + in-row-perform statement for *every*
+      behaviour, not just the `evalR`-value case.
 - [ ] **Pure ⇒ effect-free** `pure_no_perform : HasType [] prog τ empty → …` the
       observable trace has no `perform` labels (Eff's `A!∅` purity certificate —
       `references/algebraic-effects-handlers-soundness.md` §4).

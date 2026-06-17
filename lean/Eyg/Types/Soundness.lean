@@ -1762,4 +1762,14 @@ theorem progress_fix [BEq m] (hfix : FixNoBadCrash m)
       ∃ a b, Ty.EffContains ε op a b) :=
   progress (builtinAppNoBadCrash hfix) hwf
 
+/-- **Whole-program value soundness over `evalR`.** A closed well-typed program whose
+transparent `evalR` terminates with a value yields a value of the program's type — the
+end-to-end statement combining `mStateWf_initial` (a well-typed program is a well-typed
+initial state) with `soundness_value_fix`. Modulo the isolated `fix` obligation, this
+holds for the whole general-builtin language. -/
+theorem soundness_evalR_value [BEq m] (hfix : FixPreserves m) {prog : Tree.Node m}
+    {τ ε : Ty} {v : Value m} (fuel : Nat) (hty : HasType [] prog τ ε)
+    (h : evalR fuel (Config.initial prog) = .done (.value v)) : HasTypeV v τ :=
+  soundness_value_fix hfix fuel (mStateWf_initial hty) h
+
 end Eyg.Types
