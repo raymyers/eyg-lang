@@ -123,6 +123,34 @@ Error(#(IncorrectTerm(expected: "Integer",
 The runtime tried to use the internal `fixed` partial where an `Integer` was required
 and raised `IncorrectTerm`.
 
+## It crashes — it does *not* merely diverge
+
+A natural objection: maybe this is just non-termination (which would be acceptable),
+not a crash. It is a crash. The fuel-indexed evaluator's `Result` distinguishes
+`.timeout` (fuel exhausted — the divergence proxy) from `.done (.crash …)` (halted at
+an error). Sweeping fuel on `eval`/`evalR` (`Config.initial` of the program):
+
+```
+fuel    3  -> TIMEOUT      (terminal not yet reached)
+fuel    8  -> TIMEOUT
+fuel   50  -> CRASH: IncorrectTerm "Integer" (Partial (Builtin "fixed") [Closure "x" …])
+fuel 100000 -> CRASH       (identical — more fuel does not change it)
+```
+
+A divergent program stays `.timeout` at *every* fuel; this one reaches a fixed crash
+state in under 50 steps and stays there. The reason it halts rather than loops: the
+builder `\x. int_add x 1` uses the bound recursive value `x` **immediately as an
+integer** and never makes a recursive call, so the single unroll
+`fix builder → builder (fixed) → int_add fixed 1` hits `Cast.asInteger fixed` and
+fails at once. (Note "base-type fix" can also manifest as divergence for a builder
+that *does* recurse — but this particular witness is a definite crash, which is the
+stronger statement for soundness.)
+
+Also note the *fixpoint result* type is the base type `Integer`, not a function type:
+the builder `\x. int_add x 1` is `Integer → Integer`, and `fix : (α→α)→α` makes
+`α = Integer`. (A recursive *function* would be `fix (\self. \x. …)`, two lambdas,
+whose fixpoint is an arrow and is sound.)
+
 ## Why it is a soundness violation (not a sanctioned outcome)
 
 EYG's semantics is total: ill-formed programs reduce to a `crash` outcome rather than
