@@ -134,6 +134,48 @@ preserves *and* the rule is inhabited by the real `fix`) is the genuine design w
 is effect-threading metatheory, not mechanical plumbing. Budget it with the `Handle`
 effect work, not as a quick win.
 
+## ⚠ Added finding 3 (the real blocker): `fix` needs **effect weakening** in `StackWf`
+
+Tracing the authoritative gleam `Apply` inference
+(`contextual.gleam` §`ir.Apply`: a fresh `test_eff` is unified with the function's latent
+effect, then `unify(test_eff, eff)` against the ambient — **exact** match, no subsumption)
+together with the CEK `fix` unrolling settles why `fix` is hard, and it is *not* just a
+cascade:
+
+* `fix`'s scheme is `(α →β α) →β α` with `β` = the **builder's latent effect**. For the
+  usual recursive function (e.g. `fix (\self. \n. perform Log n; self (n-1))`), the
+  builder's body is a *lambda* (building it is pure), so **`β = Empty`**, while the
+  recursive function type is `α = Nat →⟨Log|μ⟩ R` (the `Log` fires when the function is
+  *called*). So `β` (Empty) and `α`'s internal effect (`{Log|μ}`) are genuinely different
+  — and gleam accepts this.
+* The machine: when the recursive function (the `fixed` partial `: α`) is *called* at
+  ambient `{Log|μ}`, `reduceCallBuiltin "fixed" [builder, arg]` pushes
+  `Apply builder :: CallWith arg :: k`. The `Apply builder` frame applies the **pure**
+  `builder : α →Empty α` **inside the `{Log|μ}` ambient**.
+* `StackWf.applyf` requires the function's latent effect to **equal** the frame's ambient
+  (`HasTypeV f (.fun argTy ε retTy)` with `ε` = the stack's row). Here that demands
+  `Empty = {Log|μ}` — **false**. Preservation cannot type the successor.
+
+**Diagnosis:** the uniform-ambient, exact-match `StackWf` (correct for T3–T5, where every
+applied function's latent effect *was* the ambient by construction) cannot express
+"apply a *pure* (or effect-smaller) function within an effectful context". `fix`'s
+unrolling is the first place the machine does exactly that. The same gap means **a pure
+builtin can only be applied in a pure ambient** in the current formalization
+(`BuiltinAppPreserves`'s `HasTypeV (builtin partial) (.fun argTy ε retTy)` forces
+`ε = Empty` via the scheme's `Empty` latent) — i.e. the *effectful* fragment currently has
+no effect weakening at all; it happens not to bite before `fix` only because no earlier
+rule applies a pure function under a non-empty row.
+
+**What `fix` actually requires (a foundational change, not a cascade):** add **effect
+weakening / row subsumption** to the application frames — e.g. an `applyf`/`callwith`
+variant allowing the function's latent row to be a *sub-row* of the ambient (`Empty ⊆ ε`,
+or general `ε_fun ⊑ ε`), with the attendant row-subsumption metatheory (a `RowSub`
+relation + its interaction with `TyEquiv`/`EffContains`). Only then can `partialFixed`
+(builder `: α →β α`, typed at `α`) be applied soundly at an ambient `⊇ β`. This is a core
+type-system extension affecting `StackWf` and likely the `HasType.app` rule, comparable in
+weight to `Handle`. It also subsumes the earlier "effect-consistency" worry (findings 2):
+with weakening, the builder's `β` need not equal the ambient, only be contained in it.
+
 ## Recommended plan for next session
 
 1. Add `partialFixed` to `HasTypeV` (Runtime.lean), plus its `conv` arm and a

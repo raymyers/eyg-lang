@@ -736,6 +736,21 @@ recorded here so the rationale is not lost:
    recorded `Error` as not-well-typed — recommended, matches `do_infer`), or accept
    `crash Vacant` as the one sanctioned crash. Directly affects the no-crash
    statement; settle in T3 when the `HasType` rules are fixed.
+3. **⚠ Effect weakening / row subsumption — NEWLY SURFACED (2026-06-16, by the `fix`
+   attempt).** The current `StackWf.applyf`/`callwith` require a function's latent
+   effect to **exactly equal** the frame's ambient row (mirroring gleam's
+   `unify(test_eff, eff)`). This is fine for T3–T5 (every applied function's latent
+   *was* the ambient by construction), but **`fix`'s unrolling applies the *pure*
+   builder inside the effectful recursion ambient**, which exact-match cannot type —
+   and likewise a **pure builtin can currently only be applied in a pure ambient**, so
+   the effectful fragment has *no* effect weakening at all. Soundly typing `fix` (and a
+   realistic effectful fragment) needs a **row-subsumption** extension — an
+   `applyf`/`callwith` variant allowing the function's latent row to be a *sub-row* of
+   the ambient (`ε_fun ⊑ ε`), plus a `RowSub` relation and its `TyEquiv`/`EffContains`
+   metatheory. A core type-system change (touches `StackWf` and likely `HasType.app`),
+   comparable in weight to `Handle`. Full diagnosis in
+   `progress/2026-06-16-T6b-fix-scoping.md` (finding 3); it subsumes the earlier
+   effect-consistency concern.
 
 ## Do we have what we need? (answer to the prompt's question)
 
