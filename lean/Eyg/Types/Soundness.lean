@@ -879,6 +879,21 @@ theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
       simp only [ReplyContract] at hrep
       exact ⟨ε, replyTy, (hrep a b hEff).conv hbr, hStack⟩
 
+/-- **Preservation across a `tau` step, with the effect row preserved exactly.** Pure
+machine moves keep the ambient `ε` (the `tau` case of `preservation` returns the same
+`ε`), which the `∃ ε'` wrapper of `preservation` hides — this variant exposes it, so a
+soundness fold can thread `ε` through a silent run (used by the effect-escape soundness). -/
+theorem preservation_tau [BEq m] (hsat : BuiltinAppPreserves m) {cfg cfg' : Config m}
+    {τ ε : Ty} (hwf : MStateWf (.run cfg) τ ε) (h : reduce1Run cfg = .tau cfg') :
+    MStateWf (.run cfg') τ ε := by
+  obtain ⟨c, env, k⟩ := cfg
+  cases c with
+  | E e => exact preservation_E hwf h
+  | V v =>
+      cases k with
+      | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
+      | cons kontann rest => obtain ⟨kont, ann⟩ := kontann; exact preservation_V hsat hwf h
+
 /-! ## Soundness: a well-typed run never crashes; its result is typed
 
 The terminal-value half of soundness, threaded through `evalR`. When `reduce1Run`
@@ -1771,5 +1786,102 @@ theorem soundness_evalR_value [BEq m] (hfix : FixPreserves m) {prog : Tree.Node 
     {τ ε : Ty} {v : Value m} (fuel : Nat) (hty : HasType [] prog τ ε)
     (h : evalR fuel (Config.initial prog) = .done (.value v)) : HasTypeV v τ :=
   soundness_value_fix hfix fuel (mStateWf_initial hty) h
+
+/-- **No-bad-crash over `evalR`.** A well-typed config whose `evalR` terminates in a
+crash only ever reaches the *sanctioned* `Unrepresentable` trap — never a type-error
+crash (`Vacant`/`NotAFunction`/`NoMatch`/…). Fuel induction folding `preservation_fix`
+(step) and `progress_fix` (the terminal crash is `¬ IsBad`). -/
+theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m) :
+    ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {r : Reason m},
+      MStateWf (.run cfg) τ ε → evalR fuel cfg = .done (.crash r) → ¬ Reason.IsBad r := by
+  intro fuel
+  induction fuel with
+  | zero => intro cfg τ ε r _ h; simp [evalR] at h
+  | succ n ih =>
+      intro cfg τ ε r hwf h
+      rw [evalR_succ] at h
+      cases hrr : reduce1Run cfg with
+      | tau cfg' =>
+          rw [hrr] at h
+          obtain ⟨ε', hwf'⟩ := preservation_fix hpres hwf (Reduce.tau hrr) trivial
+          exact ih hwf' h
+      | done o =>
+          rw [hrr] at h
+          obtain rfl : o = .crash r := by injection h
+          rcases progress_fix hbad hwf with ⟨_, hc⟩ | ⟨_, hc⟩ | ⟨_, hc, hnb⟩ | ⟨_, _, _, _, hc, _⟩
+          · rw [hrr] at hc; simp at hc
+          · rw [hrr] at hc; simp at hc
+          · rw [hrr] at hc; simp only [ReduceStep.done.injEq, Outcome.crash.injEq] at hc
+            subst hc; exact hnb
+          · rw [hrr] at hc; simp at hc
+      | perform op lift envP kP => rw [hrr] at h; simp [evalR] at h
+
+/-- **Whole-program no-bad-crash over `evalR`.** A closed well-typed program's `evalR`
+never terminates in a *bad* crash (only the sanctioned `Unrepresentable`), modulo the
+isolated `fix` obligation. -/
+theorem soundness_evalR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ ε : Ty} {r : Reason m} (fuel : Nat) (hty : HasType [] prog τ ε)
+    (h : evalR fuel (Config.initial prog) = .done (.crash r)) : ¬ Reason.IsBad r :=
+  soundnessR_noBadCrash hpres hbad fuel (mStateWf_initial hty) h
+
+/-- Tau-preservation keeping `ε`, in `fix`-discharged form. -/
+theorem preservation_tau_fix [BEq m] (hfix : FixPreserves m) {cfg cfg' : Config m} {τ ε : Ty}
+    (hwf : MStateWf (.run cfg) τ ε) (h : reduce1Run cfg = .tau cfg') :
+    MStateWf (.run cfg') τ ε :=
+  preservation_tau (builtinAppPreserves hfix) hwf h
+
+/-- **Effect safety over `evalR`.** If a well-typed config's `evalR` terminates by
+*emitting an effect* `op`, then `op` is a member of the ambient row `ε` (the run can
+only escape on a declared effect). Fuel induction threading `ε` across silent steps
+(`preservation_tau_fix`) and reading the membership off `progress_fix`'s effect-escape
+disjunct at the boundary. -/
+theorem soundnessR_effect [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m) :
+    ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {op : String} {lift : Value m}
+      {resume : Value m → Config m},
+      MStateWf (.run cfg) τ ε → evalR fuel cfg = .effect op lift resume →
+      ∃ a b, Ty.EffContains ε op a b := by
+  intro fuel
+  induction fuel with
+  | zero => intro cfg τ ε op lift resume _ h; simp [evalR] at h
+  | succ n ih =>
+      intro cfg τ ε op lift resume hwf h
+      rw [evalR_succ] at h
+      cases hrr : reduce1Run cfg with
+      | tau cfg' => rw [hrr] at h; exact ih (preservation_tau_fix hpres hwf hrr) h
+      | done o => rw [hrr] at h; simp [evalR] at h
+      | perform op' lift' envP kP =>
+          rw [hrr] at h
+          obtain ⟨rfl, rfl, _⟩ := by simpa only [Result.effect.injEq] using h
+          rcases progress_fix hbad hwf with ⟨_, hc⟩ | ⟨_, hc⟩ | ⟨_, hc, _⟩ |
+            ⟨_, _, _, _, hc, ha⟩
+          · rw [hrr] at hc; simp at hc
+          · rw [hrr] at hc; simp at hc
+          · rw [hrr] at hc; simp at hc
+          · rw [hrr] at hc
+            obtain ⟨rfl, _, _, _⟩ := by simpa only [ReduceStep.perform.injEq] using hc
+            exact ha
+
+/-- **Whole-program soundness over `evalR` (the trichotomy + effect escape).** A closed
+well-typed program's `evalR` at any fuel is: a timeout; a value of type `τ`; a
+*sanctioned* `Unrepresentable` crash (never a type-error crash); or an emitted effect
+`op ∈ ε`. Modulo the isolated `fix` obligation, this is whole-program soundness for the
+general-builtin language over the transparent evaluator. -/
+theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ ε : Ty} (fuel : Nat) (hty : HasType [] prog τ ε) :
+    evalR fuel (Config.initial prog) = .timeout ∨
+    (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
+    (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) ∨
+    (∃ op lift resume, evalR fuel (Config.initial prog) = .effect op lift resume ∧
+      ∃ a b, Ty.EffContains ε op a b) := by
+  cases h : evalR fuel (Config.initial prog) with
+  | timeout => exact Or.inl rfl
+  | done o =>
+      cases o with
+      | value v => exact Or.inr (Or.inl ⟨v, rfl, soundness_evalR_value hpres fuel hty h⟩)
+      | crash r =>
+          exact Or.inr (Or.inr (Or.inl ⟨r, rfl, soundness_evalR_noBadCrash hpres hbad fuel hty h⟩))
+  | effect op lift resume =>
+      exact Or.inr (Or.inr (Or.inr ⟨op, lift, resume, rfl,
+        soundnessR_effect hpres hbad fuel (mStateWf_initial hty) h⟩))
 
 end Eyg.Types

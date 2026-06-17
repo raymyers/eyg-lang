@@ -607,15 +607,19 @@ for the **whole** core language.
       `suspended`/`diverges` with **every** `perform op` in the trace satisfying
       `op ∈ ε`, and **never** `terminates _ (crash _)`. (T5/T6 preservation+progress
       folded over the trace + `outcome_unique`.)
-      **Partial: the value case DELIVERED** — `soundness_evalR_value`
-      (`Eyg/Types/Soundness.lean`): a closed well-typed program whose `evalR`
-      terminates with a value yields a value of type `τ` (via `mStateWf_initial` +
-      `soundness_value_fix`), modulo the isolated `fix`. The `BehaviorsR` substrate +
-      `evalR_done_mem_behaviorsR` (`Eyg/Semantics/BehaviorR.lean`) connect `evalR` to
-      `BehaviorsR`. **Remaining:** fold `progress`/`preservation` over a full
-      `BehaviorsR.MTr` trace (needs the `MTr ⟶ evalR` direction + effect-row threading
-      across the trace) to conclude the no-crash + in-row-perform statement for *every*
-      behaviour, not just the `evalR`-value case.
+      **Whole-program soundness over `evalR` DELIVERED** (`Eyg/Types/Soundness.lean`):
+      `soundness_evalR` — a closed well-typed program's `evalR` at any fuel is a
+      *timeout*, a *value of type `τ`*, a *sanctioned `Unrepresentable` crash* (never a
+      type-error crash), or an *emitted effect `op ∈ ε`*. Built from the three pieces
+      `soundness_evalR_value` / `soundness_evalR_noBadCrash` / `soundnessR_effect`
+      (fuel induction folding `preservation_tau_fix` + `progress_fix`; the effect case
+      threads `ε` across silent steps and reads membership off the effect-escape
+      disjunct). All modulo the isolated `fix` (`FixPreserves`/`FixNoBadCrash`); axioms
+      clean. The `BehaviorsR` substrate + `evalR_done_mem_behaviorsR`
+      (`Eyg/Semantics/BehaviorR.lean`) connect `evalR` to `BehaviorsR`. **Remaining:**
+      lift `soundness_evalR` to the `BehaviorsR.MTr` level (needs the `MTr ⟶ evalR`
+      direction — the Reduce analogue of `eval_iff_mtr` — to conclude for *every*
+      behaviour, not just the per-fuel `evalR` result), and discharge `fix`.
 - [ ] **Pure ⇒ effect-free** `pure_no_perform : HasType [] prog τ empty → …` the
       observable trace has no `perform` labels (Eff's `A!∅` purity certificate —
       `references/algebraic-effects-handlers-soundness.md` §4).
