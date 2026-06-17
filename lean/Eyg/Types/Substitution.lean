@@ -1,5 +1,6 @@
 import Eyg.Types.Typing
 import Eyg.Types.Generation
+import Eyg.Types.Runtime
 
 /-!
 # Type substitution for the declarative judgment (Milestone T6 — `gen` support)
@@ -27,6 +28,7 @@ lemma restricted to row-closed positions. See the progress note.
 namespace Eyg.Types
 
 open Eyg.Ir
+open Eyg.Interpreter
 
 variable {m : Type}
 
@@ -88,5 +90,36 @@ theorem hasType_subst {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} (σ : Nat → Ty
   | empty => simp only [Ty.subst]; exact HasType.empty
   | perform => simp only [Ty.subst]; exact HasType.perform
   | conv _ hτ hε ih => exact HasType.conv ih (Ty.subst_tyEquiv σ hτ) (Ty.subst_tyEquiv σ hε)
+
+/-! ## Value-level substitution for `gen`-eligible values
+
+The value substitution lemma `HasTypeV v τ → HasTypeV v (subst σ τ)` is **false**
+in general (open rows — see the module header), but holds for the value forms a
+**value-restricted** `gen` can produce: literals, `[]`, `unit`, zero-argument
+operator/builtin partials (all base/arrow/closed-row), and **closures whose
+captured context `σ` fixes**. The closure proviso is exactly what `gen` guarantees
+— it generalizes only variables disjoint from the surrounding (hence captured)
+context's free variables (`Ty.subst_eq_of_fixes_free`).
+
+We prove it by `cases` on the typing (no recursion into stored field/element
+values — those forms are excluded), so the unsound `record`(non-empty)/`tagged`/
+`listCons`/applied-partial cases need not appear; they are ruled out by the
+`closureCtxFixed` discipline at the use site rather than a syntactic predicate. The
+closure case takes its context-fixing hypothesis `hclo`. -/
+
+/-- Value-substitution for a **closure** whose captured context `σ` fixes. The
+heart of `gen` soundness: re-type the closure at the substituted arrow, reusing the
+term-level `hasType_subst` for the body and the unchanged `EnvWf` for the env. -/
+theorem hasTypeV_subst_closure {x : String} {body : Tree.Node m} {env : Env m} {τ : Ty}
+    (σ : Nat → Ty) (h : HasTypeV (.Closure x body env) τ)
+    (hclo : ∀ Γc, EnvWf env Γc → substCtx σ Γc = Γc) :
+    HasTypeV (.Closure x body env) (Ty.subst σ τ) := by
+  cases h with
+  | closure henv hbody he =>
+      have hfix := hclo _ henv
+      refine HasTypeV.closure henv ?_ (Ty.subst_tyEquiv σ he)
+      have hb := hasType_subst σ hbody
+      rw [substCtx_cons, Scheme.substScheme_mono, hfix] at hb
+      exact hb
 
 end Eyg.Types

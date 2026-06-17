@@ -78,15 +78,37 @@ The standard fix is the **value restriction**, and it lands cleanly here:
 
 So the remaining `gen` work is:
 - a **value-restricted** `hasTypeV_subst` (literals/closure/partials/list-nil/unit
-  forms; closure case discharged by "σ fixes Γcap", which needs a free-variable or
-  "agrees-on-Γ" side condition threaded through);
+  forms; closure case discharged by "σ fixes Γcap"). The **closure case is
+  DELIVERED** as `hasTypeV_subst_closure` (`Substitution.lean`): re-type a closure
+  at the substituted arrow given `hclo : ∀ Γc, EnvWf env Γc → substCtx σ Γc = Γc`
+  (term-level `hasType_subst` for the body + unchanged `EnvWf` + `subst_tyEquiv`).
+  The non-closure forms are unconditionally safe.
 - `gen Γ ε defnTy` (effect-safe close — mirror `close`/`close_eff`), a second
-  `HasType.let_poly` rule (purely additive; keeps the monomorphic `let` and all
-  existing theorems green), `inv_let_poly`;
-- the `Assign`-frame preservation case for a polymorphic scheme: discharge
-  `EnvWf.cons`'s `∀ args` via the value-restricted substitution lemma + `gen`'s
-  identity-on-Γ property.
+  `HasType.let_poly` rule, `inv_let_poly`;
+- the `Assign`-frame preservation case for a polymorphic scheme.
 
-This is a focused slice (comparable to `fix`), now with the foundation in place and
-the soundness argument pinned down. The two commits above are the durable progress;
-the value lemma's restriction is the key design decision the next session starts from.
+## ⚠ Deepened finding: the closure-context (`Γcap`) freshness invariant
+
+The `hclo` proviso of `hasTypeV_subst_closure` is the real remaining obstacle, and
+it is **more than mechanical**. At the polymorphic `Assign` frame the gen
+substitution `σ_args` (identity outside the generalized set `vs`) must satisfy
+`∀ Γc, EnvWf env Γc → substCtx σ_args Γc = Γc` — i.e. `σ_args` fixes **every**
+context the runtime env realizes. The gen rule only guarantees `vs ∩ FV(Γ) = ∅`
+for the *let's* context `Γ`; but `HasTypeV v defnTy` packs its closure context
+`Γcap` **existentially**, and `EnvWf` is **not unique** (a value inhabits many
+schemes/contexts), so the inverted `Γcap` need not satisfy `FV(Γcap) ⊆ FV(Γ)`.
+
+In the *actual* preservation derivation `Γcap = Γ` (the closure captured the let's
+env), but that identification is lost through the existential. Recovering it — or
+discharging `hclo` directly — needs a **context-freshness invariant threaded
+through `MStateWf`** (e.g. "the generalized variables are globally fresh w.r.t. the
+runtime configuration"), which is invasive (touches `MStateWf` and every
+preservation case), *or* a principal-context discipline on closure typing. This is
+the closure-based-runtime analogue of HM's "generalize only variables not free in
+the typing environment", and is the genuine design work the `gen` slice still needs
+— comparable in weight to the `fix`/`Handle` invariant changes, not a quick wire-up.
+
+The four commits above (substitution infrastructure, `hasType_subst`,
+`Ty.freeVars`/`subst_eq_of_fixes_free`, `hasTypeV_subst_closure`) are the durable,
+green, axiom-clean progress; they reduce `gen` to **(a)** the `MStateWf`
+context-freshness invariant + **(b)** the additive `gen`/`let_poly` rule cascade.

@@ -560,11 +560,17 @@ for the **whole** core language.
       generalizes only syntactic-value `defn`s, whose runtime forms
       (closure/literal/operator-partial/`[]`/`unit`) are all arrow/base/closed-row
       and *do* satisfy substitution, while `σ` fixes the captured context by
-      construction (so the closure case's `envWf_subst` is trivial). **Remaining**
-      (focused slice, comparable to `fix`): the value-restricted `hasTypeV_subst`,
-      `gen` + a `let_poly` rule + `inv_let_poly`, and the polymorphic `Assign`-frame
-      preservation case. Purely additive (the monomorphic `let` + all theorems stay
-      green).
+      construction. The **closure case** of the value lemma is delivered
+      (`hasTypeV_subst_closure`, conditioned on `σ` fixing the captured context);
+      `Ty.freeVars`/`subst_eq_of_fixes_free` supply the context-fixing reasoning.
+      **⚠ Deepened finding:** the closure-context proviso must hold for *every*
+      context the runtime env realizes, but `HasTypeV`'s closure context `Γcap` is
+      existential and `EnvWf` non-unique, so `FV(Γcap) ⊆ FV(Γ)` is not recoverable
+      post-hoc — `gen` needs a **context-freshness invariant threaded through
+      `MStateWf`** (the closure-runtime analogue of HM's "don't generalize env vars"),
+      an invasive change comparable to the `fix`/`Handle` invariants. **Remaining:**
+      (a) that `MStateWf` freshness invariant; (b) the additive `gen` + `let_poly`
+      rule + `inv_let_poly` + polymorphic `Assign`-frame preservation cascade.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
