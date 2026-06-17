@@ -544,13 +544,27 @@ for the **whole** core language.
 - [~] **Let-generalization** `gen` (deferred from T2), declaratively and
       **effect-safe** (only generalize effect tails that don't escape — mirror
       `close`/`close_eff`; Open Question #3). Extend the `Let` rule and re-green.
-      **SCOPED** (`progress/2026-06-16-T6-gen-scoping.md`): blocked on a **type
-      substitution lemma** over the mutual `HasType`/`HasTypeV`/`EnvWf`, which needs a
-      de Bruijn `substScheme` with shifting (a `Ty.shift` + an `instantiate`-commutes-
-      with-`subst` lemma) — and first pinning down the scheme type-var convention that
-      `Scheme.instantiate` silently assumes (ambient vars must avoid `0..arity-1`). A
-      dedicated slice, comparable to `fix`/`Handle`; purely additive (a second `let`
-      rule keeps the monomorphic one and all existing theorems green).
+      **FOUNDATION DELIVERED** (`progress/2026-06-16-T6-gen-substitution-infra.md`,
+      two green commits): the de Bruijn substitution infrastructure — `Ty.shift`,
+      `Scheme.instantiate` re-based on the **shift convention** (ambient body-var
+      `i ≥ arity` ⇒ ambient var `i - arity`; identical normal form for all current
+      closed/mono schemes, so the project + spec stay green), `Scheme.substScheme`,
+      and the commutation lemmas `subst_instantiate`/`subst_instantiate'` (the latter
+      unconditional in `args`, via the `instArgs` witness) — plus the **term-level
+      `hasType_subst`** (`Eyg/Types/Substitution.lean`: `HasType Γ e τ ε → HasType
+      (substCtx σ Γ) e (subst σ τ) (subst σ ε)`, axioms clean). The scheme type-var
+      **convention is now pinned** (shift-based), resolving the gen-scoping blocker.
+      **⚠ New finding:** the *value*-level `HasTypeV v τ → HasTypeV v (subst σ τ)` is
+      **false** for open row types (substituting a row-tail var adds record/union
+      labels the value lacks). Resolution: the **value restriction** — `gen`
+      generalizes only syntactic-value `defn`s, whose runtime forms
+      (closure/literal/operator-partial/`[]`/`unit`) are all arrow/base/closed-row
+      and *do* satisfy substitution, while `σ` fixes the captured context by
+      construction (so the closure case's `envWf_subst` is trivial). **Remaining**
+      (focused slice, comparable to `fix`): the value-restricted `hasTypeV_subst`,
+      `gen` + a `let_poly` rule + `inv_let_poly`, and the polymorphic `Assign`-frame
+      preservation case. Purely additive (the monomorphic `let` + all theorems stay
+      green).
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
@@ -715,7 +729,9 @@ checker / compiler.
       slice, design in `progress/2026-06-16-T5-handle-design.md`); **T6** — full builtin
       table + per-builtin run typing ✅ and the saturation obligations discharged for all
       general builtins ✅ (`fix` isolated, scoped in `progress/2026-06-16-T6b-fix-scoping.md`);
-      **let-generalization `gen` remaining**.
+      **let-generalization `gen`** — substitution *foundation* ✅ (`Ty.shift`/`substScheme`/
+      `subst_instantiate'`/`hasType_subst`, `progress/2026-06-16-T6-gen-substitution-infra.md`),
+      value-restricted `hasTypeV_subst` + `let_poly` rule remaining.
 - [~] **T7:** headline `soundness` over `BehaviorsR` — value/no-bad-crash/effect-escape
       (`soundness_evalR`), silent terminations + open-boundary suspension over
       `BehaviorsR` ✅; **`diverges` ω-effect-safety** (`soundness_behaviorsR_diverges`) ✅;
