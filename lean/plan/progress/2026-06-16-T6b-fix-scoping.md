@@ -117,6 +117,23 @@ Practically: peel `hpw` like the arity drivers, branch on `applied = []` (specia
 residual — `fix` *does* have a scheme, so this is available). Budget accordingly; the
 `partialFixed` cascade plus this two-mode split is why `fix` is its own slice.
 
+## ⚠ Added finding 2: effect consistency in the `fixed` self-application
+
+`partialFixed : HasTypeV builder (.fun α ε α) → TyEquiv α τ → HasTypeV (fixed [builder]) τ`
+stores the builder's **latent effect `ε`**. When the `fixed` partial is later applied,
+`reduceCall` pushes `Apply builder :: CallWith arg :: k`, and the `applyf` frame for
+`Apply builder` forces `builder`'s latent effect to equal the **stack's ambient `εamb`**.
+So preservation needs `ε = εamb`. But `canonical_arrow` only gives `TyEquiv α (.fun argTy
+εamb retTy)` — there is **no syntactic link forcing `α`'s internal effect (hence the
+recursion's effect) to equal the builder's `ε`**. In Koka's `fix : ∀αβ. (α→β α) →β α`
+the result `α`, when it is the recursive arrow `D →β R`, carries effect `β` *by the type
+structure*, so `ε = εamb` holds — but the Lean `partialFixed` rule must **encode that
+link** (e.g. quantify `α = D →ε R` in the applied case, or carry the effect in the rule)
+rather than leave `α` opaque. Getting this rule shape right (so the self-application
+preserves *and* the rule is inhabited by the real `fix`) is the genuine design work — it
+is effect-threading metatheory, not mechanical plumbing. Budget it with the `Handle`
+effect work, not as a quick win.
+
 ## Recommended plan for next session
 
 1. Add `partialFixed` to `HasTypeV` (Runtime.lean), plus its `conv` arm and a
