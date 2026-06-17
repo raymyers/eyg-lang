@@ -81,4 +81,40 @@ theorem evalR_done_mem_behaviorsR {m : Type} [BEq m] {cfg : Config m} {o : Outco
   obtain ⟨trace, s', hmtr, hout⟩ := evalR_sound_done fuel cfg o hf
   exact ⟨trace, s', hmtr, hout⟩
 
+/-! ## The converse: a silent `BehaviorsR` termination comes from `evalR`
+
+The Reduce analogue of S3's `eval_complete`: a `tau`-only `Reduce`-`MTr` to a terminal
+state is realized by `evalR` at some fuel. This is the direction the soundness *of*
+behaviours needs — it pulls a `BehaviorsR` membership back to an `evalR` result that the
+typing soundness lemmas (`soundness_evalR_*`) constrain. -/
+
+/-- Completeness (terminating, silent runs): a `tau`-only `Reduce`-multistep to a
+terminal state is realized by `evalR` at some fuel. -/
+theorem evalR_complete {m : Type} [BEq m] {o : Outcome m} :
+    ∀ {s : MState m} {trace : List (Label m)} {s' : MState m},
+      reduceLTS.MTr s trace s' → (∀ μ ∈ trace, μ = Label.tau) → s'.terminalR? = some o →
+      ∀ cfg, s = .run cfg → ∃ fuel, evalR fuel cfg = .done o := by
+  intro s trace s' hmtr
+  induction hmtr with
+  | refl =>
+      intro _htau hterm cfg hs
+      subst hs
+      refine ⟨1, ?_⟩
+      have hout : (MState.run cfg).terminalR? = some o := hterm
+      simp only [MState.terminalR?] at hout
+      cases hstep : reduce1Run cfg with
+      | tau cfg' => rw [hstep] at hout; simp at hout
+      | done o' => rw [evalR_succ, hstep]; rw [hstep] at hout; simp_all
+      | perform op lift envP kP => rw [hstep] at hout; simp at hout
+  | @stepL s1 μ s2 μs s3 htr _hmtr ih =>
+      intro htau hterm cfg hs
+      subst hs
+      have hμ : μ = Label.tau := htau μ (by simp)
+      subst hμ
+      cases htr
+      rename_i cfg' hstep
+      have htau' : ∀ ν ∈ μs, ν = Label.tau := fun ν hν => htau ν (by simp [hν])
+      obtain ⟨fuel, hfuel⟩ := ih htau' hterm cfg' rfl
+      exact ⟨fuel + 1, by rw [evalR_succ, hstep]; exact hfuel⟩
+
 end Eyg.Semantics

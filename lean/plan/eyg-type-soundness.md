@@ -616,10 +616,15 @@ for the **whole** core language.
       threads `ε` across silent steps and reads membership off the effect-escape
       disjunct). All modulo the isolated `fix` (`FixPreserves`/`FixNoBadCrash`); axioms
       clean. The `BehaviorsR` substrate + `evalR_done_mem_behaviorsR`
-      (`Eyg/Semantics/BehaviorR.lean`) connect `evalR` to `BehaviorsR`. **Remaining:**
-      lift `soundness_evalR` to the `BehaviorsR.MTr` level (needs the `MTr ⟶ evalR`
-      direction — the Reduce analogue of `eval_iff_mtr` — to conclude for *every*
-      behaviour, not just the per-fuel `evalR` result), and discharge `fix`.
+      (`Eyg/Semantics/BehaviorR.lean`) connect `evalR` to `BehaviorsR`.
+      **`BehaviorsR`-level soundness (silent terminations) DELIVERED**: the
+      `MTr ⟶ evalR` bridge `evalR_complete` (`BehaviorR.lean`, the Reduce analogue of
+      `eval_complete`) lifts the result to `soundness_behaviorsR_noBadCrash` /
+      `soundness_behaviorsR_value` (`Soundness.lean`) — a well-typed program's *silent*
+      terminating `BehaviorsR` behaviour is never a bad crash, and a terminating value
+      is typed. Axioms clean. **Remaining:** the general reply-containing traces (the
+      open-system case — needs the `ReplyContract` folded across `reply` steps), the
+      `suspended`/`diverges` behaviours, and discharge `fix`.
 - [ ] **Pure ⇒ effect-free** `pure_no_perform : HasType [] prog τ empty → …` the
       observable trace has no `perform` labels (Eff's `A!∅` purity certificate —
       `references/algebraic-effects-handlers-soundness.md` §4).

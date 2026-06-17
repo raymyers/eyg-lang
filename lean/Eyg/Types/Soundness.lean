@@ -1,5 +1,6 @@
 import Eyg.Types.Machine
 import Eyg.Types.Generation
+import Eyg.Semantics.BehaviorR
 
 /-!
 # Type soundness for the pure core — preservation (Milestone T3c-ii)
@@ -1883,5 +1884,35 @@ theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m
   | effect op lift resume =>
       exact Or.inr (Or.inr (Or.inr ⟨op, lift, resume, rfl,
         soundnessR_effect hpres hbad fuel (mStateWf_initial hty) h⟩))
+
+/-! ## Soundness at the `BehaviorsR` level (silent terminations)
+
+Lifting the per-fuel `evalR` soundness to observable `BehaviorsR` membership via the
+`MTr ⟶ evalR` bridge (`evalR_complete`). A *silent* terminating behaviour (the trace a
+closed run exhibits up to its terminal outcome) of a well-typed program is never a bad
+crash, and a terminating value is typed. (The general, reply-containing traces are the
+open-system T7 remainder, needing the `ReplyContract` across `reply` steps.) -/
+
+/-- **No bad crash in `BehaviorsR`.** A well-typed program never has a silent
+terminating behaviour that crashes badly. -/
+theorem soundness_behaviorsR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {r : Reason m}
+    (hty : HasType [] prog τ ε) (hsilent : ∀ μ ∈ trace, μ = Label.tau)
+    (hmem : Behavior.terminates trace (.crash r) ∈ BehaviorsR (Config.initial prog)) :
+    ¬ Reason.IsBad r := by
+  obtain ⟨s', hmtr, hterm⟩ := hmem
+  obtain ⟨fuel, hf⟩ := evalR_complete hmtr hsilent hterm _ rfl
+  exact soundness_evalR_noBadCrash hpres hbad fuel hty hf
+
+/-- **Typed value in `BehaviorsR`.** A well-typed program's silent terminating value
+behaviour yields a value of the program's type. -/
+theorem soundness_behaviorsR_value [BEq m] (hpres : FixPreserves m)
+    {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {v : Value m}
+    (hty : HasType [] prog τ ε) (hsilent : ∀ μ ∈ trace, μ = Label.tau)
+    (hmem : Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog)) :
+    HasTypeV v τ := by
+  obtain ⟨s', hmtr, hterm⟩ := hmem
+  obtain ⟨fuel, hf⟩ := evalR_complete hmtr hsilent hterm _ rfl
+  exact soundness_evalR_value hpres fuel hty hf
 
 end Eyg.Types
