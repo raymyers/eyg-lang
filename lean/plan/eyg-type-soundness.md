@@ -638,9 +638,17 @@ for the **whole** core language.
       (`Eyg/Types/Soundness.lean`): the single bundled `soundness` — a closed well-typed
       program's every `BehaviorsR` behaviour is a silent typed value, a silent sanctioned
       crash (never a bad/type-error crash), or a boundary suspension on an in-row effect.
-      Axioms clean. **Remaining:** reply-containing terminating traces (needs the
-      `ReplyContract` folded across `reply` steps), the `diverges` behaviours, and
-      discharge `fix`.
+      Axioms clean. **`diverges` ω-effect-safety DELIVERED** (`Eyg/Types/Soundness.lean`):
+      `soundness_behaviorsR_diverges` — a closed well-typed program's *divergent*
+      `BehaviorsR` behaviour emits only `perform`s in its declared row `ε`. Built from
+      `ωTr_all_wf` (every state along the infinite `reduceLTS.ωTr` execution stays
+      well-typed at `(τ,ε)` — ordinary `ℕ`-induction folding the new `preservation_keep_fix`,
+      the exact-`ε` variant valid for the pre-`Handle` fragment) + `ωTr_effect_safe`
+      (`preservation_perform` reads `op ∈ ε` off each emitted boundary) + `reduce_perform_inv`.
+      Conditioned on the world supplying well-typed replies along the witnessing execution
+      (`ReplyContract` per step); axioms clean. **Remaining:** reply-containing *terminating*
+      traces (needs the `ReplyContract` folded across `reply` steps through `runR`/`evalR`),
+      and discharge `fix`.
 - [x] **Pure ⇒ effect-free** `pure_no_perform` (Eff's `A!∅` purity certificate)
       **DELIVERED** (`Eyg/Types/Soundness.lean`): `pure_no_perform_evalR` — a program
       typed at the **empty** effect row never has `evalR = .effect _ _ _` (the empty
@@ -699,10 +707,11 @@ checker / compiler.
       **let-generalization `gen` remaining**.
 - [~] **T7:** headline `soundness` over `BehaviorsR` — value/no-bad-crash/effect-escape
       (`soundness_evalR`), silent terminations + open-boundary suspension over
-      `BehaviorsR` ✅; `pure_no_perform` ✅; executable transfer documented ✅; axioms
-      clean ✅; zero `sorry` ✅; `lake build` + `lake exe spec` green ✅. **Remaining:**
-      reply-containing terminating traces (`ReplyContract` across `reply`) and the
-      `diverges` (ω-effect-safety) behaviours; and discharging the `fix` hypotheses.
+      `BehaviorsR` ✅; **`diverges` ω-effect-safety** (`soundness_behaviorsR_diverges`) ✅;
+      `pure_no_perform` ✅; executable transfer documented ✅; axioms clean ✅; zero `sorry`
+      ✅; `lake build` + `lake exe spec` green ✅. **Remaining:** reply-containing
+      *terminating* traces (`ReplyContract` across `reply` through `runR`/`evalR`); and
+      discharging the `fix` hypotheses.
 
 ## Decisions made (baked into the milestones)
 

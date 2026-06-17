@@ -1831,6 +1831,27 @@ theorem preservation_tau_fix [BEq m] (hfix : FixPreserves m) {cfg cfg' : Config 
     MStateWf (.run cfg') τ ε :=
   preservation_tau (builtinAppPreserves hfix) hwf h
 
+/-- **Preservation keeping `ε` exactly**, in `fix`-discharged form. For the current
+fragment (pure/data/`Perform`/`Resume`-reply, no row-discharging `Delimit`) *every*
+`Reduce` move keeps the ambient row `ε` — the `tau`/`perform`/`reply` cases of
+`preservation` all return the same `ε`, which the `∃ ε'` wrapper hides. This exposes
+it, so a fold over an **infinite** run can thread `ε` across every step. (Once `Handle`/
+`Delimit` lands, the row shrinks across a `Delimit` pop and this exact-`ε` form no longer
+holds — the ω-soundness below would then thread the per-step row instead.) The `reply`
+case needs the `ReplyContract` (`hrep`): the world's supplied reply value inhabits the
+operation's declared reply type. -/
+theorem preservation_keep_fix [BEq m] (hfix : FixPreserves m)
+    {s s' : MState m} {μ : Label m} {τ ε : Ty}
+    (hwf : MStateWf s τ ε) (hr : Reduce s μ s') (hrep : ReplyContract ε s μ) :
+    MStateWf s' τ ε := by
+  cases hr with
+  | tau h => exact preservation_tau_fix hfix hwf h
+  | perform h => exact preservation_perform hwf h
+  | reply =>
+      obtain ⟨a, b, replyTy, hEff, hbr, hStack⟩ := hwf
+      simp only [ReplyContract] at hrep
+      exact ⟨replyTy, (hrep a b hEff).conv hbr, hStack⟩
+
 /-- **Effect safety over `evalR`.** If a well-typed config's `evalR` terminates by
 *emitting an effect* `op`, then `op` is a member of the ambient row `ε` (the run can
 only escape on a declared effect). Fuel induction threading `ε` across silent steps
@@ -1954,6 +1975,69 @@ theorem soundness_behaviorsR_suspended [BEq m] (hpres : FixPreserves m) (hbad : 
   obtain ⟨fuel, resume, hf⟩ := evalR_complete_effect hmtr hobs _ rfl
   exact soundnessR_effect hpres hbad fuel (mStateWf_initial hty) hf
 
+/-! ## Soundness of divergent behaviours (ω-effect-safety, T7)
+
+A *divergent* `BehaviorsR` behaviour is an infinite `Reduce` execution
+(`reduceLTS.ωTr ss μs`). Effect safety for it ("every `perform` the run emits is in the
+declared row `ε`") is an ordinary induction over `ℕ` — no coinduction — folding
+`preservation_keep_fix` along the execution: every state stays well-typed at `(τ, ε)`,
+so by `preservation_perform` each emitted `perform op` lands an in-row `op`. The only
+world input is the `ReplyContract` at the `reply` steps (the world supplies well-typed
+replies); closed `evalR` never replies, but an open divergent run may. This closes the
+"`diverges` (ω-effect-safety)" T7 remainder for the current (pre-`Handle`) fragment,
+modulo the isolated `fix`. -/
+
+/-- Inversion of a `perform`-labelled `Reduce` step: it runs a config to the effect
+boundary, landing a `wait`. States generalized (so usable when the endpoints are stuck
+`ωSequence` applications `ss i`). -/
+theorem reduce_perform_inv [BEq m] {s s' : MState m} {op : String} {lift : Value m}
+    (h : Reduce s (.perform op lift) s') :
+    ∃ cfg envP kP, s = .run cfg ∧ s' = .wait op envP kP ∧
+      reduce1Run cfg = .perform op lift envP kP := by
+  cases h with
+  | perform h => exact ⟨_, _, _, rfl, rfl, h⟩
+
+/-- Every state along an infinite well-typed execution stays well-typed at `(τ, ε)`
+(induction over `ℕ`, folding `preservation_keep_fix`). -/
+theorem ωTr_all_wf [BEq m] (hfix : FixPreserves m)
+    {ss : Cslib.ωSequence (MState m)} {μs : Cslib.ωSequence (Label m)} {τ ε : Ty}
+    (hωtr : reduceLTS.ωTr ss μs) (hwf0 : MStateWf (ss 0) τ ε)
+    (hrep : ∀ i, ReplyContract ε (ss i) (μs i)) :
+    ∀ i, MStateWf (ss i) τ ε := by
+  intro i
+  induction i with
+  | zero => exact hwf0
+  | succ n ih => exact preservation_keep_fix hfix ih (hωtr n) (hrep n)
+
+/-- **ω-effect-safety.** Along an infinite well-typed execution (with well-typed replies),
+every emitted `perform op` is a member of the declared effect row `ε`. -/
+theorem ωTr_effect_safe [BEq m] (hfix : FixPreserves m)
+    {ss : Cslib.ωSequence (MState m)} {μs : Cslib.ωSequence (Label m)} {τ ε : Ty}
+    (hωtr : reduceLTS.ωTr ss μs) (hwf0 : MStateWf (ss 0) τ ε)
+    (hrep : ∀ i, ReplyContract ε (ss i) (μs i)) :
+    ∀ i op lift, μs i = .perform op lift → ∃ a b, Ty.EffContains ε op a b := by
+  intro i op lift hμ
+  have hwfi : MStateWf (ss i) τ ε := ωTr_all_wf hfix hωtr hwf0 hrep i
+  have hstep : Reduce (ss i) (.perform op lift) (ss (i + 1)) := hμ ▸ hωtr i
+  obtain ⟨cfg, envP, kP, hsi, _, hrun⟩ := reduce_perform_inv hstep
+  rw [hsi] at hwfi
+  obtain ⟨a, b, _, hEff, _, _⟩ := preservation_perform hwfi hrun
+  exact ⟨a, b, hEff⟩
+
+/-- **Effect safety for divergent behaviours.** A closed well-typed program's divergent
+`BehaviorsR` behaviour emits only `perform`s in its declared row `ε` (given the world
+supplies well-typed replies along the witnessing execution). Via `ωTr_effect_safe`. -/
+theorem soundness_behaviorsR_diverges [BEq m] (hfix : FixPreserves m)
+    {prog : Tree.Node m} {τ ε : Ty} {μs : Cslib.ωSequence (Label m)}
+    (hty : HasType [] prog τ ε)
+    (hmem : Behavior.diverges μs ∈ BehaviorsR (Config.initial prog))
+    (hrep : ∀ ss : Cslib.ωSequence (MState m), reduceLTS.ωTr ss μs →
+        ss 0 = .run (Config.initial prog) → ∀ i, ReplyContract ε (ss i) (μs i)) :
+    ∀ i op lift, μs i = .perform op lift → ∃ a b, Ty.EffContains ε op a b := by
+  obtain ⟨ss, hωtr, hs0⟩ := hmem
+  have hwf0 : MStateWf (ss 0) τ ε := by rw [hs0]; exact mStateWf_initial hty
+  exact ωTr_effect_safe hfix hωtr hwf0 (hrep ss hωtr hs0)
+
 /-- **Headline soundness (T7).** A closed well-typed program `prog : τ ! ε` does not go
 wrong. Bundling the per-shape results over the transparent observable layer `BehaviorsR`
 (modulo the isolated `fix`), every behaviour the program exhibits satisfies:
@@ -1963,8 +2047,9 @@ wrong. Bundling the per-shape results over the transparent observable layer `Beh
    `Unrepresentable` trap, never a type-error crash (`Vacant`/`NotAFunction`/`NoMatch`/…);
 3. a boundary **suspension** performs an operation **in the declared row** (`op ∈ ε`).
 
-(The remaining `BehaviorsR` shapes — reply-resumed terminations and `diverges` — are the
-open-system / coinductive T7 remainder.) -/
+Divergent behaviours are covered separately by `soundness_behaviorsR_diverges`
+(ω-effect-safety). (The remaining `BehaviorsR` shape — reply-resumed *terminating* traces
+— is the open-system T7 remainder, needing the `ReplyContract` folded through `runR`.) -/
 theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
     {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
     (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →
