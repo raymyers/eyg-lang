@@ -169,6 +169,25 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
       HasTypeV builder (.fun (.fun D γ R) .empty (.fun D γ R)) →
       Ty.TyEquiv (.fun D γ R) τ →
       HasTypeV (.Partial (.Builtin "fixed") [builder]) τ
+  /-- `Handle l` with no args: at (a type equivalent to) the full `handle(l)` arrow. -/
+  | partialHandleNil {l lift reply tail ret τ} :
+      Ty.TyEquiv (handleTy l lift reply tail ret) τ →
+      HasTypeV (.Partial (.Handle l) []) τ
+  /-- `Handle l` with the handler applied: `Fun(exec, tail, ret)`. -/
+  | partialHandleOne {l handler lift reply tail ret τ} :
+      HasTypeV handler (handlerTy lift reply tail ret) →
+      Ty.TyEquiv (.fun (execTy l lift reply tail ret) tail ret) τ →
+      HasTypeV (.Partial (.Handle l) [handler]) τ
+  /-- The reified delimited continuation `Resume acc iEnv`. The captured segment
+  `acc.reverse` (the frames between the `perform` and its `Delimit`, with the matching
+  `Delimit` re-pushed for a deep handler) is a stack-**segment** transformer taking the
+  reply value (`reply`, at the handled row `εtop`) to the handler's return (`ret`, at the
+  discharged row `tail`). It rests at the resumption type `kontTy reply tail ret =
+  reply →⟨tail⟩ ret`. -/
+  | partialResume {acc iEnv reply εtop ret tail τ} :
+      StackSegWf acc.reverse reply εtop ret tail →
+      Ty.TyEquiv (kontTy reply tail ret) τ →
+      HasTypeV (.Partial (.Resume acc iEnv) []) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -189,20 +208,15 @@ inductive BuiltinPartialWf {m : Type} : Ty → List (Value m) → Ty → Prop wh
       BuiltinPartialWf r applied τ →
       BuiltinPartialWf (.fun a ε r) (v :: applied) τ
 
-end
-
-/-- A continuation **segment** typed as a transformer that tracks *both* endpoints
-`(σin, εin) ⇒ (σout, εout)`. Unlike `StackWf` (whose `nil` is the answer and which
-keeps one ambient row), a segment ends in a **hole** another stack plugs into, and an
+/-- A continuation **segment** typed as a transformer tracking *both* endpoints
+`(σin, εin) ⇒ (σout, εout)`. Unlike `StackWf` (whose `nil` is the answer and which keeps
+one ambient row), a segment ends in a **hole** another stack plugs into, and an
 **effect-discharging `Delimit` frame changes the row** (`εin = ⟨l:(lift,reply)|tail⟩`
-above, `tail` below) — so the output row must be a separate index. This is what types
-the reified delimited continuation that `Resume` captures (`acc`, re-pushed via
-`move`); see `stackSeg_append`. The six non-`Delimit` frames keep the row constant
-(`εin = εout`); only `delimit` shrinks it.
-
-(Standalone for now, so its composition lemma is provable by `induction`. When
-`HasTypeV.partialResume` references it in the full `Handle` slice it joins the mutual
-block above and `stackSeg_append` is re-derived via the mutual recursor.) -/
+above, `tail` below) — so the output row is a separate index. This types the reified
+delimited continuation that `Resume` captures (`acc`, re-pushed via `move`); see
+`stackSeg_append`. The six non-`Delimit` frames keep the row constant (`εin = εout`);
+only `delimit` shrinks it. In the `HasTypeV` mutual block because `partialResume`
+references it and it references `HasTypeV`. -/
 inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop where
   | nil {σ ε} : StackSegWf [] σ ε σ ε
   | trace {a w rest σin εin σout εout} :
@@ -227,29 +241,36 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
       StackSegWf rest retTy εin σout εout →
       StackSegWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy εin retTy) εin σout εout
   /-- A deep `Delimit l handler henv` frame: discharges `l`, so its input row is
-  `⟨l:(lift,reply)|tail⟩` and the rest of the segment continues under `tail`. -/
-  | delimit {a l handler henv Γ lift reply tail ret σout εout rest} :
-      EnvWf henv Γ →
+  `⟨l:(lift,reply)|tail⟩` and the rest continues under `tail`. **No `EnvWf` premise** —
+  the frame's stored env is never used for typing (the handler is a self-contained
+  value), and at `reduceDeep` the frame env is arbitrary, so requiring it is unprovable. -/
+  | delimit {a l handler henv lift reply tail ret σout εout rest} :
       HasTypeV handler (handlerTy lift reply tail ret) →
       StackSegWf rest ret tail σout εout →
       StackSegWf ((Kontinue.Delimit l handler henv false, a) :: rest)
         ret (.effectExtend l lift reply tail) σout εout
 
+end
+
 /-- **Segment composition** (the corrected `Resume` keystone). Two segments compose
 end-to-end: the first's hole `(σmid, εmid)` is filled by the second. This *is*
 provable across the row-changing `delimit` frame (the row is tracked per-endpoint),
-unlike the uniform-`ε` `stackWf_append`. -/
+unlike the uniform-`ε` `stackWf_append`. Re-proved by `induction seg` + `cases hseg`
+(mutual inductives forbid `induction hseg`). -/
 theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σout εout : Ty}
     (hseg : StackSegWf seg σin εin σmid εmid) (hk : StackSegWf k σmid εmid σout εout) :
     StackSegWf (seg ++ k) σin εin σout εout := by
-  induction hseg with
-  | nil => exact hk
-  | trace _ ih => exact .trace (ih hk)
-  | assign henv hbody _ ih => exact .assign henv hbody (ih hk)
-  | arg henv harg _ ih => exact .arg henv harg (ih hk)
-  | applyf hf _ ih => exact .applyf hf (ih hk)
-  | callwith harg _ ih => exact .callwith harg (ih hk)
-  | delimit henv hh _ ih => exact .delimit henv hh (ih hk)
+  induction seg generalizing σin εin with
+  | nil => cases hseg; exact hk
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases hseg with
+      | trace h => exact .trace (ih h)
+      | assign henv hbody h => exact .assign henv hbody (ih h)
+      | arg henv harg h => exact .arg henv harg (ih h)
+      | applyf hf h => exact .applyf hf (ih h)
+      | callwith harg h => exact .callwith harg (ih h)
+      | delimit hh h => exact .delimit hh (ih h)
 
 /-! ## The lookup lemma (replaces the substitution lemma)
 
@@ -303,6 +324,9 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | partialOverwriteOne hvf he => exact .partialOverwriteOne hvf (he.trans heq)
   | partialPerformNil he => exact .partialPerformNil (he.trans heq)
   | partialFixed hb he => exact .partialFixed hb (he.trans heq)
+  | partialHandleNil he => exact .partialHandleNil (he.trans heq)
+  | partialHandleOne hh he => exact .partialHandleOne hh (he.trans heq)
+  | partialResume hseg he => exact .partialResume hseg (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -425,6 +449,9 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialOverwriteOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialPerformNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialFixed _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialHandleNil _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialHandleOne _ _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialResume _ _ => exact Or.inr ⟨_, _, rfl⟩
   | record _ _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc

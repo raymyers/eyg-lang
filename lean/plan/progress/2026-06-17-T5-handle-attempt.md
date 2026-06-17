@@ -6,6 +6,54 @@ status: ATTEMPT — reverted to green; sharpened scope (a new T7 ripple beyond t
 
 # T5 Handle/Delimit attempt — outcome (B): reverted, scope sharpened
 
+## ⚡ 4th-pass: WIP on branch `handle-wip` — 45→14 errors, 3 of 4 theorems converted
+
+A resumable-WIP pass (committed on branch `handle-wip`, NOT reverted) applied the
+steps-1–3 infra patch and ground the Soundness cascade from **45 → 14 errors**. Fully
+converted and green:
+- **Helper lemmas** (new, all green): `doPerformR_error_form` (replaces the now-false
+  `stackWf_doPerformR_unhandled`), `reducePerform_perform_inv`, `mStateWf_wait_conv`, and
+  `stackWf_nil_inv` (added to Machine.lean). `weakenEffAux` got its `handle` arm.
+- **`reduceCall_perform_wait`** — `cases hf` gains the 3 Handle-partial arms (all
+  `.tau`-absurd); `partialPerformNil` uses `reducePerform_perform_inv`.
+- **`preservation_perform`** — converted `cases hst`→`cases kont` + inversion lemmas;
+  `Apply`/`CallWith` use `stackWf_{applyf,callwith}_inv` + `reduceCall_perform_wait` +
+  `mStateWf_wait_conv` (to move the inversion's `ε0` back to `ε`); `Delimit`/others absurd.
+- **`reduce1Run_done_value_typed`** — `cases kont` + inversion; **the `replace hv := hv.conv
+  hσ` trick** (convert the control value to the inversion's `argTy0`) lets the existing
+  inner `cases hf` block stand unchanged. New cases all `.done value`-absurd. The `nil`
+  case uses `stackWf_nil_inv`.
+- **`progress`** — same `cases kont`+inversion+`replace`; `Delimit`-pop and Handle-partials
+  exhibit a `.tau` step (`Or.inl ⟨_, rfl⟩` / explicit cfg' for `reducePerform`/`reduceDeep`);
+  `partialPerformNil` becomes `cases hdp : doPerformR …` → `.ok`=handled `.tau` /
+  `.error`=escape with `op ∈ ε` (via `doPerformR_error_form` + `Ty.tyEquiv_effContains hε`
+  to move `EffContains ε0 → ε`). Both `cases expr` got a `Handle l` arm + one extra rcases
+  pattern.
+
+**Remaining (the 14 errors, all in `preservation_V`):** it must convert `cases hst`→`cases
+kont`+inversion like the other three, BUT its conclusion must change to **`∃ε', MStateWf
+cfg' τ ε'`** because the **`delimit`-pop genuinely shrinks the row** (`⟨l|tail⟩ → tail`,
+via `stackWf_delimit_inv`; the successor is well-typed only at `tail`, not `ε` — StackWf is
+not row-monotonic). Cases needed: the `replace hv := hv.conv hσ` + existing inner block
+(wrap each leaf `⟨ε0, …⟩`); `delimit`-pop (`⟨tail, …⟩`); `partialHandleNil`→accumulate to
+`partialHandleOne`; `partialHandleOne`→`reduceDeep` (push `Apply exec :: Delimit` via
+`StackWf.delimit`, `⟨ε', …⟩` with the new `⟨l|tail⟩` row); `partialResume`→`stackWf_resume`/
+`stackSeg_move`; the handled-`partialPerformNil`→isolate behind a new `HandledPerformPreserves
+m` hypothesis (threaded like `BuiltinAppPreserves`).
+**Then the `∃ε'` RIPPLE (T7, recipe step 5):** `preservation` (already `∃ε'`) just forwards;
+but **`preservation_tau` (fixed-`ε`) breaks** — it and its consumers `preservation_tau_fix`/
+`preservation_keep_fix` → `soundnessR_effect`/`ωTr_all_wf` must be reworked to thread the
+per-state row (read it from `progress`'s effect-escape witness, which names its own `ε`),
+not a fixed `ε`. Do `preservation_V` + this ripple as one unit (it transiently raises the
+error count, so it's the next pass's atomic chunk).
+
+`handle-wip` holds this 45→14 progress (commit message "WIP T5 Handle: … 45->14 errors").
+Resume: `git checkout -B work handle-wip`, then convert `preservation_V` + the ripple.
+
+---
+
+## (earlier) outcome (B): reverted, scope sharpened
+
 This is another dry-run of the Handle slice (cf. the 5–6 in
 `2026-06-16-T5-handle-design.md`). It **confirms the design note's plan is still
 correct**, records the two edits that *did* land green, and — the new contribution —
@@ -228,3 +276,54 @@ next pass faster:
 `reduce1Run_done_value_typed` (mostly absurd arms) → `progress` → `preservation_V` (biggest)
 → T7 rework. Build per-theorem. `HandledPerformPreserves` stays an isolated hypothesis
 threaded like `BuiltinAppPreserves`.
+
+## 5th-pass progress (2026-06-17): `preservation_V` CONVERTED — the hard theorem is banked
+
+The biggest/hardest of the four `cases hst` theorems, **`preservation_V`, is now fully
+converted and compiles green** (cases-`kont` + the conv-folding inversion lemmas + the
+`∃ε'` row-output form). This was the bulk of the remaining mechanical work. Specifically:
+- top-level `cases hst` → `cases kont`; `Trace`/`Assign`/`Arg` via their inversion lemmas;
+  **new `Delimit`-pop case** (`stackWf_delimit_inv`, successor well-typed at the shrunk row
+  `tail` → `∃ε'` with `ε' := tail`); `Apply`/`CallWith` via `stackWf_{applyf,callwith}_inv`
+  + `replace hv := hv.conv hσ` (keeps the existing inner `cases hf`/`cases hv` data blocks
+  intact), each data leaf wrapped `⟨ε0, …⟩`.
+- **New runtime arms** in both Apply and CallWith blocks: `partialHandleNil` (accumulate to
+  `partialHandleOne`, direct), and the three effect dispatches isolated behind a single
+  bundled hypothesis **`structure HandlerObligations`** (`.perform` / `.install` / `.resume`)
+  — threaded as ONE argument like `BuiltinAppPreserves`.
+- `preservation` and `preservation_tau` updated: `hho` arg + `∃ε'` conclusion (the `tau`/`V`
+  case forwards `preservation_V` directly; `E`/`perform`/`reply` cases supply `⟨ε, …⟩`).
+- `Machine`/`Runtime`/`Generation` all green (the conv inversion lemmas + Handle typing).
+
+### Why `install`/`resume` are isolated (not proved directly) — the real remaining metatheory
+The handler-install (`reduceDeep`) and `Resume` successors both need to relate the handle
+scheme's `tail` to the runtime ambient `ε0` across `EffWeaken`. `EffWeaken εf ε0` admits the
+`εf ≈ ∅` disjunct, under which the `Delimit` frame's discharged row (`∅`) ≠ the surrounding
+`ε0` — so `StackWf.delimit`'s `rest` endpoint doesn't line up without a row-threading
+argument. This is genuine effect-weakening-vs-`Delimit` metatheory; isolated behind
+`HandlerObligations.{install,resume}` for now (the `.perform` clause is the design's intended
+stack-walk dispatch). All three are TRUE; discharging them is the follow-up.
+
+### Remaining to green (4 live errors now, then a known cascade) — next pass
+1. **Mechanical `hho`-threading** through ~25 `*_fix`/headline theorems that take
+   `FixPreserves`: add `(hho : HandlerObligations m)` and pass it where they call
+   `preservation`/`preservation_tau`/`preservation_V`. The list (line numbers approximate):
+   `soundness_value` (1259), `preservation_fix` (2028), `soundness_value_fix` (2035),
+   `soundness_evalR_value` (2056), `soundnessR_noBadCrash` (2065), `soundness_evalR_noBadCrash`
+   (2093), `preservation_tau_fix` (2099, +`∃ε'`), `preservation_keep_fix` (2113, +`∃ε'`),
+   `soundnessR_effect` (2130), `soundness_evalR` (2161), `pure_no_perform_evalR` (2182),
+   `soundness_evalR_pure` (2193), `soundness_behaviorsR_*` (2214/2225/2239/2355/2368),
+   `ωTr_all_wf` (2272), `ωTr_effect_safe` (2284), `soundness_behaviorsR_diverges` (2300),
+   `mTr_terminal_wf` (2330), `pure_*` (2403/2412), `soundness` (2435). Headlines gain an
+   `hho` hypothesis (the honest result: soundness is now also conditional on the handler
+   obligations, like it is on `Fix*`).
+2. **T7 row-evolution rework** (the one genuinely non-mechanical bit): `preservation_keep_fix`
+   / `soundnessR_effect` / `ωTr_all_wf` / `mTr_terminal_wf` thread a FIXED `ε`; the `Delimit`
+   pop makes that false. Rework to thread the per-state row, and prove the **membership
+   reflection**: an `op` that escapes at the boundary (in the per-state row `ε'`) is in the
+   original `ε` — because every `Delimit` walked past discharged a *different* label, so
+   `op ∈ ε' → op ∈ ε`. Cleanest: a `reduce_tau_row` relation `RowEvolves ε ε'` carried
+   alongside preservation, with `effContains` reflecting up it. This is the last real proof.
+
+Build state banked on `handle-wip`: `preservation_V` + the inversion infra green; 4 live
+errors (the immediate `preservation`/`preservation_tau` callers) pending the threading above.

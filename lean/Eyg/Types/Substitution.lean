@@ -89,6 +89,12 @@ theorem hasType_subst {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} (σ : Nat → Ty
   | overwrite => simp only [Ty.subst]; exact HasType.overwrite
   | empty => simp only [Ty.subst]; exact HasType.empty
   | perform => simp only [Ty.subst]; exact HasType.perform
+  | @handle Γ l lift reply tail ret ε a =>
+      have heq : Ty.subst σ (handleTy l lift reply tail ret)
+          = handleTy l (Ty.subst σ lift) (Ty.subst σ reply) (Ty.subst σ tail)
+              (Ty.subst σ ret) := by
+        simp [handleTy, handlerTy, execTy, kontTy, Ty.subst]
+      rw [heq]; exact HasType.handle
   | conv _ hτ hε ih => exact HasType.conv ih (Ty.subst_tyEquiv σ hτ) (Ty.subst_tyEquiv σ hε)
 
 /-! ## Value-level substitution for `gen`-eligible values

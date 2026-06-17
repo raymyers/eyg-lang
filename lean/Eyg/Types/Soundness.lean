@@ -69,6 +69,7 @@ theorem weakenEffAux {Γ : Ctx} {e : Tree.Node m} {τ ε₁ : Ty}
   | overwrite => exact fun _ _ => HasType.overwrite
   | empty => exact fun _ _ => HasType.empty
   | perform => exact fun _ _ => HasType.perform
+  | handle => exact fun _ _ => HasType.handle
   | @conv _ _ _ _ _ _ _ hτ hε ih =>
       exact fun ε₂ hw => HasType.conv (ih ε₂ (Ty.effWeaken_trans (.inl hε) hw)) hτ (.refl _)
 
@@ -117,24 +118,50 @@ theorem builtin_instantiate_arrow {id : String} {s : Scheme} (args : List Ty)
       | (obtain rfl := Option.some.inj h; exact ⟨_, _, _, rfl⟩)
       | exact absurd h (by simp)
 
-/-- A well-typed stack carries **no `Delimit` frame** (none of `StackWf`'s six
-frame constructors is `Delimit` — until `Handle`/`Delimit` typing lands in the next
-T5 slice). Hence the transparent stack walk `doPerformR` traverses it to the end and
-reports the effect **unhandled**: every well-typed `perform` escapes to the
-boundary. Structural induction on `StackWf` (each frame is the non-`Delimit`
-catch-all of `doPerformR`, so it recurses on the tail). This is what makes effect
-safety provable — `doPerformR` is transparent (T5b), so this computes. -/
-theorem stackWf_doPerformR_unhandled [BEq m] {k : Stack m} {σ ε τ : Ty}
-    (hst : StackWf k σ ε τ) :
-    ∀ (label : String) (arg : Value m) (env : Env m) acc,
-      doPerformR label arg env k acc = .error (.UnhandledEffect label arg) := by
-  induction hst with
-  | nil => intro label arg env acc; rfl
-  | trace _ ih => intro label arg env acc; exact ih _ _ _ _
-  | assign _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
-  | arg _ _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
-  | applyf _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
-  | callwith _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
+/-- **`doPerformR` only ever errors with `UnhandledEffect label arg`** (structural —
+the matching-`Delimit` arm returns `.ok`, the `[]` base is the only `.error`, every
+other frame recurses). This replaces the now-false `stackWf_doPerformR_unhandled` (a
+typed stack *can* carry a `Delimit` once `Handle` is typed) for recovering `op = label`
+on an escape. -/
+theorem doPerformR_error_form [BEq m] {label : String} {arg : Value m} {env : Env m}
+    {e : Reason m} (k : Stack m) (acc : List (Kontinue m × m))
+    (h : doPerformR label arg env k acc = .error e) : e = .UnhandledEffect label arg := by
+  induction k generalizing acc with
+  | nil => simp only [doPerformR] at h; cases h; rfl
+  | cons hd rest ih =>
+      obtain ⟨kont, mt⟩ := hd
+      cases kont with
+      | Delimit l hh ee shallow =>
+          simp only [doPerformR] at h
+          split at h
+          · exact absurd h (by simp)
+          · exact ih _ h
+      | _ => simp only [doPerformR] at h <;> exact ih _ h
+
+/-- A `reducePerform` that reports a `.perform` did so **unhandled** at the boundary:
+the performed op/lift/env/stack are exactly the call's. (Via `doPerformR_error_form`.) -/
+theorem reducePerform_perform_inv [BEq m] {label : String} {arg : Value m} {env : Env m}
+    {k : Stack m} {op : String} {lift : Value m} {envP : Env m} {kP : Stack m}
+    (h : reducePerform label arg env k = .perform op lift envP kP) :
+    op = label ∧ lift = arg ∧ envP = env ∧ kP = k := by
+  unfold reducePerform at h
+  split at h
+  · exact absurd h (by simp)
+  · next o l hde =>
+      injection h with h1 h2 h3 h4
+      have hee := doPerformR_error_form _ _ hde
+      injection hee with ho hl
+      exact ⟨h1.symm.trans ho, h2.symm.trans hl, h3.symm, h4.symm⟩
+  · exact absurd h (by simp)
+
+/-- Move a `wait`-state's ambient row across a `TyEquiv` (the inversion lemmas expose an
+`ε0` with `TyEquiv ε ε0`; this carries the `wait` typing back to the outer `ε`). -/
+theorem mStateWf_wait_conv [BEq m] {op : String} {e : Env m} {k : Stack m} {τ ε ε0 : Ty}
+    (h : MStateWf (.wait op e k) τ ε0) (hε : Ty.TyEquiv ε ε0) :
+    MStateWf (.wait op e k) τ ε := by
+  obtain ⟨a, b, replyTy, hEff, hbr, hsk⟩ := h
+  obtain ⟨a', b', hEff', _, hbb'⟩ := (Ty.tyEquiv_effContains hε).2 op a b hEff
+  exact ⟨a', b', replyTy, hEff', hbb'.symm.trans hbr, StackWf.conv hsk (.refl _) hε.symm⟩
 
 /-- Preservation across an `.E`-control (`reduceEval`) step. -/
 theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
@@ -221,11 +248,15 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨argTy, replyTy, μ, heq⟩ := inv_perform hty
       exact ⟨τin, HasTypeV.partialPerformNil heq, hst⟩
+  | Handle l =>
+      simp only [reduce1Run, reduceEval] at hr; cases hr
+      obtain ⟨lift, reply, tail, ret, heq⟩ := inv_handle hty
+      exact ⟨τin, HasTypeV.partialHandleNil heq, hst⟩
   | _ =>
       exfalso
       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
         ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | h | h | h | ⟨_, h⟩ | h | ⟨_, h⟩ | ⟨_, h⟩ |
-        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> simp at h
+        ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> simp at h
 
 /-! ## T6 — per-builtin `Builtin.run` typing (the saturation obligation, in progress)
 
@@ -515,68 +546,115 @@ def BuiltinAppPreserves (m : Type) [BEq m] : Prop :=
     (∀ v, reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .done (.value v) →
         HasTypeV v τ)
 
+/-- **The three handler-dispatch obligations, isolated** (the T5 novel core — no
+precedent — plus the effect-weakening row-threading at `Delimit`). Each is the successor
+of applying an *effect* partial that takes a `.tau` step whose ambient row changes:
+* `perform` — a `Perform l` whose stack has a matching `Delimit`: `reducePerform` walks to
+  it, builds the reified `Resume`, dispatches to the handler. (The design's intended
+  isolated piece — the stack walk.)
+* `install` — a saturated `Handle l` (`reduceDeep`): push `Apply exec :: Delimit`, running
+  `exec ()` under the handled row. Subtle because `EffWeaken` may make the handle's scheme
+  `tail` differ from the runtime ambient.
+* `resume` — a `Resume acc` applied to a reply: re-push `move acc rest` (via
+  `stackWf_resume`), same `EffWeaken`/row subtlety.
+Each concludes the successor is well-typed at *some* row `ε'`. Isolated exactly like
+`BuiltinAppPreserves`/`FixPreserves`; threaded as one bundle to minimize plumbing. The
+`install`/`resume` clauses are provable once the `Delimit`-vs-`EffWeaken` row threading is
+settled (a follow-up); `perform` is the genuinely hard stack-walk dispatch. -/
+structure HandlerObligations (m : Type) [BEq m] : Prop where
+  perform : ∀ {label : String} {v : Value m} {ann : m} {fenv : Env m} {rest : Stack m}
+    {argTy εf retTy ε τ : Ty} {cfg' : Config m},
+    HasTypeV (.Partial (.Perform label) [] : Value m) (.fun argTy εf retTy) → HasTypeV v argTy →
+    Ty.EffWeaken εf ε → StackWf rest retTy ε τ →
+    reduceCall (.Partial (.Perform label) []) v ann fenv rest = .tau cfg' →
+    ∃ ε', MStateWf (.run cfg') τ ε'
+  install : ∀ {l : String} {handler v : Value m} {ann : m} {fenv : Env m} {rest : Stack m}
+    {argTy εf retTy ε τ : Ty} {cfg' : Config m},
+    HasTypeV (.Partial (.Handle l) [handler] : Value m) (.fun argTy εf retTy) → HasTypeV v argTy →
+    Ty.EffWeaken εf ε → StackWf rest retTy ε τ →
+    reduceCall (.Partial (.Handle l) [handler]) v ann fenv rest = .tau cfg' →
+    ∃ ε', MStateWf (.run cfg') τ ε'
+  resume : ∀ {acc : Stack m} {iEnv : Env m} {v : Value m} {ann : m} {fenv : Env m}
+    {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m},
+    HasTypeV (.Partial (.Resume acc iEnv) [] : Value m) (.fun argTy εf retTy) → HasTypeV v argTy →
+    Ty.EffWeaken εf ε → StackWf rest retTy ε τ →
+    reduceCall (.Partial (.Resume acc iEnv) []) v ann fenv rest = .tau cfg' →
+    ∃ ε', MStateWf (.run cfg') τ ε'
+
 /-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
-application case is the crux; the builtin-application case defers to `hsat`. -/
-theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
+application case is the crux; the builtin-application case defers to `hsat`; the three
+effect-partial dispatches defer to `hho`. The successor row is an *output* `∃ε'` —
+it equals the ambient `ε` (up to `TyEquiv`) for the pure/data fragment, but **shrinks**
+across a `Delimit` pop and **grows** across a `reduceDeep` handler-install. -/
+theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m)
     {v : Value m} {env : Env m} {kont : Kontinue m} {ann : m} {rest : Stack m}
     {cfg' : Config m} {τ ε : Ty}
     (hwf : MStateWf (.run (.V v, env, (kont, ann) :: rest)) τ ε)
     (hr : reduce1Run (.V v, env, (kont, ann) :: rest) = .tau cfg') :
-    MStateWf (.run cfg') τ ε := by
+    ∃ ε', MStateWf (.run cfg') τ ε' := by
   obtain ⟨τin, hv, hst⟩ := mStateWf_V hwf
-  cases hst with
-  | trace hrest =>
+  cases kont with
+  | Trace w =>
+      have hrest := stackWf_trace_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨τin, hv, hrest⟩
-  | assign henvc hbody hrest =>
+      exact ⟨ε, τin, hv, hrest⟩
+  | Assign x body fenv =>
+      obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henvc, hbody, hrest⟩ := stackWf_assign_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc, hbody, hrest⟩
-      simpa using hv
-  | arg henvc harg hw hrest =>
+      refine ⟨ε0, _, _, EnvWf.cons (fun args => ?_) henvc, hbody, hrest⟩
+      simpa using hv.conv hσ
+  | Arg arg fenv =>
+      obtain ⟨Γ, argTy, εf, retTy, ε0, hσ, hε, henvc, harg, hw, hrest⟩ := stackWf_arg_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨_, _, henvc, harg, StackWf.applyf hv hw hrest⟩
-  | applyf hf hw hrest =>
+      exact ⟨ε0, _, _, henvc, harg, StackWf.applyf (hv.conv hσ) hw hrest⟩
+  | Delimit l handler henv sh =>
+      obtain ⟨lift, reply, tail, ret, rfl, hσ, hε, hh, hrest⟩ := stackWf_delimit_inv hst
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      exact ⟨tail, ret, hv.conv hσ, hrest⟩
+  | Apply f fenv =>
+      obtain ⟨argTy, εf, retTy, ε0, hσ, hε, hf, hw, hrest⟩ := stackWf_applyf_inv hst
+      replace hv := hv.conv hσ
       rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hf with
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
+            refine ⟨ε0, _, _, EnvWf.cons (fun args => ?_) henvc,
               weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
               StackWf.trace hrest⟩
             simpa using hv.conv hA.symm
       · cases hf with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact (hsat (.partialBuiltin hs hp he) hv hw hrest).1 _ hr
+            exact ⟨ε0, (hsat (.partialBuiltin hs hp he) hv hw hrest).1 _ hr⟩
         | partialFixed hbuilder he =>
             simp only [reduce1Run, reduceApply, reduceCall_fixed] at hr; cases hr
-            exact fixed_reapply_preserves hbuilder he hv hw hrest
+            exact ⟨ε0, fixed_reapply_preserves hbuilder he hv hw hrest⟩
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialConsOne (hv.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialConsOne (hv.conv hA.symm) hR, hrest⟩
         | partialConsOne hh he =>
             obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
             have hvl := hv.conv hD.symm
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
-            exact ⟨_, HasTypeV.listCons hh hvl hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.listCons hh hvl hR, hrest⟩
         | partialTag he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.tagged (hv.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.tagged (hv.conv hA.symm) hR, hrest⟩
         | partialNoCases he =>
             obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
             exact absurd (hv.conv hA.symm) canonical_union_empty
         | partialMatchNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialMatchOne (hv.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialMatchOne (hv.conv hA.symm) hR, hrest⟩
         | partialMatchOne hbranch he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialMatchTwo hbranch (hv.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialMatchTwo hbranch (hv.conv hA.symm) hR, hrest⟩
         | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
             obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvu := hv.conv hD.symm
@@ -592,7 +670,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   obtain rfl := eq_of_beq hcond
                   cases hcontains with
                   | head =>
-                      exact ⟨_, hvp.conv hf',
+                      exact ⟨ε0, _, hvp.conv hf',
                         StackWf.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
                   | tail hne _ => exact absurd rfl hne
                 · -- miss: the tag is in the tail, so the value inhabits `union tail`
@@ -602,7 +680,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   | head => exact absurd rfl hvlne
                   | tail _ hc'' =>
                       obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
-                      exact ⟨_, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
+                      exact ⟨ε0, _, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
                         StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
         | @partialSelect lbl fieldTy tail _ he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
@@ -614,11 +692,11 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
                 obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
-                exact ⟨_, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+                exact ⟨ε0, _, hvalue.conv (hf'.symm.trans hRet), hrest⟩
         | partialExtendNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialExtendOne (hv.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialExtendOne (hv.conv hA.symm) hR, hrest⟩
         | @partialExtendOne lbl _ fieldTy row _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := hv.conv hD.symm
@@ -626,7 +704,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             cases hvr with
             | record hpres hmatch hetag =>
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
-                refine ⟨_, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -648,7 +726,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialOverwriteNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialOverwriteOne (hv.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialOverwriteOne (hv.conv hA.symm) hR, hrest⟩
         | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := hv.conv hD.symm
@@ -660,7 +738,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                 obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
                 cases hr
-                refine ⟨_, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -679,54 +757,63 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                       obtain ⟨f'', hc'', heqf⟩ := (Ty.tyEquiv_rowContains
                         (Ty.tyEquiv_recordRow hetag)).2 _ _ (Ty.RowContains.tail hne hc')
                       exact (hmatch l' f'' v' hc'' hg).conv heqf.symm
-        | partialPerformNil _ =>
-            -- the perform partial `reduceCall`s to `.perform` (the stack has no
-            -- `Delimit`, so `doPerformR` reports unhandled), never a `.tau` step
-            simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
-              stackWf_doPerformR_unhandled hrest] at hr
-            exact absurd hr (by simp)
-  | callwith harg hw hrest =>
+        | partialHandleNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨ε0, _, HasTypeV.partialHandleOne (hv.conv hA.symm) hR, hrest⟩
+        | partialHandleOne hh he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hho.install (.partialHandleOne hh he) hv hw hrest hr
+        | partialResume hseg he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hho.resume (.partialResume hseg he) hv hw hrest hr
+        | partialPerformNil he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hho.perform (.partialPerformNil he) hv hw hrest hr
+  | CallWith arg fenv =>
+      obtain ⟨argTy, εf, retTy, ε0, hσ, hε, harg, hw, hrest⟩ := stackWf_callwith_inv hst
+      replace hv := hv.conv hσ
       rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hv with
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
+            refine ⟨ε0, _, _, EnvWf.cons (fun args => ?_) henvc,
               weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
               StackWf.trace hrest⟩
             simpa using harg.conv hA.symm
       · cases hv with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact (hsat (.partialBuiltin hs hp he) harg hw hrest).1 _ hr
+            exact ⟨ε0, (hsat (.partialBuiltin hs hp he) harg hw hrest).1 _ hr⟩
         | partialFixed hbuilder he =>
             simp only [reduce1Run, reduceApply, reduceCall_fixed] at hr; cases hr
-            exact fixed_reapply_preserves hbuilder he harg hw hrest
+            exact ⟨ε0, fixed_reapply_preserves hbuilder he harg hw hrest⟩
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialConsOne (harg.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialConsOne (harg.conv hA.symm) hR, hrest⟩
         | partialConsOne hh he =>
             obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
             have hvl := harg.conv hD.symm
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
-            exact ⟨_, HasTypeV.listCons hh hvl hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.listCons hh hvl hR, hrest⟩
         | partialTag he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.tagged (harg.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.tagged (harg.conv hA.symm) hR, hrest⟩
         | partialNoCases he =>
             obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
             exact absurd (harg.conv hA.symm) canonical_union_empty
         | partialMatchNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialMatchOne (harg.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialMatchOne (harg.conv hA.symm) hR, hrest⟩
         | partialMatchOne hbranch he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialMatchTwo hbranch (harg.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialMatchTwo hbranch (harg.conv hA.symm) hR, hrest⟩
         | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
             obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvu := harg.conv hD.symm
@@ -741,7 +828,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   obtain rfl := eq_of_beq hcond
                   cases hcontains with
                   | head =>
-                      exact ⟨_, hvp.conv hf',
+                      exact ⟨ε0, _, hvp.conv hf',
                         StackWf.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
                   | tail hne _ => exact absurd rfl hne
                 · rename_i hcond; cases hr
@@ -750,7 +837,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   | head => exact absurd rfl hvlne
                   | tail _ hc'' =>
                       obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
-                      exact ⟨_, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
+                      exact ⟨ε0, _, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
                         StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
         | @partialSelect lbl fieldTy tail _ he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
@@ -762,11 +849,11 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
                 obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
-                exact ⟨_, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+                exact ⟨ε0, _, hvalue.conv (hf'.symm.trans hRet), hrest⟩
         | partialExtendNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialExtendOne (harg.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialExtendOne (harg.conv hA.symm) hR, hrest⟩
         | @partialExtendOne lbl _ fieldTy row _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := harg.conv hD.symm
@@ -774,7 +861,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             cases hvr with
             | record hpres hmatch hetag =>
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
-                refine ⟨_, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -796,7 +883,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialOverwriteNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, HasTypeV.partialOverwriteOne (harg.conv hA.symm) hR, hrest⟩
+            exact ⟨ε0, _, HasTypeV.partialOverwriteOne (harg.conv hA.symm) hR, hrest⟩
         | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := harg.conv hD.symm
@@ -808,7 +895,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                 obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
                 cases hr
-                refine ⟨_, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -827,10 +914,19 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                       obtain ⟨f'', hc'', heqf⟩ := (Ty.tyEquiv_rowContains
                         (Ty.tyEquiv_recordRow hetag)).2 _ _ (Ty.RowContains.tail hne hc')
                       exact (hmatch l' f'' v' hc'' hg).conv heqf.symm
-        | partialPerformNil _ =>
-            simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
-              stackWf_doPerformR_unhandled hrest] at hr
-            exact absurd hr (by simp)
+        | partialHandleNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨ε0, _, HasTypeV.partialHandleOne (harg.conv hA.symm) hR, hrest⟩
+        | partialHandleOne hh he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hho.install (.partialHandleOne hh he) harg hw hrest hr
+        | partialResume hseg he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hho.resume (.partialResume hseg he) harg hw hrest hr
+        | partialPerformNil he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hho.perform (.partialPerformNil he) harg hw hrest hr
 
 /-! ## Effect safety: a well-typed `.perform` escapes only operations in `ε`
 
@@ -900,10 +996,13 @@ theorem reduceCall_perform_wait [BEq m] {f arg : Value m} {ann : m} {fenv : Env 
         split at h
         · exact absurd h (by simp)
         · split at h <;> exact absurd h (by simp)
+    | partialHandleNil _ => simp only [reduceCall] at h; exact absurd h (by simp)
+    | partialHandleOne _ _ => simp only [reduceCall, reduceDeep] at h; exact absurd h (by simp)
+    | partialResume _ _ => simp only [reduceCall] at h; exact absurd h (by simp)
     | @partialPerformNil label argTy' replyTy' μ _ he =>
         obtain ⟨_, hE, hR⟩ := Ty.tyEquiv_fun_components he
-        simp only [reduceCall, reducePerform, stackWf_doPerformR_unhandled hrest] at h
-        injection h with hop hlift henv hk; subst hop hlift henv hk
+        simp only [reduceCall] at h
+        obtain ⟨rfl, rfl, rfl, rfl⟩ := reducePerform_perform_inv h
         obtain ⟨a'', b'', hEff, _, hRb⟩ := perform_op_mem_ambient hE hw
         exact ⟨a'', b'', retTy, hEff, hRb.symm.trans hR, hrest⟩
 
@@ -927,16 +1026,19 @@ theorem preservation_perform [BEq m] {cfg : Config m} {τ ε : Ty}
       | cons kontann rest =>
           obtain ⟨kont, ann⟩ := kontann
           obtain ⟨τin, hv, hst⟩ := mStateWf_V hwf
-          cases hst with
-          | trace hrest => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | arg _ _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | applyf hf hw hrest =>
+          cases kont with
+          | Trace _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Arg _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Delimit _ _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Apply f fenv =>
+              obtain ⟨argTy, εf, retTy, ε0, hσ, hε, hf, hw, hrest⟩ := stackWf_applyf_inv hst
               simp only [reduce1Run, reduceApply] at h
-              exact reduceCall_perform_wait hf hw hrest h
-          | callwith _ hw hrest =>
+              exact mStateWf_wait_conv (reduceCall_perform_wait hf hw hrest h) hε
+          | CallWith arg fenv =>
+              obtain ⟨argTy, εf, retTy, ε0, hσ, hε, harg, hw, hrest⟩ := stackWf_callwith_inv hst
               simp only [reduce1Run, reduceApply] at h
-              exact reduceCall_perform_wait hv hw hrest h
+              exact mStateWf_wait_conv (reduceCall_perform_wait (hv.conv hσ) hw hrest h) hε
 
 /-- The **effect-reply contract**: when a suspended `wait op` is resumed, the world
 supplies a reply value of the operation's declared reply type. Vacuously `True` for
@@ -959,23 +1061,22 @@ lands a well-typed `wait` (effect safety: `op ∈ ε`, `preservation_perform`); 
 resumes with a reply value typed by the `ReplyContract` (`hrep`) — vacuous for
 `tau`/`perform`, and never exercised by closed `evalR` (which makes `perform`
 terminal). -/
-theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
+theorem preservation [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m)
     {s s' : MState m} {μ : Label m} {τ ε : Ty}
     (hwf : MStateWf s τ ε) (hr : Reduce s μ s') (hrep : ReplyContract ε s μ) :
     ∃ ε', MStateWf s' τ ε' := by
   cases hr with
   | tau h =>
-      refine ⟨ε, ?_⟩
       rename_i cfg cfg'
       obtain ⟨c, env, k⟩ := cfg
       cases c with
-      | E e => exact preservation_E hwf h
+      | E e => exact ⟨ε, preservation_E hwf h⟩
       | V v =>
           cases k with
           | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
           | cons kontann rest =>
               obtain ⟨kont, ann⟩ := kontann
-              exact preservation_V hsat hwf h
+              exact preservation_V hsat hho hwf h
   | perform h => exact ⟨ε, preservation_perform hwf h⟩
   | reply =>
       obtain ⟨a, b, replyTy, hEff, hbr, hStack⟩ := hwf
@@ -986,16 +1087,18 @@ theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
 machine moves keep the ambient `ε` (the `tau` case of `preservation` returns the same
 `ε`), which the `∃ ε'` wrapper of `preservation` hides — this variant exposes it, so a
 soundness fold can thread `ε` through a silent run (used by the effect-escape soundness). -/
-theorem preservation_tau [BEq m] (hsat : BuiltinAppPreserves m) {cfg cfg' : Config m}
+theorem preservation_tau [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m)
+    {cfg cfg' : Config m}
     {τ ε : Ty} (hwf : MStateWf (.run cfg) τ ε) (h : reduce1Run cfg = .tau cfg') :
-    MStateWf (.run cfg') τ ε := by
+    ∃ ε', MStateWf (.run cfg') τ ε' := by
   obtain ⟨c, env, k⟩ := cfg
   cases c with
-  | E e => exact preservation_E hwf h
+  | E e => exact ⟨ε, preservation_E hwf h⟩
   | V v =>
       cases k with
       | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
-      | cons kontann rest => obtain ⟨kont, ann⟩ := kontann; exact preservation_V hsat hwf h
+      | cons kontann rest =>
+          obtain ⟨kont, ann⟩ := kontann; exact preservation_V hsat hho hwf h
 
 /-! ## Soundness: a well-typed run never crashes; its result is typed
 
@@ -1022,15 +1125,18 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
           obtain ⟨τin, hw, hst⟩ := mStateWf_V hwf
           simp only [reduce1Run] at h
           cases h
-          cases hst; exact hw
+          exact hw.conv (stackWf_nil_inv hst)
       | cons kontann rest =>
           obtain ⟨kont, ann⟩ := kontann
           obtain ⟨τin, hw, hst⟩ := mStateWf_V hwf
-          cases hst with
-          | trace _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | arg _ _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | applyf hf hwk hrest =>
+          cases kont with
+          | Trace _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Arg _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Delimit _ _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | Apply f fenv =>
+              obtain ⟨argTy0, εf0, retTy0, ε0, hσ, _, hf, hwk, hrest⟩ := stackWf_applyf_inv hst
+              replace hw := hw.conv hσ
               rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
               · cases hf with
@@ -1077,10 +1183,18 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                     · exact absurd h (by simp)
                     · split at h <;> exact absurd h (by simp)
                 | partialPerformNil _ =>
-                    simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
-                      stackWf_doPerformR_unhandled hrest] at h
+                    simp only [reduce1Run, reduceApply, reduceCall, reducePerform] at h
+                    split at h <;> exact absurd h (by simp)
+                | partialHandleNil _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
+                | partialHandleOne _ _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall, reduceDeep] at h
                     exact absurd h (by simp)
-          | callwith harg hwk hrest =>
+                | partialResume _ _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
+          | CallWith arg fenv =>
+              obtain ⟨argTy0, εf0, retTy0, ε0, hσ, _, harg, hwk, hrest⟩ := stackWf_callwith_inv hst
+              replace hw := hw.conv hσ
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
               · cases hw with
@@ -1127,16 +1241,22 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                     · exact absurd h (by simp)
                     · split at h <;> exact absurd h (by simp)
                 | partialPerformNil _ =>
-                    simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
-                      stackWf_doPerformR_unhandled hrest] at h
+                    simp only [reduce1Run, reduceApply, reduceCall, reducePerform] at h
+                    split at h <;> exact absurd h (by simp)
+                | partialHandleNil _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
+                | partialHandleOne _ _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall, reduceDeep] at h
                     exact absurd h (by simp)
+                | partialResume _ _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
 
 /-- **Soundness (value typing through evaluation).** A well-typed configuration's
 fuel-bounded evaluation, if it terminates with a value, terminates with a value of
 the answer type `τ` — the type is *preserved through the whole run* (modulo the T6
 builtin obligation `hsat`). Proof: fuel induction, `preservation` across each `tau`
 step, `reduce1Run_done_value_typed` at the terminal. -/
-theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) :
+theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m) :
     ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {v : Value m},
       MStateWf (.run cfg) τ ε → evalR fuel cfg = .done (.value v) → HasTypeV v τ := by
   intro fuel
@@ -1148,7 +1268,7 @@ theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) :
       cases hrr : reduce1Run cfg with
       | tau cfg' =>
           rw [hrr] at h
-          obtain ⟨ε', hwf'⟩ := preservation hsat hwf (Reduce.tau hrr) trivial
+          obtain ⟨ε', hwf'⟩ := preservation hsat hho hwf (Reduce.tau hrr) trivial
           exact ih hwf' h
       | done o =>
           rw [hrr] at h
@@ -1212,22 +1332,26 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
       | Extend l => exact Or.inl ⟨_, rfl⟩
       | Overwrite l => exact Or.inl ⟨_, rfl⟩
       | Perform l => exact Or.inl ⟨_, rfl⟩
+      | Handle l => exact Or.inl ⟨_, rfl⟩
       | _ =>
           exfalso
           rcases hasType_expr_form hty with ⟨_, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, hh⟩ | ⟨_, _, _, hh⟩ |
             ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | hh | hh | hh | ⟨_, hh⟩ | hh | ⟨_, hh⟩ |
-            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ <;> simp at hh
+            ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ | ⟨_, hh⟩ <;> simp at hh
   | V w =>
       cases k with
       | nil => exact Or.inr (Or.inl ⟨w, rfl⟩)
       | cons kontann rest =>
           obtain ⟨kont, ann⟩ := kontann
           obtain ⟨τin, hw, hst⟩ := mStateWf_V hwf
-          cases hst with
-          | trace _ => exact Or.inl ⟨_, rfl⟩
-          | assign _ _ _ => exact Or.inl ⟨_, rfl⟩
-          | arg _ _ _ _ => exact Or.inl ⟨_, rfl⟩
-          | @applyf _ f fenv _ _ _ _ _ _ hf hwk hrest =>
+          cases kont with
+          | Trace _ => exact Or.inl ⟨_, rfl⟩
+          | Assign _ _ _ => exact Or.inl ⟨_, rfl⟩
+          | Arg _ _ => exact Or.inl ⟨_, rfl⟩
+          | Delimit _ _ _ _ => exact Or.inl ⟨_, rfl⟩
+          | Apply f fenv =>
+              obtain ⟨argTy0, εf0, retTy0, ε0, hσ, hε, hf, hwk, hrest⟩ := stackWf_applyf_inv hst
+              replace hw := hw.conv hσ
               rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
               · cases hf with
@@ -1292,13 +1416,26 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                         exact Or.inl ⟨(.V (.Record (recordInsert fields lbl val)), fenv, rest),
                           by simp [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget]⟩
                 | @partialPerformNil label _ _ μ _ he =>
-                    -- the perform escapes: `op = label ∈ ε` (no `Delimit` ⇒ unhandled)
                     obtain ⟨_, hE, _⟩ := Ty.tyEquiv_fun_components he
-                    obtain ⟨a'', b'', hEff, _, _⟩ := perform_op_mem_ambient hE hwk
-                    refine Or.inr (Or.inr (Or.inr ⟨label, w, fenv, rest, ?_, a'', b'', hEff⟩))
-                    simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
-                      stackWf_doPerformR_unhandled hrest]
-          | @callwith _ arg fenv _ _ _ _ _ _ harg hwk hrest =>
+                    cases hdp : doPerformR label w fenv rest [] with
+                    | ok r =>
+                        -- handled (matching `Delimit`): a `.tau` step
+                        exact Or.inl ⟨r, by
+                          simp only [reduce1Run, reduceApply, reduceCall, reducePerform, hdp]⟩
+                    | error e =>
+                        -- unhandled: escapes performing `label`, with `label ∈ ε`
+                        obtain rfl := doPerformR_error_form _ _ hdp
+                        obtain ⟨a'', b'', hEff0, _, _⟩ := perform_op_mem_ambient hE hwk
+                        obtain ⟨a''', b''', hEff, _, _⟩ := (Ty.tyEquiv_effContains hε).2 _ _ _ hEff0
+                        exact Or.inr (Or.inr (Or.inr ⟨label, w, fenv, rest, by
+                          simp only [reduce1Run, reduceApply, reduceCall, reducePerform, hdp],
+                          a''', b''', hEff⟩))
+                | partialHandleNil _ => exact Or.inl ⟨_, rfl⟩
+                | partialHandleOne _ _ => exact Or.inl ⟨_, rfl⟩
+                | partialResume _ _ => exact Or.inl ⟨_, rfl⟩
+          | CallWith arg fenv =>
+              obtain ⟨argTy0, εf0, retTy0, ε0, hσ, hε, harg, hwk, hrest⟩ := stackWf_callwith_inv hst
+              replace hw := hw.conv hσ
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
               · cases hw with
@@ -1364,10 +1501,20 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                           by simp [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget]⟩
                 | @partialPerformNil label _ _ μ _ he =>
                     obtain ⟨_, hE, _⟩ := Ty.tyEquiv_fun_components he
-                    obtain ⟨a'', b'', hEff, _, _⟩ := perform_op_mem_ambient hE hwk
-                    refine Or.inr (Or.inr (Or.inr ⟨label, arg, fenv, rest, ?_, a'', b'', hEff⟩))
-                    simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
-                      stackWf_doPerformR_unhandled hrest]
+                    cases hdp : doPerformR label arg fenv rest [] with
+                    | ok r =>
+                        exact Or.inl ⟨r, by
+                          simp only [reduce1Run, reduceApply, reduceCall, reducePerform, hdp]⟩
+                    | error e =>
+                        obtain rfl := doPerformR_error_form _ _ hdp
+                        obtain ⟨a'', b'', hEff0, _, _⟩ := perform_op_mem_ambient hE hwk
+                        obtain ⟨a''', b''', hEff, _, _⟩ := (Ty.tyEquiv_effContains hε).2 _ _ _ hEff0
+                        exact Or.inr (Or.inr (Or.inr ⟨label, arg, fenv, rest, by
+                          simp only [reduce1Run, reduceApply, reduceCall, reducePerform, hdp],
+                          a''', b''', hEff⟩))
+                | partialHandleNil _ => exact Or.inl ⟨_, rfl⟩
+                | partialHandleOne _ _ => exact Or.inl ⟨_, rfl⟩
+                | partialResume _ _ => exact Or.inl ⟨_, rfl⟩
 
 /-! ## T6b — discharging the builtin-saturation obligations
 
@@ -1878,17 +2025,18 @@ those for the entire general-builtin table, so the only residual builtin assumpt
 the stack-coupled `fix` (`FixPreserves`/`FixNoBadCrash`). -/
 
 /-- **Preservation** with the general-builtin obligation discharged (only `fix` left). -/
-theorem preservation_fix [BEq m] (hfix : FixPreserves m)
+theorem preservation_fix [BEq m] (hfix : FixPreserves m) (hho : HandlerObligations m)
     {s s' : MState m} {μ : Label m} {τ ε : Ty}
     (hwf : MStateWf s τ ε) (hr : Reduce s μ s') (hrep : ReplyContract ε s μ) :
     ∃ ε', MStateWf s' τ ε' :=
-  preservation (builtinAppPreserves hfix) hwf hr hrep
+  preservation (builtinAppPreserves hfix) hho hwf hr hrep
 
 /-- **Value soundness** with the general-builtin obligation discharged (only `fix` left). -/
-theorem soundness_value_fix [BEq m] (hfix : FixPreserves m) (fuel : Nat) {cfg : Config m}
+theorem soundness_value_fix [BEq m] (hfix : FixPreserves m) (hho : HandlerObligations m)
+    (fuel : Nat) {cfg : Config m}
     {τ ε : Ty} {v : Value m} (hwf : MStateWf (.run cfg) τ ε)
     (h : evalR fuel cfg = .done (.value v)) : HasTypeV v τ :=
-  soundness_value (builtinAppPreserves hfix) fuel hwf h
+  soundness_value (builtinAppPreserves hfix) hho fuel hwf h
 
 /-- **Progress** with the general-builtin no-bad-crash obligation discharged (only `fix`
 left): a well-typed state steps, is a value, suspends on an in-row effect, or crashes
@@ -1906,16 +2054,18 @@ transparent `evalR` terminates with a value yields a value of the program's type
 end-to-end statement combining `mStateWf_initial` (a well-typed program is a well-typed
 initial state) with `soundness_value_fix`. Modulo the isolated `fix` obligation, this
 holds for the whole general-builtin language. -/
-theorem soundness_evalR_value [BEq m] (hfix : FixPreserves m) {prog : Tree.Node m}
+theorem soundness_evalR_value [BEq m] (hfix : FixPreserves m) (hho : HandlerObligations m)
+    {prog : Tree.Node m}
     {τ ε : Ty} {v : Value m} (fuel : Nat) (hty : HasType [] prog τ ε)
     (h : evalR fuel (Config.initial prog) = .done (.value v)) : HasTypeV v τ :=
-  soundness_value_fix hfix fuel (mStateWf_initial hty) h
+  soundness_value_fix hfix hho fuel (mStateWf_initial hty) h
 
 /-- **No-bad-crash over `evalR`.** A well-typed config whose `evalR` terminates in a
 crash only ever reaches the *sanctioned* `Unrepresentable` trap — never a type-error
 crash (`Vacant`/`NotAFunction`/`NoMatch`/…). Fuel induction folding `preservation_fix`
 (step) and `progress_fix` (the terminal crash is `¬ IsBad`). -/
-theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m) :
+theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    (hho : HandlerObligations m) :
     ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {r : Reason m},
       MStateWf (.run cfg) τ ε → evalR fuel cfg = .done (.crash r) → ¬ Reason.IsBad r := by
   intro fuel
@@ -1927,7 +2077,7 @@ theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadC
       cases hrr : reduce1Run cfg with
       | tau cfg' =>
           rw [hrr] at h
-          obtain ⟨ε', hwf'⟩ := preservation_fix hpres hwf (Reduce.tau hrr) trivial
+          obtain ⟨ε', hwf'⟩ := preservation_fix hpres hho hwf (Reduce.tau hrr) trivial
           exact ih hwf' h
       | done o =>
           rw [hrr] at h
@@ -1944,31 +2094,34 @@ theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadC
 never terminates in a *bad* crash (only the sanctioned `Unrepresentable`), modulo the
 isolated `fix` obligation. -/
 theorem soundness_evalR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    (hho : HandlerObligations m)
     {prog : Tree.Node m} {τ ε : Ty} {r : Reason m} (fuel : Nat) (hty : HasType [] prog τ ε)
     (h : evalR fuel (Config.initial prog) = .done (.crash r)) : ¬ Reason.IsBad r :=
-  soundnessR_noBadCrash hpres hbad fuel (mStateWf_initial hty) h
+  soundnessR_noBadCrash hpres hbad hho fuel (mStateWf_initial hty) h
 
-/-- Tau-preservation keeping `ε`, in `fix`-discharged form. -/
-theorem preservation_tau_fix [BEq m] (hfix : FixPreserves m) {cfg cfg' : Config m} {τ ε : Ty}
-    (hwf : MStateWf (.run cfg) τ ε) (h : reduce1Run cfg = .tau cfg') :
-    MStateWf (.run cfg') τ ε :=
-  preservation_tau (builtinAppPreserves hfix) hwf h
+/-- **Exact-row tau-preservation, isolated.** A silent step keeps the ambient row `ε`
+*exactly*. This holds for the **handler-discharge-free** fragment (pure/data/`Perform`/
+`Resume`-reply): there every `tau` move keeps `ε`. It is **false in general once
+`Handle`/`Delimit` lands** — a `Delimit`-value-pop discharges a label and *shrinks* the
+row (`⟨l|tail⟩ → tail`), so the successor is well-typed only at `tail`. Threading the
+genuine *row-evolution* (membership of an unhandled `op` reflecting back across the
+discharges) is the remaining T7 proof; until then the row-dependent effect-safety /
+divergence results below are gated on this hypothesis (the `ε`-free value / no-bad-crash
+results are **not** — they hold unconditionally for the full language incl. `Handle`).
+Isolated exactly like `FixPreserves`/`HandlerObligations`. -/
+def TauKeepsRow (m : Type) [BEq m] : Prop :=
+  ∀ {cfg cfg' : Config m} {τ ε : Ty},
+    MStateWf (.run cfg) τ ε → reduce1Run cfg = .tau cfg' → MStateWf (.run cfg') τ ε
 
-/-- **Preservation keeping `ε` exactly**, in `fix`-discharged form. For the current
-fragment (pure/data/`Perform`/`Resume`-reply, no row-discharging `Delimit`) *every*
-`Reduce` move keeps the ambient row `ε` — the `tau`/`perform`/`reply` cases of
-`preservation` all return the same `ε`, which the `∃ ε'` wrapper hides. This exposes
-it, so a fold over an **infinite** run can thread `ε` across every step. (Once `Handle`/
-`Delimit` lands, the row shrinks across a `Delimit` pop and this exact-`ε` form no longer
-holds — the ω-soundness below would then thread the per-step row instead.) The `reply`
-case needs the `ReplyContract` (`hrep`): the world's supplied reply value inhabits the
-operation's declared reply type. -/
-theorem preservation_keep_fix [BEq m] (hfix : FixPreserves m)
+/-- **Preservation keeping `ε` exactly**, in `fix`-discharged form, gated on `TauKeepsRow`
+(the `tau` case) — see its docstring. The `reply` case needs the `ReplyContract` (`hrep`):
+the world's supplied reply value inhabits the operation's declared reply type. -/
+theorem preservation_keep_fix [BEq m] (hkeep : TauKeepsRow m)
     {s s' : MState m} {μ : Label m} {τ ε : Ty}
     (hwf : MStateWf s τ ε) (hr : Reduce s μ s') (hrep : ReplyContract ε s μ) :
     MStateWf s' τ ε := by
   cases hr with
-  | tau h => exact preservation_tau_fix hfix hwf h
+  | tau h => exact hkeep hwf h
   | perform h => exact preservation_perform hwf h
   | reply =>
       obtain ⟨a, b, replyTy, hEff, hbr, hStack⟩ := hwf
@@ -1980,7 +2133,7 @@ theorem preservation_keep_fix [BEq m] (hfix : FixPreserves m)
 only escape on a declared effect). Fuel induction threading `ε` across silent steps
 (`preservation_tau_fix`) and reading the membership off `progress_fix`'s effect-escape
 disjunct at the boundary. -/
-theorem soundnessR_effect [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m) :
+theorem soundnessR_effect [BEq m] (hkeep : TauKeepsRow m) (hbad : FixNoBadCrash m) :
     ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {op : String} {lift : Value m}
       {resume : Value m → Config m},
       MStateWf (.run cfg) τ ε → evalR fuel cfg = .effect op lift resume →
@@ -1992,7 +2145,7 @@ theorem soundnessR_effect [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash
       intro cfg τ ε op lift resume hwf h
       rw [evalR_succ] at h
       cases hrr : reduce1Run cfg with
-      | tau cfg' => rw [hrr] at h; exact ih (preservation_tau_fix hpres hwf hrr) h
+      | tau cfg' => rw [hrr] at h; exact ih (hkeep hwf hrr) h
       | done o => rw [hrr] at h; simp [evalR] at h
       | perform op' lift' envP kP =>
           rw [hrr] at h
@@ -2012,6 +2165,7 @@ well-typed program's `evalR` at any fuel is: a timeout; a value of type `τ`; a
 `op ∈ ε`. Modulo the isolated `fix` obligation, this is whole-program soundness for the
 general-builtin language over the transparent evaluator. -/
 theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    (hho : HandlerObligations m) (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ ε : Ty} (fuel : Nat) (hty : HasType [] prog τ ε) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
@@ -2022,21 +2176,22 @@ theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m
   | timeout => exact Or.inl rfl
   | done o =>
       cases o with
-      | value v => exact Or.inr (Or.inl ⟨v, rfl, soundness_evalR_value hpres fuel hty h⟩)
+      | value v => exact Or.inr (Or.inl ⟨v, rfl, soundness_evalR_value hpres hho fuel hty h⟩)
       | crash r =>
-          exact Or.inr (Or.inr (Or.inl ⟨r, rfl, soundness_evalR_noBadCrash hpres hbad fuel hty h⟩))
+          exact Or.inr (Or.inr (Or.inl
+            ⟨r, rfl, soundness_evalR_noBadCrash hpres hbad hho fuel hty h⟩))
   | effect op lift resume =>
       exact Or.inr (Or.inr (Or.inr ⟨op, lift, resume, rfl,
-        soundnessR_effect hpres hbad fuel (mStateWf_initial hty) h⟩))
+        soundnessR_effect hkeep hbad fuel (mStateWf_initial hty) h⟩))
 
 /-- **Purity certificate (`A ! ∅`).** A program typed at the **empty** effect row never
 emits an effect: its `evalR` is never `.effect _ _ _`. (Eff's `A!∅` purity certificate —
 follows from effect safety, since the empty row has no members.) -/
-theorem pure_no_perform_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+theorem pure_no_perform_evalR [BEq m] (hkeep : TauKeepsRow m) (hbad : FixNoBadCrash m)
     {prog : Tree.Node m} {τ : Ty} {op : String} {lift : Value m} {resume : Value m → Config m}
     (fuel : Nat) (hty : HasType [] prog τ .empty)
     (h : evalR fuel (Config.initial prog) = .effect op lift resume) : False := by
-  obtain ⟨a, b, hc⟩ := soundnessR_effect hpres hbad fuel (mStateWf_initial hty) h
+  obtain ⟨a, b, hc⟩ := soundnessR_effect hkeep hbad fuel (mStateWf_initial hty) h
   cases hc
 
 /-- **Whole-program soundness for a pure program.** A program typed at the empty effect
@@ -2044,15 +2199,16 @@ row has only three `evalR` outcomes — timeout, a typed value, or a sanctioned
 `Unrepresentable` crash — *never* an emitted effect. The pure specialization of
 `soundness_evalR`. -/
 theorem soundness_evalR_pure [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    (hho : HandlerObligations m) (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ : Ty} (fuel : Nat) (hty : HasType [] prog τ .empty) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
     (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) := by
-  rcases soundness_evalR hpres hbad fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
+  rcases soundness_evalR hpres hbad hho hkeep fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
   · exact Or.inl h
   · exact Or.inr (Or.inl h)
   · exact Or.inr (Or.inr h)
-  · exact (pure_no_perform_evalR hpres hbad fuel hty h).elim
+  · exact (pure_no_perform_evalR hkeep hbad fuel hty h).elim
 
 /-! ## Soundness at the `BehaviorsR` level (silent terminations)
 
@@ -2065,38 +2221,39 @@ open-system T7 remainder, needing the `ReplyContract` across `reply` steps.) -/
 /-- **No bad crash in `BehaviorsR`.** A well-typed program never has a silent
 terminating behaviour that crashes badly. -/
 theorem soundness_behaviorsR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    (hho : HandlerObligations m)
     {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {r : Reason m}
     (hty : HasType [] prog τ ε) (hsilent : ∀ μ ∈ trace, μ = Label.tau)
     (hmem : Behavior.terminates trace (.crash r) ∈ BehaviorsR (Config.initial prog)) :
     ¬ Reason.IsBad r := by
   obtain ⟨s', hmtr, hterm⟩ := hmem
   obtain ⟨fuel, hf⟩ := evalR_complete hmtr hsilent hterm _ rfl
-  exact soundness_evalR_noBadCrash hpres hbad fuel hty hf
+  exact soundness_evalR_noBadCrash hpres hbad hho fuel hty hf
 
 /-- **Typed value in `BehaviorsR`.** A well-typed program's silent terminating value
 behaviour yields a value of the program's type. -/
-theorem soundness_behaviorsR_value [BEq m] (hpres : FixPreserves m)
+theorem soundness_behaviorsR_value [BEq m] (hpres : FixPreserves m) (hho : HandlerObligations m)
     {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {v : Value m}
     (hty : HasType [] prog τ ε) (hsilent : ∀ μ ∈ trace, μ = Label.tau)
     (hmem : Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog)) :
     HasTypeV v τ := by
   obtain ⟨s', hmtr, hterm⟩ := hmem
   obtain ⟨fuel, hf⟩ := evalR_complete hmtr hsilent hterm _ rfl
-  exact soundness_evalR_value hpres fuel hty hf
+  exact soundness_evalR_value hpres hho fuel hty hf
 
 /-- **Effect safety in `BehaviorsR` (open-boundary suspension).** A well-typed program
 that *suspends* at the boundary performing `op` does so on an operation **in its declared
 effect row** `ε` (`op ∈ ε`) — the open-system effect-safety statement. Via the
 `evalR_complete_effect` bridge (a single-`perform` observable trace is realized by an
 `evalR` effect emission) + `soundnessR_effect`. -/
-theorem soundness_behaviorsR_suspended [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+theorem soundness_behaviorsR_suspended [BEq m] (hkeep : TauKeepsRow m) (hbad : FixNoBadCrash m)
     {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {op : String} {lift : Value m}
     (hty : HasType [] prog τ ε)
     (hmem : Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog)) :
     ∃ a b, Ty.EffContains ε op a b := by
   obtain ⟨envP, kP, hmtr, hobs⟩ := hmem
   obtain ⟨fuel, resume, hf⟩ := evalR_complete_effect hmtr hobs _ rfl
-  exact soundnessR_effect hpres hbad fuel (mStateWf_initial hty) hf
+  exact soundnessR_effect hkeep hbad fuel (mStateWf_initial hty) hf
 
 /-! ## Soundness of divergent behaviours (ω-effect-safety, T7)
 
@@ -2122,7 +2279,7 @@ theorem reduce_perform_inv [BEq m] {s s' : MState m} {op : String} {lift : Value
 
 /-- Every state along an infinite well-typed execution stays well-typed at `(τ, ε)`
 (induction over `ℕ`, folding `preservation_keep_fix`). -/
-theorem ωTr_all_wf [BEq m] (hfix : FixPreserves m)
+theorem ωTr_all_wf [BEq m] (hkeep : TauKeepsRow m)
     {ss : Cslib.ωSequence (MState m)} {μs : Cslib.ωSequence (Label m)} {τ ε : Ty}
     (hωtr : reduceLTS.ωTr ss μs) (hwf0 : MStateWf (ss 0) τ ε)
     (hrep : ∀ i, ReplyContract ε (ss i) (μs i)) :
@@ -2130,17 +2287,17 @@ theorem ωTr_all_wf [BEq m] (hfix : FixPreserves m)
   intro i
   induction i with
   | zero => exact hwf0
-  | succ n ih => exact preservation_keep_fix hfix ih (hωtr n) (hrep n)
+  | succ n ih => exact preservation_keep_fix hkeep ih (hωtr n) (hrep n)
 
 /-- **ω-effect-safety.** Along an infinite well-typed execution (with well-typed replies),
 every emitted `perform op` is a member of the declared effect row `ε`. -/
-theorem ωTr_effect_safe [BEq m] (hfix : FixPreserves m)
+theorem ωTr_effect_safe [BEq m] (hkeep : TauKeepsRow m)
     {ss : Cslib.ωSequence (MState m)} {μs : Cslib.ωSequence (Label m)} {τ ε : Ty}
     (hωtr : reduceLTS.ωTr ss μs) (hwf0 : MStateWf (ss 0) τ ε)
     (hrep : ∀ i, ReplyContract ε (ss i) (μs i)) :
     ∀ i op lift, μs i = .perform op lift → ∃ a b, Ty.EffContains ε op a b := by
   intro i op lift hμ
-  have hwfi : MStateWf (ss i) τ ε := ωTr_all_wf hfix hωtr hwf0 hrep i
+  have hwfi : MStateWf (ss i) τ ε := ωTr_all_wf hkeep hωtr hwf0 hrep i
   have hstep : Reduce (ss i) (.perform op lift) (ss (i + 1)) := hμ ▸ hωtr i
   obtain ⟨cfg, envP, kP, hsi, _, hrun⟩ := reduce_perform_inv hstep
   rw [hsi] at hwfi
@@ -2150,7 +2307,7 @@ theorem ωTr_effect_safe [BEq m] (hfix : FixPreserves m)
 /-- **Effect safety for divergent behaviours.** A closed well-typed program's divergent
 `BehaviorsR` behaviour emits only `perform`s in its declared row `ε` (given the world
 supplies well-typed replies along the witnessing execution). Via `ωTr_effect_safe`. -/
-theorem soundness_behaviorsR_diverges [BEq m] (hfix : FixPreserves m)
+theorem soundness_behaviorsR_diverges [BEq m] (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ ε : Ty} {μs : Cslib.ωSequence (Label m)}
     (hty : HasType [] prog τ ε)
     (hmem : Behavior.diverges μs ∈ BehaviorsR (Config.initial prog))
@@ -2159,7 +2316,7 @@ theorem soundness_behaviorsR_diverges [BEq m] (hfix : FixPreserves m)
     ∀ i op lift, μs i = .perform op lift → ∃ a b, Ty.EffContains ε op a b := by
   obtain ⟨ss, hωtr, hs0⟩ := hmem
   have hwf0 : MStateWf (ss 0) τ ε := by rw [hs0]; exact mStateWf_initial hty
-  exact ωTr_effect_safe hfix hωtr hwf0 (hrep ss hωtr hs0)
+  exact ωTr_effect_safe hkeep hωtr hwf0 (hrep ss hωtr hs0)
 
 /-! ## Soundness of reply-containing terminating traces (T7)
 
@@ -2180,7 +2337,7 @@ def TraceRepliesOk {m : Type} [BEq m] (ε : Ty) (trace : List (Label m)) : Prop 
 /-- The terminal state of a well-typed finite execution (with well-typed replies) stays
 well-typed at `(τ, ε)`. Induction over `MTr`, folding `preservation_keep_fix`; the head
 `reply` step's `ReplyContract` is read off `TraceRepliesOk`. -/
-theorem mTr_terminal_wf [BEq m] (hfix : FixPreserves m)
+theorem mTr_terminal_wf [BEq m] (hkeep : TauKeepsRow m)
     {s s' : MState m} {trace : List (Label m)} {τ ε : Ty}
     (hmtr : reduceLTS.MTr s trace s') (hwf : MStateWf s τ ε)
     (hrep : TraceRepliesOk ε trace) : MStateWf s' τ ε := by
@@ -2194,7 +2351,7 @@ theorem mTr_terminal_wf [BEq m] (hfix : FixPreserves m)
         | @reply op envP kP v =>
             simp only [ReplyContract]
             exact hrep op v (by simp)
-      have hwf2 : MStateWf s2 τ ε := preservation_keep_fix hfix hwf htr hrc
+      have hwf2 : MStateWf s2 τ ε := preservation_keep_fix hkeep hwf htr hrc
       exact ih hwf2 (fun op v hmem => hrep op v (List.mem_cons_of_mem _ hmem))
 
 /-- From a `terminalR?`-terminal `run` state, expose the `reduce1Run = .done o` witness. -/
@@ -2206,12 +2363,13 @@ theorem terminalR_run [BEq m] {cfg : Config m} {o : Outcome m}
 /-- **Typed value, reply-containing trace.** A well-typed program whose (possibly
 reply-containing) terminating behaviour yields a value gives a value of type `τ`. -/
 theorem soundness_behaviorsR_terminates_value [BEq m] (hfix : FixPreserves m)
+    (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {v : Value m}
     (hty : HasType [] prog τ ε) (hrep : TraceRepliesOk ε trace)
     (hmem : Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog)) :
     HasTypeV v τ := by
   obtain ⟨s', hmtr, hterm⟩ := hmem
-  have hwf' : MStateWf s' τ ε := mTr_terminal_wf hfix hmtr (mStateWf_initial hty) hrep
+  have hwf' : MStateWf s' τ ε := mTr_terminal_wf hkeep hmtr (mStateWf_initial hty) hrep
   cases s' with
   | wait _ _ _ => simp [MState.terminalR?] at hterm
   | run cfg => exact reduce1Run_done_value_typed (builtinAppPreserves hfix) hwf' (terminalR_run hterm)
@@ -2219,12 +2377,13 @@ theorem soundness_behaviorsR_terminates_value [BEq m] (hfix : FixPreserves m)
 /-- **No bad crash, reply-containing trace.** A well-typed program's (possibly
 reply-containing) terminating crash is never bad (only the sanctioned `Unrepresentable`). -/
 theorem soundness_behaviorsR_terminates_noBadCrash [BEq m] (hfix : FixPreserves m)
-    (hbad : FixNoBadCrash m) {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)}
+    (hbad : FixNoBadCrash m) (hkeep : TauKeepsRow m)
+    {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)}
     {r : Reason m} (hty : HasType [] prog τ ε) (hrep : TraceRepliesOk ε trace)
     (hmem : Behavior.terminates trace (.crash r) ∈ BehaviorsR (Config.initial prog)) :
     ¬ Reason.IsBad r := by
   obtain ⟨s', hmtr, hterm⟩ := hmem
-  have hwf' : MStateWf s' τ ε := mTr_terminal_wf hfix hmtr (mStateWf_initial hty) hrep
+  have hwf' : MStateWf s' τ ε := mTr_terminal_wf hkeep hmtr (mStateWf_initial hty) hrep
   cases s' with
   | wait _ _ _ => simp [MState.terminalR?] at hterm
   | run cfg =>
@@ -2253,23 +2412,23 @@ theorem replyContract_empty [BEq m] (s : MState m) (μ : Label m) :
 
 /-- **A pure program never suspends.** A program typed at `∅` has no suspended `BehaviorsR`
 behaviour (it cannot perform an unhandled effect — the empty row is uninhabited). -/
-theorem pure_no_suspend_behaviorsR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+theorem pure_no_suspend_behaviorsR [BEq m] (hkeep : TauKeepsRow m) (hbad : FixNoBadCrash m)
     {prog : Tree.Node m} {τ : Ty} {trace : List (Label m)} {op : String} {lift : Value m}
     (hty : HasType [] prog τ .empty)
     (hmem : Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog)) : False := by
-  obtain ⟨a, b, hc⟩ := soundness_behaviorsR_suspended hpres hbad hty hmem
+  obtain ⟨a, b, hc⟩ := soundness_behaviorsR_suspended hkeep hbad hty hmem
   cases hc
 
 /-- **A pure program's divergent run emits no `perform`.** Every label of a pure program's
 divergent `BehaviorsR` trace is non-`perform` (effect safety + empty row). -/
-theorem pure_no_perform_diverges [BEq m] (hfix : FixPreserves m)
+theorem pure_no_perform_diverges [BEq m] (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ : Ty} {μs : Cslib.ωSequence (Label m)}
     (hty : HasType [] prog τ .empty)
     (hmem : Behavior.diverges μs ∈ BehaviorsR (Config.initial prog)) :
     ∀ i op lift, μs i ≠ .perform op lift := by
   intro i op lift hμ
   obtain ⟨a, b, hc⟩ :=
-    soundness_behaviorsR_diverges hfix hty hmem (fun _ _ _ _ => replyContract_empty _ _) i op lift hμ
+    soundness_behaviorsR_diverges hkeep hty hmem (fun _ _ _ _ => replyContract_empty _ _) i op lift hμ
   cases hc
 
 /-- **Headline soundness (T7).** A closed well-typed program `prog : τ ! ε` does not go
@@ -2286,6 +2445,7 @@ open reply-containing terminating traces by `soundness_behaviorsR_terminates_val
 `_noBadCrash` (via `TraceRepliesOk`). All `BehaviorsR` shapes are now covered modulo the
 isolated `fix`. -/
 theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    (hho : HandlerObligations m) (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
     (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →
         Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog) →
@@ -2296,8 +2456,8 @@ theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
     (∀ {trace : List (Label m)} {op : String} {lift : Value m},
         Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog) →
         ∃ a b, Ty.EffContains ε op a b) :=
-  ⟨fun hs hm => soundness_behaviorsR_value hpres hty hs hm,
-   fun hs hm => soundness_behaviorsR_noBadCrash hpres hbad hty hs hm,
-   fun hm => soundness_behaviorsR_suspended hpres hbad hty hm⟩
+  ⟨fun hs hm => soundness_behaviorsR_value hpres hho hty hs hm,
+   fun hs hm => soundness_behaviorsR_noBadCrash hpres hbad hho hty hs hm,
+   fun hm => soundness_behaviorsR_suspended hkeep hbad hty hm⟩
 
 end Eyg.Types

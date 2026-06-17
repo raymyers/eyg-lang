@@ -143,6 +143,12 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   unification). The `Perform l` node is a value, so its own ambient `ε` is free. -/
   | perform {Γ l a b μ ε ann} :
       HasType Γ ⟨.Perform l, ann⟩ (.fun a (.effectExtend l a b μ) b) ε
+  /-- Deep handler `Handle l`: `handle(l) = Fun(handler, ∅, Fun(exec, tail, ret))`
+  (`contextual.gleam` `handle`). Runs `exec ()` under a fresh handler for `l`; the
+  handled computation's row drops from `⟨l:(lift,reply)|tail⟩` (inside `exec`) to
+  `tail` (the result). `Handle l` is a value, so its own ambient `ε` is free. -/
+  | handle {Γ l lift reply tail ret ε ann} :
+      HasType Γ ⟨.Handle l, ann⟩ (handleTy l lift reply tail ret) ε
   /-- **Conversion**: types and effect rows may be replaced by `TyEquiv`-equal
   ones (Leijen's `∼=` in the application rule) so row order never blocks a rule. -/
   | conv {Γ e τ τ' ε ε'} :
