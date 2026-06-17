@@ -1885,6 +1885,31 @@ theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m
       exact Or.inr (Or.inr (Or.inr ⟨op, lift, resume, rfl,
         soundnessR_effect hpres hbad fuel (mStateWf_initial hty) h⟩))
 
+/-- **Purity certificate (`A ! ∅`).** A program typed at the **empty** effect row never
+emits an effect: its `evalR` is never `.effect _ _ _`. (Eff's `A!∅` purity certificate —
+follows from effect safety, since the empty row has no members.) -/
+theorem pure_no_perform_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ : Ty} {op : String} {lift : Value m} {resume : Value m → Config m}
+    (fuel : Nat) (hty : HasType [] prog τ .empty)
+    (h : evalR fuel (Config.initial prog) = .effect op lift resume) : False := by
+  obtain ⟨a, b, hc⟩ := soundnessR_effect hpres hbad fuel (mStateWf_initial hty) h
+  cases hc
+
+/-- **Whole-program soundness for a pure program.** A program typed at the empty effect
+row has only three `evalR` outcomes — timeout, a typed value, or a sanctioned
+`Unrepresentable` crash — *never* an emitted effect. The pure specialization of
+`soundness_evalR`. -/
+theorem soundness_evalR_pure [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ : Ty} (fuel : Nat) (hty : HasType [] prog τ .empty) :
+    evalR fuel (Config.initial prog) = .timeout ∨
+    (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
+    (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) := by
+  rcases soundness_evalR hpres hbad fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
+  · exact Or.inl h
+  · exact Or.inr (Or.inl h)
+  · exact Or.inr (Or.inr h)
+  · exact (pure_no_perform_evalR hpres hbad fuel hty h).elim
+
 /-! ## Soundness at the `BehaviorsR` level (silent terminations)
 
 Lifting the per-fuel `evalR` soundness to observable `BehaviorsR` membership via the

@@ -625,9 +625,12 @@ for the **whole** core language.
       is typed. Axioms clean. **Remaining:** the general reply-containing traces (the
       open-system case — needs the `ReplyContract` folded across `reply` steps), the
       `suspended`/`diverges` behaviours, and discharge `fix`.
-- [ ] **Pure ⇒ effect-free** `pure_no_perform : HasType [] prog τ empty → …` the
-      observable trace has no `perform` labels (Eff's `A!∅` purity certificate —
-      `references/algebraic-effects-handlers-soundness.md` §4).
+- [x] **Pure ⇒ effect-free** `pure_no_perform` (Eff's `A!∅` purity certificate)
+      **DELIVERED** (`Eyg/Types/Soundness.lean`): `pure_no_perform_evalR` — a program
+      typed at the **empty** effect row never has `evalR = .effect _ _ _` (the empty
+      row is uninhabited, so `soundnessR_effect`'s `EffContains empty op` is impossible);
+      and `soundness_evalR_pure` — a pure program's `evalR` is only timeout / typed value
+      / sanctioned crash, never an emitted effect. Axioms clean.
 - [ ] **Executable transfer to the shipped interpreter** (not a kernel claim): the
       `Reduce≡step` fixture agreement (T0) means the soundness result holds *of the
       interpreter we actually run*. Document this exactly as S5 documents its
