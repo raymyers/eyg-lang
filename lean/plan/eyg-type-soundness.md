@@ -805,8 +805,14 @@ recorded here so the rationale is not lost:
    `effSub_refl`/`trans`, **`effSub_empty`** (the pure-function-under-effectful-ambient
    key), `tyEquiv_effSub` compat, guarded `effSub_extend`, `effContains_mono`,
    `effContains_extend_inv`. Membership-based, so effect safety survives weakening by
-   construction. **Remaining:** the *consuming* slice — a weakening `StackWf.applyf`/
-   `callwith` variant (`ε_f ⊑ ε`) + re-greened application preservation/progress.
+   construction. **Remaining:** the *consuming* slice, whose shape is now pinned (design
+   in `progress/2026-06-17-T6b-effsub-foundation.md`): a weakening `StackWf.applyf`/
+   `callwith` variant alone does **not** close (firing a weakened closure needs the body
+   re-typed at the larger ambient — not admissible by induction, the covariance wall), so
+   the consuming slice must add a declarative **`HasType.subEff`** effect-subsumption rule
+   (`HasType Γ e τ ε₁ → EffSub ε₁ ε₂ → HasType Γ e τ ε₂`) and thread `EffSub` through the
+   `HasType` **inversion lemmas** (`inv_app`/`inv_lam`/`hasType_expr_form`/…). That is
+   session-sized and comparable in weight to `Handle`.
 
 ## Do we have what we need? (answer to the prompt's question)
 
