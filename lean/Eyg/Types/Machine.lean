@@ -78,9 +78,10 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
   and everything below runs under the shrunk row `tail`. **No `EnvWf` premise** (the
   handler is a self-contained value; the frame env is arbitrary at `reduceDeep`). This is
   the one frame where the ambient row changes across the step. -/
-  | delimit {a l handler henv lift reply tail ret τout rest} :
+  | delimit {a l handler henv lift reply tail ret ε τout rest} :
       HasTypeV handler (handlerTy lift reply tail ret) →
-      StackWf rest ret tail τout →
+      Ty.EffWeaken tail ε →
+      StackWf rest ret ε τout →
       StackWf ((Kontinue.Delimit l handler henv false, a) :: rest)
         ret (.effectExtend l lift reply tail) τout
   /-- **Conversion closure**: the input type and ambient row may be replaced by
@@ -123,7 +124,7 @@ theorem stackSeg_toStackWf {m : Type} {seg k : Stack m} {σin εin σmid εmid �
       | arg henv harg h => exact .arg henv harg (Ty.effWeaken_refl _) (ih h)
       | applyf hf h => exact .applyf hf (Ty.effWeaken_refl _) (ih h)
       | callwith harg h => exact .callwith harg (Ty.effWeaken_refl _) (ih h)
-      | delimit hh h => exact .delimit hh (ih h)
+      | delimit hh h => exact .delimit hh (Ty.effWeaken_refl _) (ih h)
 
 /-- **Resume composition.** Feeding a reply into `move acc k` is well-typed: `acc.reverse`
 (the captured delimited prefix, in original order) is a segment `(reply,εtop) ⇒
@@ -206,19 +207,20 @@ theorem stackWf_callwith_inv {m : Type} {arg : Value m} {fenv : Env m} {a : m}
 
 /-- `Delimit` inversion. Only the deep (`shallow = false`) frame is typeable; the input
 type is the handler's return `ret` and the input row is the handled `⟨l:(lift,reply)|tail⟩`,
-while `rest` runs at the discharged `tail`. -/
+while `rest` runs at some ambient `εInner` with `tail ⊑ εInner` (the handle's discharged row
+is weakenable to the continuation's ambient — `εInner = tail` in the exact case). -/
 theorem stackWf_delimit_inv {m : Type} {l : String} {handler : Value m} {henv : Env m}
     {shallow : Bool} {a : m} {rest : Stack m} {σ ε τ : Ty}
     (h : StackWf ((Kontinue.Delimit l handler henv shallow, a) :: rest) σ ε τ) :
-    ∃ lift reply tail ret, shallow = false ∧ Ty.TyEquiv σ ret ∧
-      Ty.TyEquiv ε (.effectExtend l lift reply tail) ∧
-      HasTypeV handler (handlerTy lift reply tail ret) ∧ StackWf rest ret tail τ := by
+    ∃ lift reply tail ret εInner, shallow = false ∧ Ty.TyEquiv σ ret ∧
+      Ty.TyEquiv ε (.effectExtend l lift reply tail) ∧ Ty.EffWeaken tail εInner ∧
+      HasTypeV handler (handlerTy lift reply tail ret) ∧ StackWf rest ret εInner τ := by
   generalize hs : ((Kontinue.Delimit l handler henv shallow, a) :: rest) = s at h
   induction h with
-  | delimit hh hrest => cases hs; exact ⟨_, _, _, _, rfl, .refl _, .refl _, hh, hrest⟩
+  | delimit hh hw hrest => cases hs; exact ⟨_, _, _, _, _, rfl, .refl _, .refl _, hw, hh, hrest⟩
   | conv _ hσ hε ih =>
-      obtain ⟨li, r, t, re, hsh, hσ', hε', hh, hrest⟩ := ih hs
-      exact ⟨li, r, t, re, hsh, hσ.symm.trans hσ', hε.symm.trans hε', hh, hrest⟩
+      obtain ⟨li, r, t, re, ei, hsh, hσ', hε', hweff, hh, hrest⟩ := ih hs
+      exact ⟨li, r, t, re, ei, hsh, hσ.symm.trans hσ', hε.symm.trans hε', hweff, hh, hrest⟩
   | _ => simp at hs
 
 /-- The empty-stack (identity) inversion, folding `conv`: `StackWf [] σ ε τ` forces the

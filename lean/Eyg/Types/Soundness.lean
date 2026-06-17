@@ -558,21 +558,18 @@ of applying an *effect* partial that takes a `.tau` step whose ambient row chang
 * `resume` — a `Resume acc` applied to a reply: re-push `move acc rest` (via
   `stackWf_resume`), same `EffWeaken`/row subtlety.
 Each concludes the successor is well-typed at *some* row `ε'`. Isolated exactly like
-`BuiltinAppPreserves`/`FixPreserves`; threaded as one bundle to minimize plumbing. The
-`install`/`resume` clauses are provable once the `Delimit`-vs-`EffWeaken` row threading is
-settled (a follow-up); `perform` is the genuinely hard stack-walk dispatch. -/
+`BuiltinAppPreserves`/`FixPreserves`; threaded as one bundle to minimize plumbing.
+**`install` is now DISCHARGED** (proved as `install_preserves` below, via the generalized
+`StackWf.delimit`) and is no longer a field; `resume` is provable on the reachable fragment
+(`resume_preserves_exact`) but the generalized `Delimit` makes the weakened case reachable
+(genuine subrow segment composition — the remaining follow-up); `perform` is the genuinely
+hard stack-walk dispatch. -/
 structure HandlerObligations (m : Type) [BEq m] : Prop where
   perform : ∀ {label : String} {v : Value m} {ann : m} {fenv : Env m} {rest : Stack m}
     {argTy εf retTy ε τ : Ty} {cfg' : Config m},
     HasTypeV (.Partial (.Perform label) [] : Value m) (.fun argTy εf retTy) → HasTypeV v argTy →
     Ty.EffWeaken εf ε → StackWf rest retTy ε τ →
     reduceCall (.Partial (.Perform label) []) v ann fenv rest = .tau cfg' →
-    ∃ ε', MStateWf (.run cfg') τ ε'
-  install : ∀ {l : String} {handler v : Value m} {ann : m} {fenv : Env m} {rest : Stack m}
-    {argTy εf retTy ε τ : Ty} {cfg' : Config m},
-    HasTypeV (.Partial (.Handle l) [handler] : Value m) (.fun argTy εf retTy) → HasTypeV v argTy →
-    Ty.EffWeaken εf ε → StackWf rest retTy ε τ →
-    reduceCall (.Partial (.Handle l) [handler]) v ann fenv rest = .tau cfg' →
     ∃ ε', MStateWf (.run cfg') τ ε'
   resume : ∀ {acc : Stack m} {iEnv : Env m} {v : Value m} {ann : m} {fenv : Env m}
     {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m},
@@ -611,14 +608,16 @@ theorem resume_preserves_exact [BEq m] {acc : Stack m} {iEnv : Env m} {v : Value
       exact ⟨_, _, hv.conv ha.symm,
         stackWf_resume hseg (StackWf.conv hrest hr'.symm (heff.trans hexact).symm)⟩
 
-/-- **`Handle` install dispatch, exact row.** `reduceDeep` pushes `Apply exec :: Delimit l
-handler :: rest`: the exec runs under the handled row `⟨l:(lift,reply)|tail⟩`, the `Delimit`
-discharges `l` (handler typed at `handlerTy`), and `rest` carries `ret` at the discharged
-row `tail` (reachable because the weakening is exact, `ε ≈ tail`). -/
-theorem install_preserves_exact [BEq m] {l : String} {handler v : Value m}
+/-- **`Handle` install dispatch — fully general.** `reduceDeep` pushes `Apply exec ::
+Delimit l handler :: rest`: the exec runs under the handled row `⟨l:(lift,reply)|tail⟩`, the
+**generalized** `Delimit` discharges `l` and lets `rest` continue at the call ambient `ε`
+with `tail ⊑ ε` (`EffWeaken tail ε`, derived from the handle's `EffWeaken εf ε` since the
+discharged latent `εf ≈ tail`). No exact-row hypothesis is needed — the successor is
+well-typed at `ε' = ⟨l:(lift,reply)|tail⟩` (the exec's row). -/
+theorem install_preserves [BEq m] {l : String} {handler v : Value m}
     {ann : m} {fenv : Env m} {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m}
     (hh : HasTypeV (.Partial (.Handle l) [handler] : Value m) (.fun argTy εf retTy))
-    (hv : HasTypeV v argTy) (hexact : Ty.TyEquiv εf ε) (hrest : StackWf rest retTy ε τ)
+    (hv : HasTypeV v argTy) (hw : Ty.EffWeaken εf ε) (hrest : StackWf rest retTy ε τ)
     (hr : reduceCall (.Partial (.Handle l) [handler]) v ann fenv rest = .tau cfg') :
     ∃ ε', MStateWf (.run cfg') τ ε' := by
   cases hh with
@@ -631,7 +630,8 @@ theorem install_preserves_exact [BEq m] {l : String} {handler v : Value m}
       cases hr
       exact ⟨_, _, hasTypeV_unit,
         StackWf.applyf (hv.conv ha.symm) (Ty.effWeaken_refl _)
-          (StackWf.delimit hhandler (StackWf.conv hrest hr'.symm (heff.trans hexact).symm))⟩
+          (StackWf.delimit hhandler (hw.imp (fun h => heff.trans h) (fun h => heff.trans h))
+            (StackWf.conv hrest hr'.symm (.refl _)))⟩
 
 /-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
 application case is the crux; the builtin-application case defers to `hsat`; the three
@@ -660,9 +660,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObli
       simp only [reduce1Run, reduceApply] at hr; cases hr
       exact ⟨ε0, _, _, henvc, harg, StackWf.applyf (hv.conv hσ) hw hrest⟩
   | Delimit l handler henv sh =>
-      obtain ⟨lift, reply, tail, ret, rfl, hσ, hε, hh, hrest⟩ := stackWf_delimit_inv hst
+      obtain ⟨lift, reply, tail, ret, εInner, rfl, hσ, hε, hweff, hh, hrest⟩ :=
+        stackWf_delimit_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨tail, ret, hv.conv hσ, hrest⟩
+      exact ⟨εInner, ret, hv.conv hσ, hrest⟩
   | Apply f fenv =>
       obtain ⟨argTy, εf, retTy, ε0, hσ, hε, hf, hw, hrest⟩ := stackWf_applyf_inv hst
       replace hv := hv.conv hσ
@@ -815,7 +816,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObli
             exact ⟨ε0, _, HasTypeV.partialHandleOne (hv.conv hA.symm) hR, hrest⟩
         | partialHandleOne hh he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact hho.install (.partialHandleOne hh he) hv hw hrest hr
+            exact install_preserves (.partialHandleOne hh he) hv hw hrest hr
         | partialResume hseg he =>
             simp only [reduce1Run, reduceApply] at hr
             exact hho.resume (.partialResume hseg he) hv hw hrest hr
@@ -972,7 +973,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObli
             exact ⟨ε0, _, HasTypeV.partialHandleOne (harg.conv hA.symm) hR, hrest⟩
         | partialHandleOne hh he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact hho.install (.partialHandleOne hh he) harg hw hrest hr
+            exact install_preserves (.partialHandleOne hh he) harg hw hrest hr
         | partialResume hseg he =>
             simp only [reduce1Run, reduceApply] at hr
             exact hho.resume (.partialResume hseg he) harg hw hrest hr
