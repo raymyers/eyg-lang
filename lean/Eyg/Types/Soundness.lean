@@ -2038,6 +2038,81 @@ theorem soundness_behaviorsR_diverges [BEq m] (hfix : FixPreserves m)
   have hwf0 : MStateWf (ss 0) τ ε := by rw [hs0]; exact mStateWf_initial hty
   exact ωTr_effect_safe hfix hωtr hwf0 (hrep ss hωtr hs0)
 
+/-! ## Soundness of reply-containing terminating traces (T7)
+
+The silent-trace `BehaviorsR` soundness (`soundness_behaviorsR_value`/`_noBadCrash`) goes
+through `evalR` (which halts at the first `perform`), so it only covers `tau`-only traces.
+An *open* terminating run may resume through `reply` steps; its trace then contains
+`perform`/`reply` labels and the `evalR` bridge no longer applies. Such a trace is instead
+folded directly over the finite `reduceLTS.MTr` with `preservation_keep_fix`, exactly like
+the divergent case. The world input is the reply values: a `reply` step carries its value
+in the label (`Label.reply op v`), so the contract is the **trace-level** predicate
+`TraceRepliesOk` — every replied value inhabits its operation's declared reply type. -/
+
+/-- Every `reply` value appearing in `trace` inhabits the declared reply type of its
+operation (the trace-level form of `ReplyContract`). -/
+def TraceRepliesOk {m : Type} [BEq m] (ε : Ty) (trace : List (Label m)) : Prop :=
+  ∀ op v, Label.reply op v ∈ trace → ∀ a b, Ty.EffContains ε op a b → HasTypeV v b
+
+/-- The terminal state of a well-typed finite execution (with well-typed replies) stays
+well-typed at `(τ, ε)`. Induction over `MTr`, folding `preservation_keep_fix`; the head
+`reply` step's `ReplyContract` is read off `TraceRepliesOk`. -/
+theorem mTr_terminal_wf [BEq m] (hfix : FixPreserves m)
+    {s s' : MState m} {trace : List (Label m)} {τ ε : Ty}
+    (hmtr : reduceLTS.MTr s trace s') (hwf : MStateWf s τ ε)
+    (hrep : TraceRepliesOk ε trace) : MStateWf s' τ ε := by
+  induction hmtr generalizing τ with
+  | refl => exact hwf
+  | @stepL s1 μ s2 μs s3 htr _hmtr ih =>
+      have hrc : ReplyContract ε s1 μ := by
+        cases htr with
+        | tau _ => exact trivial
+        | perform _ => exact trivial
+        | @reply op envP kP v =>
+            simp only [ReplyContract]
+            exact hrep op v (by simp)
+      have hwf2 : MStateWf s2 τ ε := preservation_keep_fix hfix hwf htr hrc
+      exact ih hwf2 (fun op v hmem => hrep op v (List.mem_cons_of_mem _ hmem))
+
+/-- From a `terminalR?`-terminal `run` state, expose the `reduce1Run = .done o` witness. -/
+theorem terminalR_run [BEq m] {cfg : Config m} {o : Outcome m}
+    (h : (MState.run cfg).terminalR? = some o) : reduce1Run cfg = .done o := by
+  simp only [MState.terminalR?] at h
+  split at h <;> simp_all
+
+/-- **Typed value, reply-containing trace.** A well-typed program whose (possibly
+reply-containing) terminating behaviour yields a value gives a value of type `τ`. -/
+theorem soundness_behaviorsR_terminates_value [BEq m] (hfix : FixPreserves m)
+    {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {v : Value m}
+    (hty : HasType [] prog τ ε) (hrep : TraceRepliesOk ε trace)
+    (hmem : Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog)) :
+    HasTypeV v τ := by
+  obtain ⟨s', hmtr, hterm⟩ := hmem
+  have hwf' : MStateWf s' τ ε := mTr_terminal_wf hfix hmtr (mStateWf_initial hty) hrep
+  cases s' with
+  | wait _ _ _ => simp [MState.terminalR?] at hterm
+  | run cfg => exact reduce1Run_done_value_typed (builtinAppPreserves hfix) hwf' (terminalR_run hterm)
+
+/-- **No bad crash, reply-containing trace.** A well-typed program's (possibly
+reply-containing) terminating crash is never bad (only the sanctioned `Unrepresentable`). -/
+theorem soundness_behaviorsR_terminates_noBadCrash [BEq m] (hfix : FixPreserves m)
+    (hbad : FixNoBadCrash m) {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)}
+    {r : Reason m} (hty : HasType [] prog τ ε) (hrep : TraceRepliesOk ε trace)
+    (hmem : Behavior.terminates trace (.crash r) ∈ BehaviorsR (Config.initial prog)) :
+    ¬ Reason.IsBad r := by
+  obtain ⟨s', hmtr, hterm⟩ := hmem
+  have hwf' : MStateWf s' τ ε := mTr_terminal_wf hfix hmtr (mStateWf_initial hty) hrep
+  cases s' with
+  | wait _ _ _ => simp [MState.terminalR?] at hterm
+  | run cfg =>
+      have hrc := terminalR_run hterm
+      rcases progress_fix hbad hwf' with ⟨_, hc⟩ | ⟨_, hc⟩ | ⟨_, hc, hnb⟩ | ⟨_, _, _, _, hc, _⟩ <;>
+        rw [hrc] at hc
+      · simp at hc
+      · simp at hc
+      · simp only [ReduceStep.done.injEq, Outcome.crash.injEq] at hc; rw [hc]; exact hnb
+      · simp at hc
+
 /-- **Headline soundness (T7).** A closed well-typed program `prog : τ ! ε` does not go
 wrong. Bundling the per-shape results over the transparent observable layer `BehaviorsR`
 (modulo the isolated `fix`), every behaviour the program exhibits satisfies:
@@ -2047,9 +2122,10 @@ wrong. Bundling the per-shape results over the transparent observable layer `Beh
    `Unrepresentable` trap, never a type-error crash (`Vacant`/`NotAFunction`/`NoMatch`/…);
 3. a boundary **suspension** performs an operation **in the declared row** (`op ∈ ε`).
 
-Divergent behaviours are covered separately by `soundness_behaviorsR_diverges`
-(ω-effect-safety). (The remaining `BehaviorsR` shape — reply-resumed *terminating* traces
-— is the open-system T7 remainder, needing the `ReplyContract` folded through `runR`.) -/
+Divergent behaviours are covered by `soundness_behaviorsR_diverges` (ω-effect-safety) and
+open reply-containing terminating traces by `soundness_behaviorsR_terminates_value`/
+`_noBadCrash` (via `TraceRepliesOk`). All `BehaviorsR` shapes are now covered modulo the
+isolated `fix`. -/
 theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
     {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
     (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →

@@ -646,9 +646,15 @@ for the **whole** core language.
       the exact-`ε` variant valid for the pre-`Handle` fragment) + `ωTr_effect_safe`
       (`preservation_perform` reads `op ∈ ε` off each emitted boundary) + `reduce_perform_inv`.
       Conditioned on the world supplying well-typed replies along the witnessing execution
-      (`ReplyContract` per step); axioms clean. **Remaining:** reply-containing *terminating*
-      traces (needs the `ReplyContract` folded across `reply` steps through `runR`/`evalR`),
-      and discharge `fix`.
+      (`ReplyContract` per step); axioms clean. **Reply-containing *terminating* traces
+      DELIVERED** (`Eyg/Types/Soundness.lean`): `soundness_behaviorsR_terminates_value` /
+      `_noBadCrash` — an *open* terminating `BehaviorsR` behaviour (whose trace may contain
+      `perform`/`reply` labels, beyond the `evalR`-bridged silent case) yields a typed value
+      / never a bad crash. Built from `mTr_terminal_wf` (fold `preservation_keep_fix` over the
+      finite `reduceLTS.MTr`) + `terminalR_run`, conditioned on the trace-level
+      `TraceRepliesOk` (every `Label.reply op v` carries a value inhabiting `op`'s declared
+      reply type — the reply value lives in the label). Axioms clean. **Remaining:** discharge
+      `fix`.
 - [x] **Pure ⇒ effect-free** `pure_no_perform` (Eff's `A!∅` purity certificate)
       **DELIVERED** (`Eyg/Types/Soundness.lean`): `pure_no_perform_evalR` — a program
       typed at the **empty** effect row never has `evalR = .effect _ _ _` (the empty
@@ -709,9 +715,10 @@ checker / compiler.
       (`soundness_evalR`), silent terminations + open-boundary suspension over
       `BehaviorsR` ✅; **`diverges` ω-effect-safety** (`soundness_behaviorsR_diverges`) ✅;
       `pure_no_perform` ✅; executable transfer documented ✅; axioms clean ✅; zero `sorry`
-      ✅; `lake build` + `lake exe spec` green ✅. **Remaining:** reply-containing
-      *terminating* traces (`ReplyContract` across `reply` through `runR`/`evalR`); and
-      discharging the `fix` hypotheses.
+      ✅; `lake build` + `lake exe spec` green ✅; **reply-containing terminating traces**
+      (`soundness_behaviorsR_terminates_value`/`_noBadCrash`, via `TraceRepliesOk`) ✅.
+      **Remaining:** discharging the `fix` hypotheses (and the central `Handle`/`Delimit`
+      slice).
 
 ## Decisions made (baked into the milestones)
 
