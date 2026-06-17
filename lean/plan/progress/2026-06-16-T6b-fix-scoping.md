@@ -188,3 +188,55 @@ with weakening, the builder's `β` need not equal the ambient, only be contained
 This is a self-contained mini-`Handle`; budget it as its own slice. It is lower
 risk than the real `Handle` (no continuation capture, no row discharge), but it
 does touch the `HasTypeV` mutual block, so do it as one atomic cascade.
+
+## ⚠ Update (2026-06-17): finding 3 RESOLVED; two new precise constraints
+
+The effect-weakening **consuming slice is delivered**
+(`2026-06-17-T6b-effect-weakening-consuming-slice.md`): `StackWf.arg/applyf/callwith`
+now carry `Ty.EffWeaken εf ε` and `HasType.app` is generalized. So **finding 3's blocker
+is gone** — a pure (`∅`-latent) builder *can* now be applied under an effectful ambient
+via the `applyf` frame's `EffWeaken` (with `effWeaken_empty`). Tracing the `fixed`
+re-application against the new frames sharpened the remaining work into two concrete
+constraints the next session must handle:
+
+### Constraint A — `FixPreserves` needs `EffWeaken` threaded through `BuiltinAppPreserves`
+
+The consuming slice **decoupled** the builtin hypotheses' function-latent from the stack
+ambient *without* an `EffWeaken` premise (sound for general builtins — they don't perform,
+the discharge ignores the latent). **`fix` is different:** the `fixed` re-application
+pushes `Apply builder :: CallWith arg :: rest`, and the `Apply builder` frame needs
+`EffWeaken ε_b ε_amb` (builder latent ⊑ call ambient) and `CallWith arg` needs
+`EffWeaken εf ε_amb` (the recursion arrow's latent ⊑ ambient — *this* one is exactly the
+`hw` the calling frame supplies). So the `fix` slice must **re-add an `EffWeaken εf ε`
+premise to `BuiltinAppPreserves` and `FixPreserves`** (keeping the decoupled latent),
+pass the frame's `hw` at the `hsat` call sites (preservation_V / reduce1Run_done_value_typed
+applyf+callwith — the binders are already in scope, currently named `hw`/`_`), and ignore it
+in the general-builtin discharge. `BuiltinAppNoBadCrash`/`FixNoBadCrash` need no change
+(fix/fixed never `.done (.crash _)`; no stack reasoning).
+
+### Constraint B — the *call-ambient* `EffWeaken ε_b ε_amb` is the real finding-2 crux
+
+`partialFixed` stores `builder : .fun α ε_b α`. At the `Apply builder` frame (when the
+fixed value, having **escaped** as a value of type `α`, is later called at ambient
+`ε_amb`), preservation needs `EffWeaken ε_b ε_amb`. The calling frame only supplies
+`EffWeaken γ ε_amb` where `γ` is `α`'s *internal* latent (the recursion effect) — **not**
+`ε_b` (the builder's eval latent). For the **standard recursive function** the builder is
+`\self. \x. e` and evaluating `builder self` returns a lambda purely, so `ε_b = ∅` and
+`effWeaken_empty` discharges it — **so the pure-builder fix is achievable now.** For a
+builder that performs *while building* (`ε_b ≠ ∅`), soundness would need `EffWeaken ε_b γ`
+(builder effect ⊑ recursion effect — true semantically, since each unroll re-runs the
+builder when the function is called), but that is a *proper sub-row* relation the
+empty-restricted `EffWeaken` cannot express — it needs the **general row-variable-aware
+subsumption** (deferred future work, per Open Question 3). 
+
+**Recommended scoping for the next session:** deliver `partialFixed` + `FixPreserves`
+**restricted to pure builders** (`ε_b = ∅`, via an explicit premise `Ty.TyEquiv ε_b .empty`
+in the rule, discharged by `effWeaken_empty` at the `Apply builder` frame), which covers
+all standard recursion. Confirm against `gleam_analysis` whether a non-`∅` builder latent
+is even reachable through `do_infer`'s `fix` scheme; if `do_infer` forces the builder pure
+(likely, since the scheme's `(α→β α)→β α` with `β` shared may pin `β=∅` in practice for
+value-restricted let-bound `fix`), the restriction is complete, not partial. The α-vs-arrow
+type mismatch in the stack (Constraint, original finding 2) is handled by converting the
+builder via `HasTypeV.conv (… congrFun hα …)` to `.fun arrow ε_b arrow` so the
+`CallWith arg` frame's exact-`.fun argTy εf retTy` input is met — no stack-conversion lemma
+needed.
