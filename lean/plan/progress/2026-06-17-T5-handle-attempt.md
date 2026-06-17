@@ -165,3 +165,66 @@ was the genuine unknown across the prior 6 dry-runs. What remains is large but
 proofs** (`HandledPerformPreserves` as a hypothesis; the unhandled-effect-safety induction;
 the T7 row-threading). Next pass: `git apply` the patch, then grind the Soundness cascade
 top-to-bottom — it is now a finite, fully-mapped edit list with no remaining design unknowns.
+
+## 3rd-pass refinement (2026-06-17): the exact Soundness-grind recipe + new helper lemmas
+
+A third fork re-applied the infra patch (confirmed: `git apply` clean, `lake build
+Eyg.Types.Machine` green — the six conv-folding inversion lemmas + `StackWf.delimit/conv`
+all compile), then mapped the 45 Soundness errors into a concrete edit list. Reverted to
+green (the four-theorem refactor is too voluminous for one pass). Findings that make the
+next pass faster:
+
+**Trivially correct, apply first:**
+- `weakenEffAux` (the `induction h` over `HasType`): add `| handle => exact fun _ _ =>
+  HasType.handle` next to the `perform` arm. (Verified.)
+
+**Three small helper lemmas the perform-dispatch needs (none exist yet):**
+1. `doPerformR_error_form` (purely structural, NO typing): `∀ k acc e, doPerformR label
+   arg env k acc = .error e → e = .UnhandledEffect label arg`. Induction on `k`: the only
+   `.error` is the `[]` base case; the matching-`Delimit` arm is `.ok`, every other frame
+   recurses. This *replaces* the role of the now-false `stackWf_doPerformR_unhandled` for
+   recovering `op = label`.
+2. `reducePerform_perform_inv`: `reducePerform label arg env k = .perform op lift envP kP →
+   op = label ∧ lift = arg ∧ envP = env ∧ kP = k`. Unfold `reducePerform`; `split` on
+   `doPerformR …`; `.ok`→`.tau`≠`.perform`; `.error (.UnhandledEffect …)`→ inject (use
+   lemma 1 to pin the fields = `label`/`arg`); `.error other`→ excluded by lemma 1.
+3. `mStateWf_wait_conv`: `MStateWf (.wait op e k) τ ε0 → TyEquiv ε ε0 → MStateWf (.wait op
+   e k) τ ε` — convert the inversion-lemma's `ε0` (with `TyEquiv ε ε0`) back to the outer
+   `ε`. `EffContains` moves via `tyEquiv_effContains`; the stack via `StackWf.conv`. Needed
+   wherever a frame-inversion lemma is used under a `.wait`-producing step
+   (`reduceCall_perform_wait`, `preservation_perform`).
+
+**Per-consumer perform dispatch (replacing the 7 `stackWf_doPerformR_unhandled` uses):**
+- `reduceCall_perform_wait` (`cases hf`): the three NEW value arms are all **absurd** —
+  `partialHandleNil`/`partialHandleOne` reduce via `reduceDeep`/accumulate to `.tau`,
+  `partialResume` to `.tau` (`reduceCall … = .tau`, so `… = .perform` is `by simp
+  [reduceCall, reduceDeep]`-absurd). The `partialPerformNil` arm: drop
+  `stackWf_doPerformR_unhandled`; `simp only [reduceCall, reducePerform] at h`; `split at
+  h` (3 arms: two absurd, the `UnhandledEffect` arm injects via lemma 1 then builds the
+  `wait` as today).
+- `preservation_perform` (`cases kont` form): the `Delimit` frame arm → `reduceApply` of a
+  `Delimit` is `.tau (.V v, env, rest)` ≠ `.perform` → absurd. `Apply`/`CallWith` →
+  `stackWf_{applyf,callwith}_inv` + `reduceCall_perform_wait` + `mStateWf_wait_conv` (to
+  move `ε0`→`ε`). Trace/Assign/Arg → `.tau`-absurd.
+- `preservation_V` (`cases kont` form): the perform-partial sub-case under `Apply`/`CallWith`
+  now reaches a `.tau` step ONLY when **handled** → isolate behind `HandledPerformPreserves`
+  (the perform partial applied, `doPerformR` returns `.ok`). The `Delimit`-frame arm is the
+  **delimit-pop** (`.V v` meets `Delimit` → `.tau (.V v, env, rest)`), well-typed at row
+  `tail` from `stackWf_delimit_inv` → supply `∃ε'` with `ε' := tail`.
+- `progress` (`cases kont` form): perform-partial → `cases hdp : doPerformR …`: `.ok` →
+  `Or.inl` (it `.tau`-steps, exhibit it); `.error` → the effect-escape disjunct, `op ∈ ε`
+  from `perform_op_mem_ambient` (independent of `doPerformR`) + lemma 1 to name `op`.
+  `Delimit`-frame → `Or.inl` (`.tau` pop).
+- `reduce1Run_done_value_typed` (`cases kont` form): every new step (perform handled/escape,
+  delimit-pop, reduceDeep, resume) is `.tau`/`.perform`, never `.done (.value _)` → all
+  **absurd** (`split`/`simp`).
+
+**`progress`/`preservation_E` also** need a `Handle l` arm in their `cases expr` (evals to
+`partialHandleNil`, a `.tau`) before the `| _ =>` catch-all, and one extra `| ⟨_, h⟩` in the
+`rcases hasType_expr_form` patterns (the new `Handle` disjunct).
+
+**Order for the next pass:** lemmas 1–3 + `weakenEffAux` (cheap, do first) → convert
+`preservation_perform` (smallest, validates the `cases kont`+inversion pattern) →
+`reduce1Run_done_value_typed` (mostly absurd arms) → `progress` → `preservation_V` (biggest)
+→ T7 rework. Build per-theorem. `HandledPerformPreserves` stays an isolated hypothesis
+threaded like `BuiltinAppPreserves`.
