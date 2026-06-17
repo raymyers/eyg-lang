@@ -82,6 +82,25 @@ theorem subst_tyEquiv (σ : Nat → Ty) {s t : Ty} (h : TyEquiv s t) :
   | swapRow hne => simp only [subst]; exact .swapRow hne
   | swapEff hne => simp only [subst]; exact .swapEff hne
 
+/-! ### Index shifting (`Ty.shift`)
+
+`Ty` has no internal binders, so a *shift* (renumber every variable up by `k`) is
+just the substitution `var i ↦ var (i + k)`. It is the bookkeeping a scheme's
+ambient (free) variables need when a substitution crosses the scheme's quantifier
+prefix: ambient var `j` lives at de Bruijn index `j + arity` inside the body, so a
+substitute supplied for it must be shifted up by `arity`. -/
+
+/-- Shift every type variable up by `k` (`Ty` has no internal binders). -/
+def shift (k : Nat) (t : Ty) : Ty := subst (fun i => .var (i + k)) t
+
+@[simp] theorem shift_zero (t : Ty) : shift 0 t = t := by
+  unfold shift; simpa using subst_id t
+
+/-- Substituting through a shift: `subst σ (shift k t) = subst (σ ∘ (· + k)) t`. -/
+theorem subst_shift (σ : Nat → Ty) (k : Nat) (t : Ty) :
+    subst σ (shift k t) = subst (fun i => σ (i + k)) t := by
+  simp only [shift, subst_subst, subst_var]
+
 /-! ## Schemes & instantiation -/
 
 end Ty
@@ -99,20 +118,75 @@ namespace Scheme
 def mono (t : Ty) : Scheme := ⟨0, t⟩
 
 /-- Instantiate a scheme by substituting its quantified variables with `args`
-(`binding.instantiate`). Only the `arity` **quantified** variables (`var i`,
-`i < arity`) are substituted with `args[i]`; any other `var` (a free variable of
-the ambient context) is left untouched. So a *monomorphic* scheme ignores `args`
-entirely — the property `EnvWf`'s polymorphic-readiness clause relies on. The
-declarative typing rules pick `args` with `args.length = arity`. -/
+(`binding.instantiate`). The `arity` **quantified** variables (`var i`, `i <
+arity`) are substituted with `args[i]`; an **ambient** (free) variable, living at
+index `i ≥ arity` inside the body, refers to ambient scope variable `i - arity` —
+the quantifier prefix shifts the ambient scope up by `arity`, so instantiation
+shifts it back **down** by `arity`. (For a *closed* body — every current builtin
+scheme — the ambient branch never fires, so this matches the old "leave it
+untouched" reading; the down-shift only matters once `gen` produces schemes with
+free ambient variables.) A *monomorphic* scheme (arity 0) is the identity on its
+body, ignoring `args` — the property `EnvWf`'s polymorphic-readiness clause relies
+on. The declarative typing rules pick `args` with `args.length = arity`. -/
 def instantiate (s : Scheme) (args : List Ty) : Ty :=
-  Ty.subst (fun i => if i < s.arity then args.getD i (.var i) else .var i) s.body
+  Ty.subst (fun i => if i < s.arity then args.getD i (.var i) else .var (i - s.arity)) s.body
 
 /-- A monomorphic scheme instantiates to its body, ignoring `args`. -/
 @[simp] theorem instantiate_mono (t : Ty) (args : List Ty) :
     (mono t).instantiate args = t := by
   unfold instantiate mono
-  simp only [Nat.not_lt_zero, if_false]
+  simp only [Nat.not_lt_zero, if_false, Nat.sub_zero]
   exact Ty.subst_id t
+
+/-- Apply a type substitution `σ` (on the **ambient** scope) to a scheme. The
+quantified variables `0 … arity-1` are left fixed; an ambient variable, occurring
+at body-index `i ≥ arity`, is replaced by `σ (i - arity)` **shifted up by `arity`**
+(so its own variables land back above the quantifier prefix). This is exactly the
+map that makes substitution commute with instantiation (`subst_instantiate`). -/
+def substScheme (σ : Nat → Ty) (s : Scheme) : Scheme :=
+  ⟨s.arity, Ty.subst (fun i => if i < s.arity then .var i else Ty.shift s.arity (σ (i - s.arity)))
+    s.body⟩
+
+@[simp] theorem substScheme_arity (σ : Nat → Ty) (s : Scheme) :
+    (substScheme σ s).arity = s.arity := rfl
+
+/-- `substScheme` on a monomorphic scheme is `subst` on its body. -/
+@[simp] theorem substScheme_mono (σ : Nat → Ty) (t : Ty) :
+    substScheme σ (mono t) = mono (Ty.subst σ t) := by
+  unfold substScheme mono
+  simp only [Nat.not_lt_zero, if_false, Nat.sub_zero, Ty.shift_zero]
+
+/-- **Substitution commutes with instantiation.** Applying an ambient substitution
+`σ` to an instantiated scheme equals instantiating the substituted scheme with the
+substituted arguments — provided the scheme is fully applied (`args.length =
+arity`). The quantifier-prefix shift in `substScheme`/`instantiate` cancels: an
+ambient substitute is shifted up by `arity` (into the body) and instantiation
+shifts it back down. -/
+theorem subst_instantiate (σ : Nat → Ty) (s : Scheme) (args : List Ty)
+    (hlen : args.length = s.arity) :
+    Ty.subst σ (s.instantiate args) = (substScheme σ s).instantiate (args.map (Ty.subst σ)) := by
+  unfold instantiate substScheme
+  rw [Ty.subst_subst, Ty.subst_subst]
+  congr 1
+  funext i
+  by_cases hi : i < s.arity
+  · -- quantified variable: both sides substitute `args[i]`
+    have hi' : i < args.length := by rw [hlen]; exact hi
+    simp only [hi, if_true, Ty.subst]
+    rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_map,
+      List.getElem?_eq_getElem hi']
+    rfl
+  · -- ambient variable: shift up by arity, instantiate shifts it back down
+    have hge : s.arity ≤ i := Nat.le_of_not_lt hi
+    rw [if_neg hi, if_neg hi]
+    show σ (i - s.arity) = Ty.subst _ (Ty.shift s.arity (σ (i - s.arity)))
+    rw [Ty.subst_shift]
+    have hid : (fun j => (if j + s.arity < s.arity
+        then (args.map (Ty.subst σ)).getD (j + s.arity) (.var (j + s.arity))
+        else (.var (j + s.arity - s.arity) : Ty))) = (fun j => (.var j : Ty)) := by
+      funext j
+      rw [if_neg (by omega), Nat.add_sub_cancel]
+    rw [hid, Ty.subst_id]
 
 end Scheme
 
