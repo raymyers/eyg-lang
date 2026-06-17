@@ -1954,4 +1954,30 @@ theorem soundness_behaviorsR_suspended [BEq m] (hpres : FixPreserves m) (hbad : 
   obtain ⟨fuel, resume, hf⟩ := evalR_complete_effect hmtr hobs _ rfl
   exact soundnessR_effect hpres hbad fuel (mStateWf_initial hty) hf
 
+/-- **Headline soundness (T7).** A closed well-typed program `prog : τ ! ε` does not go
+wrong. Bundling the per-shape results over the transparent observable layer `BehaviorsR`
+(modulo the isolated `fix`), every behaviour the program exhibits satisfies:
+
+1. a *silent* terminating **value** is well-typed (`HasTypeV v τ`);
+2. a *silent* terminating **crash** is never *bad* — only the sanctioned
+   `Unrepresentable` trap, never a type-error crash (`Vacant`/`NotAFunction`/`NoMatch`/…);
+3. a boundary **suspension** performs an operation **in the declared row** (`op ∈ ε`).
+
+(The remaining `BehaviorsR` shapes — reply-resumed terminations and `diverges` — are the
+open-system / coinductive T7 remainder.) -/
+theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
+    (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →
+        Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog) →
+        HasTypeV v τ) ∧
+    (∀ {trace : List (Label m)} {r : Reason m}, (∀ μ ∈ trace, μ = Label.tau) →
+        Behavior.terminates trace (.crash r) ∈ BehaviorsR (Config.initial prog) →
+        ¬ Reason.IsBad r) ∧
+    (∀ {trace : List (Label m)} {op : String} {lift : Value m},
+        Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog) →
+        ∃ a b, Ty.EffContains ε op a b) :=
+  ⟨fun hs hm => soundness_behaviorsR_value hpres hty hs hm,
+   fun hs hm => soundness_behaviorsR_noBadCrash hpres hbad hty hs hm,
+   fun hm => soundness_behaviorsR_suspended hpres hbad hty hm⟩
+
 end Eyg.Types
