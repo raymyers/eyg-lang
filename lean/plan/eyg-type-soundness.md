@@ -892,6 +892,19 @@ recorded here so the rationale is not lost:
    `partialFixed` slice is now unblocked** (apply the pure builder under the effectful
    ambient via `effWeaken_empty` at the pushed `applyf` frame).
 
+   **⚠ CONVERGENCE (2026-06-17, after T5 Handle delivery + the partial discharge).** The
+   *general* row subsumption this question is about (`tail ⊑ ε`, beyond the empty-restricted
+   `EffWeaken`) is now the **single foundation gating three separate remaining items**:
+   (i) **effectful-builder `fix`** (`Fix*` for `q1 ≠ ∅`); (ii) the **Handle dispatch
+   discharge** — `resume`/`install` are proved only under an *exact* row (`resume_preserves_exact`/
+   `install_preserves_exact`, banked green), and wiring them in needs a **generalized
+   `StackWf.delimit`** that discharges `l` from the ambient with `tail ⊑ ε` (route b in
+   `progress/2026-06-17-T5-handle-discharge.md`); (iii) **`TauKeepsRow → RowEvolves`** (the T7
+   downward-`EffContains`-reflection across discharges depends on the same subsumption).
+   So a single **`EffSub'` (substitution-stable, row-variable-aware subrow) foundation** is the
+   highest-leverage next slice — it unlocks `fix` *and* fully discharges the Handle obligations
+   *and* the T7 row-evolution. This is the clear top priority for the next foundational session.
+
 4. **`fix` was UNSOUND at base-type fixpoints — now RESOLVED by hardening the scheme
    (2026-06-17; `progress/2026-06-17-fix-base-type-unsoundness.md`).** The fix: force the
    fixpoint to a **function** type. `contextual.gleam:530` is now
