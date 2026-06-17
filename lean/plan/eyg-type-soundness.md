@@ -805,14 +805,17 @@ recorded here so the rationale is not lost:
    `effSub_refl`/`trans`, **`effSub_empty`** (the pure-function-under-effectful-ambient
    key), `tyEquiv_effSub` compat, guarded `effSub_extend`, `effContains_mono`,
    `effContains_extend_inv`. Membership-based, so effect safety survives weakening by
-   construction. **Remaining:** the *consuming* slice, whose shape is now pinned (design
-   in `progress/2026-06-17-T6b-effsub-foundation.md`): a weakening `StackWf.applyf`/
-   `callwith` variant alone does **not** close (firing a weakened closure needs the body
-   re-typed at the larger ambient — not admissible by induction, the covariance wall), so
-   the consuming slice must add a declarative **`HasType.subEff`** effect-subsumption rule
-   (`HasType Γ e τ ε₁ → EffSub ε₁ ε₂ → HasType Γ e τ ε₂`) and thread `EffSub` through the
-   `HasType` **inversion lemmas** (`inv_app`/`inv_lam`/`hasType_expr_form`/…). That is
-   session-sized and comparable in weight to `Handle`.
+   construction. **Remaining:** the *consuming* slice, whose architecture is now settled
+   (`progress/2026-06-17-T6b-effect-weakening-architecture.md`) with two rigorous results:
+   **(1) irreducible core** — the `StackWf` application frames (`arg`/`applyf`/`callwith`)
+   *must* carry `EffSub εf ε` (function latent `⊑` ambient); no surface design avoids it,
+   because exact-match `app` makes term-level `weakenEff` non-admissible (covariance wall).
+   **(2) chosen surface** — **generalize the `HasType.app` rule** (function latent `εf`
+   with `EffSub εf ε`), which makes `weakenEff` admissible and touches **only `inv_app`**
+   among inversions; the `subEff`-constructor alternative (cascades through all ~18
+   inversions) is rejected. Execution checklist (5 files, one atomic no-green-intermediate
+   slice) is in the architecture note; session-sized, comparable to `Handle`. Closes the
+   "pure builtin only applicable in a pure ambient" gap too (finding 3).
 
 ## Do we have what we need? (answer to the prompt's question)
 
