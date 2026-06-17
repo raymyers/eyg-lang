@@ -101,6 +101,48 @@ theorem subst_shift (σ : Nat → Ty) (k : Nat) (t : Ty) :
     subst σ (shift k t) = subst (fun i => σ (i + k)) t := by
   simp only [shift, subst_subst, subst_var]
 
+/-! ### Free variables
+
+The de Bruijn type variables occurring in a type. A substitution that **agrees with
+the identity** on every free variable of `t` leaves `t` unchanged — the fact that
+lets `gen` conclude its generalizing substitution fixes the surrounding context
+(whose free variables are disjoint from the generalized ones). -/
+
+/-- The list of type variables occurring in a type (with multiplicity; membership
+is what matters). -/
+def freeVars : Ty → List Nat
+  | .var i => [i]
+  | .fun a e r => freeVars a ++ freeVars e ++ freeVars r
+  | .list a => freeVars a
+  | .record r => freeVars r
+  | .union r => freeVars r
+  | .promise a => freeVars a
+  | .rowExtend _ f t => freeVars f ++ freeVars t
+  | .effectExtend _ a b t => freeVars a ++ freeVars b ++ freeVars t
+  | _ => []
+
+/-- **A substitution that fixes every free variable fixes the type.** -/
+theorem subst_eq_of_fixes_free {σ : Nat → Ty} {t : Ty}
+    (h : ∀ i ∈ freeVars t, σ i = .var i) : subst σ t = t := by
+  induction t with
+  | var i => exact h i (by simp [freeVars])
+  | «fun» a e r iha ihe ihr =>
+      simp only [freeVars, List.mem_append] at h
+      simp only [subst, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihe (fun i hi => h i (Or.inl (Or.inr hi))), ihr (fun i hi => h i (Or.inr hi))]
+  | list a ih => simp only [subst, ih (fun i hi => h i hi)]
+  | record r ih => simp only [subst, ih (fun i hi => h i hi)]
+  | union r ih => simp only [subst, ih (fun i hi => h i hi)]
+  | promise a ih => simp only [subst, ih (fun i hi => h i hi)]
+  | rowExtend l f t ihf iht =>
+      simp only [freeVars, List.mem_append] at h
+      simp only [subst, ihf (fun i hi => h i (Or.inl hi)), iht (fun i hi => h i (Or.inr hi))]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [freeVars, List.mem_append] at h
+      simp only [subst, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihb (fun i hi => h i (Or.inl (Or.inr hi))), iht (fun i hi => h i (Or.inr hi))]
+  | _ => rfl
+
 /-! ## Schemes & instantiation -/
 
 end Ty
