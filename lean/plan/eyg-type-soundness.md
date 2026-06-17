@@ -636,12 +636,17 @@ for the **whole** core language.
       row is uninhabited, so `soundnessR_effect`'s `EffContains empty op` is impossible);
       and `soundness_evalR_pure` — a pure program's `evalR` is only timeout / typed value
       / sanctioned crash, never an emitted effect. Axioms clean.
-- [ ] **Executable transfer to the shipped interpreter** (not a kernel claim): the
-      `Reduce≡step` fixture agreement (T0) means the soundness result holds *of the
-      interpreter we actually run*. Document this exactly as S5 documents its
-      bridge; do **not** state a kernel `eval`/`Behaviors`-level corollary.
-- [ ] Axiom hygiene: `#print axioms soundness` clean (`propext`/`Classical.choice`/
-      `Quot.sound` only); zero `sorry` across the project.
+- [x] **Executable transfer to the shipped interpreter** (not a kernel claim):
+      **DOCUMENTED** — the `Reduce≈step` agreement is enforced at build time via the
+      `evalR`/`runR` `#guard` battery over the spec fixtures (`Reduction.lean`; `lake
+      exe spec` 104/104), so the kernel soundness results over `BehaviorsR`/`evalR` hold
+      *of the interpreter we actually run*. The `BehaviorR.lean` module docstring states
+      the claim stays at the `Reduce` level (no kernel `eval`/`Behaviors` corollary), per
+      the S5 convention.
+- [x] Axiom hygiene: all headline soundness theorems print `propext`/`Classical.choice`/
+      `Quot.sound` only (verified `soundness_evalR`/`soundness_behaviorsR_*`/
+      `soundness_evalR_pure`); **zero `sorry` across the project** (`Eyg/`). The two
+      `Fix*` hypotheses are explicit assumptions, not axioms.
 
 ## Milestone T8 — Stretch: algorithmic soundness, references, value relation
 
@@ -662,10 +667,11 @@ checker / compiler.
 
 ## Definition of done
 
-- [~] **T0:** transparent `Reduce` + `evalR` ✅; `Reduce≈step` via build-time
+- [x] **T0:** transparent `Reduce` + `evalR` ✅; `Reduce≈step` via build-time
       `#guard`s ✅; the opaque-`partial def` blocker resolved by reasoning over
-      `Reduce` ✅. `BehaviorsR` + the dedicated `lake exe spec Reduce≡step` line:
-      deferred.
+      `Reduce` ✅; `BehaviorsR` ✅ (`Eyg/Semantics/BehaviorR.lean`). The dedicated
+      `lake exe spec Reduce≡step` *reporting line* is still cosmetic-deferred (the
+      `#guard` battery already enforces agreement at build time).
 - [~] **T1–T2:** full `Ty` ✅; `RowEquiv`/`EffEquiv` proved an equivalence ✅ (+ the
       head/component inversion lemmas the proof needs ✅); schemes + builtin table ✅.
       `RowEquiv` decidability via normalization: deferred (not needed for the proof).
@@ -674,12 +680,18 @@ checker / compiler.
       *final* judgment signatures (so later slices only add cases). The two builtin
       saturation obligations are isolated as the hypotheses `BuiltinAppPreserves` /
       `BuiltinAppNoBadCrash` (T6).
-- [ ] **T4/T5/T6:** each re-greens `soundness` for its larger fragment — data,
-      then effects+handlers (**incl. effect safety**: emitted `perform` ∈ row),
-      then let-polymorphism + full builtins.
-- [ ] **T7:** headline `soundness` over `BehaviorsR`; `pure_no_perform`; executable
-      transfer to the interpreter documented (kernel claim stays at the `Reduce`
-      level); axioms clean; zero `sorry`; `lake build` + `lake exe spec` green.
+- [~] **T4/T5/T6:** **T4 data** (records/unions/lists) ✅; **T5 effects** —
+      `Perform` + effect safety ✅, **`Handle`/`Delimit` remaining** (the central novel
+      slice, design in `progress/2026-06-16-T5-handle-design.md`); **T6** — full builtin
+      table + per-builtin run typing ✅ and the saturation obligations discharged for all
+      general builtins ✅ (`fix` isolated, scoped in `progress/2026-06-16-T6b-fix-scoping.md`);
+      **let-generalization `gen` remaining**.
+- [~] **T7:** headline `soundness` over `BehaviorsR` — value/no-bad-crash/effect-escape
+      (`soundness_evalR`), silent terminations + open-boundary suspension over
+      `BehaviorsR` ✅; `pure_no_perform` ✅; executable transfer documented ✅; axioms
+      clean ✅; zero `sorry` ✅; `lake build` + `lake exe spec` green ✅. **Remaining:**
+      reply-containing terminating traces (`ReplyContract` across `reply`) and the
+      `diverges` (ω-effect-safety) behaviours; and discharging the `fix` hypotheses.
 
 ## Decisions made (baked into the milestones)
 
