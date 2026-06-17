@@ -660,7 +660,12 @@ for the **whole** core language.
       typed at the **empty** effect row never has `evalR = .effect _ _ _` (the empty
       row is uninhabited, so `soundnessR_effect`'s `EffContains empty op` is impossible);
       and `soundness_evalR_pure` — a pure program's `evalR` is only timeout / typed value
-      / sanctioned crash, never an emitted effect. Axioms clean.
+      / sanctioned crash, never an emitted effect. Axioms clean. **Observable-level purity
+      DELIVERED**: `pure_no_suspend_behaviorsR` (a pure program has *no* suspended
+      `BehaviorsR` behaviour) and `pure_no_perform_diverges` (a pure program's divergent
+      trace contains no `perform` label) — the `BehaviorsR` analogues of the `evalR`
+      certificate, via `replyContract_empty` (the empty-row `ReplyContract` is vacuous).
+      Axioms clean.
 - [x] **Executable transfer to the shipped interpreter** (not a kernel claim):
       **DOCUMENTED** — the `Reduce≈step` agreement is enforced at build time via the
       `evalR`/`runR` `#guard` battery over the spec fixtures (`Reduction.lean`; `lake

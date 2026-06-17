@@ -2113,6 +2113,42 @@ theorem soundness_behaviorsR_terminates_noBadCrash [BEq m] (hfix : FixPreserves 
       · simp only [ReduceStep.done.injEq, Outcome.crash.injEq] at hc; rw [hc]; exact hnb
       · simp at hc
 
+/-! ## Observable purity certificates (`A ! ∅`, `BehaviorsR` level)
+
+`pure_no_perform_evalR` certifies a pure (`τ ! ∅`) program emits no effect under `evalR`.
+The `BehaviorsR`-level analogues strengthen that to *all* observable shapes: a pure program
+**never suspends** and a pure program's **divergent** trace contains **no `perform`** — the
+empty row has no members, so effect safety leaves no room for any boundary event. -/
+
+/-- The `ReplyContract` for the **empty** effect row is vacuous (no `EffContains .empty`). -/
+theorem replyContract_empty [BEq m] (s : MState m) (μ : Label m) :
+    ReplyContract .empty s μ := by
+  unfold ReplyContract
+  split
+  · intro a b hc; cases hc
+  · trivial
+
+/-- **A pure program never suspends.** A program typed at `∅` has no suspended `BehaviorsR`
+behaviour (it cannot perform an unhandled effect — the empty row is uninhabited). -/
+theorem pure_no_suspend_behaviorsR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ : Ty} {trace : List (Label m)} {op : String} {lift : Value m}
+    (hty : HasType [] prog τ .empty)
+    (hmem : Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog)) : False := by
+  obtain ⟨a, b, hc⟩ := soundness_behaviorsR_suspended hpres hbad hty hmem
+  cases hc
+
+/-- **A pure program's divergent run emits no `perform`.** Every label of a pure program's
+divergent `BehaviorsR` trace is non-`perform` (effect safety + empty row). -/
+theorem pure_no_perform_diverges [BEq m] (hfix : FixPreserves m)
+    {prog : Tree.Node m} {τ : Ty} {μs : Cslib.ωSequence (Label m)}
+    (hty : HasType [] prog τ .empty)
+    (hmem : Behavior.diverges μs ∈ BehaviorsR (Config.initial prog)) :
+    ∀ i op lift, μs i ≠ .perform op lift := by
+  intro i op lift hμ
+  obtain ⟨a, b, hc⟩ :=
+    soundness_behaviorsR_diverges hfix hty hmem (fun _ _ _ _ => replyContract_empty _ _) i op lift hμ
+  cases hc
+
 /-- **Headline soundness (T7).** A closed well-typed program `prog : τ ! ε` does not go
 wrong. Bundling the per-shape results over the transparent observable layer `BehaviorsR`
 (modulo the isolated `fix`), every behaviour the program exhibits satisfies:
