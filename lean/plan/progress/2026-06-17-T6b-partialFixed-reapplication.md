@@ -60,6 +60,20 @@ keeps the canonical lemmas valid and excludes the footgun. This is a sound,
 conservative narrowing (covers all real recursion: the recursive *function* `D→⟨γ⟩R`
 may still be effectful when called).
 
+**Empirically confirmed** (`evalR 500` on `fix (\x. int_add x 1)`):
+```
+some (Reason.IncorrectTerm "Integer"
+        (Value.Partial (Switch.Builtin "fixed") [Closure "x" (int_add x 1) []]))
+```
+— a **bad** crash (`IncorrectTerm ∈ Reason.IsBad`): the `fixed` `Partial` is bound to
+`x` and fed to `int_add`, whose `Cast.asInteger` fails. So this is a **genuine
+soundness gap in EYG's `fix` as specified by the gleam scheme** — not merely a
+formalization convenience. **Consequence:** the *general* `FixPreserves` (gleam scheme,
+free fixpoint `q0`) is **false** and can **never** be discharged; only the
+arrow-fixpoint fragment is sound. Fully discharging `fix` therefore *requires*
+restricting the `fix` scheme to arrow fixpoints (a deviation from the gleam reference)
+— a design decision for the EYG owner, not a mechanical proof step.
+
 ## What remains — `fix` **creation** (`FixPreserves`/`FixNoBadCrash`) is still a hypothesis
 
 `FixPreserves` is about `reduceCall (.Partial (.Builtin "fix") applied) arg` (the
@@ -85,17 +99,24 @@ flagged as "effect-threading, not mechanical plumbing" in the scoping note — i
 
 Two routes (the planner decision (i)/(ii) from `2026-06-16-T6b-fix-scoping.md`):
 
-- **(i) pure-builder narrowing** — pin the `fix` *scheme* to `⟨1, (q0→⟨∅⟩q0)→⟨∅⟩q0⟩`
-  (builder latent `= ∅`). Then creation's `εf = ∅` by construction, `partialFixed` is
-  buildable, and `FixPreserves`/`FixNoBadCrash` discharge **unconditionally** for the
-  pure-builder fragment — making the headline soundness theorems drop the `Fix*`
-  hypotheses. Cost: our `fix` types strictly fewer programs than gleam (forbids
-  builders that perform *while constructing* the recursive function — not standard
-  recursion). Touches `Scheme.scheme`, `scheme_cases`, and the `fix` arm of
-  `builtinAppPreserves`. A documented, sound, but analyzer-divergent narrowing.
+- **(i) arrow-fixpoint + pure-builder scheme narrowing** — the empirical finding above
+  shows pinning *only* the builder latent (`⟨1, (q0→⟨∅⟩q0)→⟨∅⟩q0⟩`) is **insufficient**:
+  `q0` stays free, so `fix (\x.x+1) : Int` is still typeable and still bad-crashes. A
+  sound, dischargeable `fix` scheme must *also* force the fixpoint to an arrow, e.g.
+  `fix : ((D→⟨γ⟩R) →⟨∅⟩ (D→⟨γ⟩R)) →⟨∅⟩ (D→⟨γ⟩R)`
+  (`⟨3, ((q0→⟨q1⟩q2)→⟨∅⟩(q0→⟨q1⟩q2))→⟨∅⟩(q0→⟨q1⟩q2)⟩`). With that, creation's `εf = ∅`
+  and the fixpoint is an arrow, so `partialFixed` is buildable and
+  `FixPreserves`/`FixNoBadCrash` discharge **unconditionally** — the headline theorems
+  drop the `Fix*` hypotheses. Cost: a real deviation from the gleam `fix` scheme (which
+  is genuinely unsound at base-type fixpoints, per the finding). Touches `Scheme.scheme`,
+  `scheme_cases`, the `fix` arm of `builtinAppPreserves`, and the `fix`-creation
+  `reduceCallBuiltin "fix" [builder]` preservation. **Decision for the EYG owner**, since
+  it changes what the soundness theorem claims about EYG vs. the reference analyzer.
 - **(ii) general row-variable subsumption** (`EffSub'`, substitution-stable) — the
-  cleaner end state; discharges `fix` *and* a realistic effectful fragment without
-  narrowing the scheme. The open research piece (Open Question 3).
+  cleaner *effect* story (discharges effectful builders), but **orthogonal** to the
+  base-type-fixpoint gap: even with full subsumption, `fix (\x.x+1) : Int` stays
+  unsound, so (ii) alone does **not** discharge `fix` — the arrow-fixpoint restriction
+  of (i) is still required. (ii) remains the open research piece for Open Question 3.
 
-Either is a self-contained follow-up; the `partialFixed` infrastructure they both need
-is now in place.
+The `partialFixed` infrastructure both routes need is now in place; the residual is the
+scheme-narrowing **design decision**, which this slice has now made concrete.
