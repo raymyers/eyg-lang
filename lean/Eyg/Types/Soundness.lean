@@ -37,6 +37,61 @@ theorem mStateWf_V {v : Value m} {env k τ ε}
     (h : MStateWf (.run (.V v, env, k)) τ ε) :
     ∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ := h
 
+/-! ## Effect weakening is admissible (T6b / Open Question 3)
+
+With the generalized `app` rule (latent `εf` weakenable to ambient `ε`), the term-level
+weakening `HasType Γ e τ ε₁ → EffWeaken ε₁ ε₂ → HasType Γ e τ ε₂` becomes **admissible**:
+values/literals/data/`perform` are already `ε`-polymorphic, `app` threads
+`effWeaken_trans`, and `conv` absorbs the ambient `TyEquiv`. This is what re-types a
+closure's body at the ambient when its latent was weakened (the preservation crux), and
+the lemma the `fix` slice uses (via `effWeaken_empty` for the pure builder). -/
+
+/-- Auxiliary: weakening with the target row `ε₂` explicit, for a clean induction motive. -/
+theorem weakenEffAux {Γ : Ctx} {e : Tree.Node m} {τ ε₁ : Ty}
+    (h : HasType Γ e τ ε₁) : ∀ (ε₂ : Ty), Ty.EffWeaken ε₁ ε₂ → HasType Γ e τ ε₂ := by
+  induction h with
+  | var hl => exact fun _ _ => HasType.var hl
+  | lam hbody _ => exact fun _ _ => HasType.lam hbody
+  | @app _ _ _ _ εf _ _ _ _ hwf _ ihf iharg =>
+      exact fun ε₂ hw => HasType.app (ihf ε₂ hw) (Ty.effWeaken_trans hwf hw) (iharg ε₂ hw)
+  | let_ _ _ ihdefn ihbody => exact fun ε₂ hw => HasType.let_ (ihdefn ε₂ hw) (ihbody ε₂ hw)
+  | int => exact fun _ _ => HasType.int
+  | str => exact fun _ _ => HasType.str
+  | bin => exact fun _ _ => HasType.bin
+  | builtin hs => exact fun _ _ => HasType.builtin hs
+  | tail => exact fun _ _ => HasType.tail
+  | cons => exact fun _ _ => HasType.cons
+  | tag => exact fun _ _ => HasType.tag
+  | nocases => exact fun _ _ => HasType.nocases
+  | case_ => exact fun _ _ => HasType.case_
+  | select => exact fun _ _ => HasType.select
+  | extend => exact fun _ _ => HasType.extend
+  | overwrite => exact fun _ _ => HasType.overwrite
+  | empty => exact fun _ _ => HasType.empty
+  | perform => exact fun _ _ => HasType.perform
+  | @conv _ _ _ _ _ _ _ hτ hε ih =>
+      exact fun ε₂ hw => HasType.conv (ih ε₂ (Ty.effWeaken_trans (.inl hε) hw)) hτ (.refl _)
+
+/-- **Effect weakening** (admissible): a well-typed term stays well-typed when its
+ambient effect row is weakened. -/
+theorem weakenEff {Γ : Ctx} {e : Tree.Node m} {τ ε₁ ε₂ : Ty}
+    (h : HasType Γ e τ ε₁) (hw : Ty.EffWeaken ε₁ ε₂) : HasType Γ e τ ε₂ :=
+  weakenEffAux h ε₂ hw
+
+/-- **A performed operation is in the (weakened) ambient.** If a function's latent row
+`εf` is `TyEquiv`-headed by `l : (a, b)` and `εf` weakens to `ε`, then `ε` carries `l`
+(the weakening cannot be the empty case, since `εf` has a member). This is the
+effect-safety hinge across application weakening. -/
+theorem perform_op_mem_ambient {l : String} {a b μ εf ε : Ty}
+    (hE : Ty.TyEquiv (.effectExtend l a b μ) εf) (hw : Ty.EffWeaken εf ε) :
+    ∃ a' b', Ty.EffContains ε l a' b' ∧ Ty.TyEquiv a a' ∧ Ty.TyEquiv b b' := by
+  obtain ⟨_, _, hcf, _, _⟩ := Ty.tyEquiv_effContains_mp hE Ty.EffContains.head
+  have hee : Ty.TyEquiv εf ε := by
+    rcases hw with hw | hw
+    · exact hw
+    · obtain ⟨_, _, hc', _, _⟩ := Ty.tyEquiv_effContains_mp hw hcf; nomatch hc'
+  exact Ty.tyEquiv_effContains_mp (hE.trans hee) Ty.EffContains.head
+
 /-- A crash reason `soundness` must exclude. `Unrepresentable` is the one
 *sanctioned* runtime trap (a JS-safe-range overflow — see the plan's crash list and
 `break.gleam`), so it is **not** bad; every type-error crash is. -/
@@ -77,9 +132,9 @@ theorem stackWf_doPerformR_unhandled [BEq m] {k : Stack m} {σ ε τ : Ty}
   | nil => intro label arg env acc; rfl
   | trace _ ih => intro label arg env acc; exact ih _ _ _ _
   | assign _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
-  | arg _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
-  | applyf _ _ ih => intro label arg env acc; exact ih _ _ _ _
-  | callwith _ _ ih => intro label arg env acc; exact ih _ _ _ _
+  | arg _ _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
+  | applyf _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
+  | callwith _ _ _ ih => intro label arg env acc; exact ih _ _ _ _
 
 /-- Preservation across an `.E`-control (`reduceEval`) step. -/
 theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
@@ -110,8 +165,8 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       exact ⟨τin, (hvty args).conv heq, hst⟩
   | Apply f arg =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      obtain ⟨argTy, hf, harg⟩ := inv_app hty
-      exact ⟨Γ, _, henv, hf, StackWf.arg henv harg hst⟩
+      obtain ⟨argTy, εf, hw, hf, harg⟩ := inv_app hty
+      exact ⟨Γ, _, henv, hf, StackWf.arg henv harg hw hst⟩
   | Let x defn body =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨defnTy, hdefn, hbody⟩ := inv_let hty
@@ -414,8 +469,8 @@ typed `Partial (Builtin id)` is applied to a typed argument and the machine take
 `tau` step (i.e. the builtin did *not* crash), the successor stays well-typed. -/
 def BuiltinAppPreserves (m : Type) [BEq m] : Prop :=
   ∀ {id : String} {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m}
-    {rest : Stack m} {argTy retTy ε τ : Ty},
-    HasTypeV (.Partial (.Builtin id) applied) (.fun argTy ε retTy) →
+    {rest : Stack m} {argTy εf retTy ε τ : Ty},
+    HasTypeV (.Partial (.Builtin id) applied) (.fun argTy εf retTy) →
     HasTypeV arg argTy →
     StackWf rest retTy ε τ →
     (∀ cfg', reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .tau cfg' →
@@ -440,17 +495,18 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
       simp only [reduce1Run, reduceApply] at hr; cases hr
       refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc, hbody, hrest⟩
       simpa using hv
-  | arg henvc harg hrest =>
+  | arg henvc harg hw hrest =>
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨_, _, henvc, harg, StackWf.applyf hv hrest⟩
-  | applyf hf hrest =>
+      exact ⟨_, _, henvc, harg, StackWf.applyf hv hw hrest⟩
+  | applyf hf hw hrest =>
       rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hf with
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
             refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
-              HasType.conv hbody hR hE, StackWf.trace hrest⟩
+              weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
+              StackWf.trace hrest⟩
             simpa using hv.conv hA.symm
       · cases hf with
         | partialBuiltin hs hp he =>
@@ -497,7 +553,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   cases hcontains with
                   | head =>
                       exact ⟨_, hvp.conv hf',
-                        StackWf.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hrest⟩
+                        StackWf.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
                   | tail hne _ => exact absurd rfl hne
                 · -- miss: the tag is in the tail, so the value inhabits `union tail`
                   rename_i hcond; cases hr
@@ -507,7 +563,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   | tail _ hc'' =>
                       obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
                       exact ⟨_, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
-                        StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hrest⟩
+                        StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
         | @partialSelect lbl fieldTy tail _ he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := hv.conv hD.symm
@@ -589,14 +645,15 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
               stackWf_doPerformR_unhandled hrest] at hr
             exact absurd hr (by simp)
-  | callwith harg hrest =>
+  | callwith harg hw hrest =>
       rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
       · cases hv with
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
             refine ⟨_, _, EnvWf.cons (fun args => ?_) henvc,
-              HasType.conv hbody hR hE, StackWf.trace hrest⟩
+              weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
+              StackWf.trace hrest⟩
             simpa using harg.conv hA.symm
       · cases hv with
         | partialBuiltin hs hp he =>
@@ -642,7 +699,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   cases hcontains with
                   | head =>
                       exact ⟨_, hvp.conv hf',
-                        StackWf.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hrest⟩
+                        StackWf.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
                   | tail hne _ => exact absurd rfl hne
                 · rename_i hcond; cases hr
                   have hvlne : vl ≠ lbl := fun h => by subst h; simp at hcond
@@ -651,7 +708,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   | tail _ hc'' =>
                       obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
                       exact ⟨_, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
-                        StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hrest⟩
+                        StackWf.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
         | @partialSelect lbl fieldTy tail _ he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := harg.conv hD.symm
@@ -762,9 +819,10 @@ suspended `wait` well-typed at the answer `τ`. The `Perform` case is the only o
 that reaches a `.perform`; the stack has no `Delimit` (T5 has not typed `Handle`
 yet), so `doPerformR` reports unhandled and the effect escapes. -/
 theorem reduceCall_perform_wait [BEq m] {f arg : Value m} {ann : m} {fenv : Env m}
-    {rest : Stack m} {argTy retTy ε τ : Ty} {op : String} {lift : Value m}
+    {rest : Stack m} {argTy εf retTy ε τ : Ty} {op : String} {lift : Value m}
     {envP : Env m} {kP : Stack m}
-    (hf : HasTypeV f (.fun argTy ε retTy)) (hrest : StackWf rest retTy ε τ)
+    (hf : HasTypeV f (.fun argTy εf retTy)) (hw : Ty.EffWeaken εf ε)
+    (hrest : StackWf rest retTy ε τ)
     (h : reduceCall f arg ann fenv rest = .perform op lift envP kP) :
     MStateWf (.wait op envP kP) τ ε := by
   rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
@@ -802,7 +860,7 @@ theorem reduceCall_perform_wait [BEq m] {f arg : Value m} {ann : m} {fenv : Env 
         obtain ⟨_, hE, hR⟩ := Ty.tyEquiv_fun_components he
         simp only [reduceCall, reducePerform, stackWf_doPerformR_unhandled hrest] at h
         injection h with hop hlift henv hk; subst hop hlift henv hk
-        obtain ⟨a'', b'', hEff, _, hRb⟩ := Ty.tyEquiv_effContains_mp hE Ty.EffContains.head
+        obtain ⟨a'', b'', hEff, _, hRb⟩ := perform_op_mem_ambient hE hw
         exact ⟨a'', b'', retTy, hEff, hRb.symm.trans hR, hrest⟩
 
 /-- **Preservation at the effect boundary.** A well-typed state that `.perform`s
@@ -828,13 +886,13 @@ theorem preservation_perform [BEq m] {cfg : Config m} {τ ε : Ty}
           cases hst with
           | trace hrest => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
           | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | arg _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | applyf hf hrest =>
+          | arg _ _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | applyf hf hw hrest =>
               simp only [reduce1Run, reduceApply] at h
-              exact reduceCall_perform_wait hf hrest h
-          | callwith _ hrest =>
+              exact reduceCall_perform_wait hf hw hrest h
+          | callwith _ hw hrest =>
               simp only [reduce1Run, reduceApply] at h
-              exact reduceCall_perform_wait hv hrest h
+              exact reduceCall_perform_wait hv hw hrest h
 
 /-- The **effect-reply contract**: when a suspended `wait op` is resumed, the world
 supplies a reply value of the operation's declared reply type. Vacuously `True` for
@@ -927,8 +985,8 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
           cases hst with
           | trace _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
           | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | arg _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | applyf hf hrest =>
+          | arg _ _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
+          | applyf hf _ hrest =>
               rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
               · cases hf with
@@ -975,7 +1033,7 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                     simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
                       stackWf_doPerformR_unhandled hrest] at h
                     exact absurd h (by simp)
-          | callwith harg hrest =>
+          | callwith harg _ hrest =>
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
               · cases hw with
@@ -1118,8 +1176,8 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
           cases hst with
           | trace _ => exact Or.inl ⟨_, rfl⟩
           | assign _ _ _ => exact Or.inl ⟨_, rfl⟩
-          | arg _ _ _ => exact Or.inl ⟨_, rfl⟩
-          | @applyf _ f fenv _ _ _ _ _ hf hrest =>
+          | arg _ _ _ _ => exact Or.inl ⟨_, rfl⟩
+          | @applyf _ f fenv _ _ _ _ _ _ hf hwk hrest =>
               rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
               · cases hf with
@@ -1185,11 +1243,11 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                 | @partialPerformNil label _ _ μ _ he =>
                     -- the perform escapes: `op = label ∈ ε` (no `Delimit` ⇒ unhandled)
                     obtain ⟨_, hE, _⟩ := Ty.tyEquiv_fun_components he
-                    obtain ⟨a'', b'', hEff, _, _⟩ := Ty.tyEquiv_effContains_mp hE Ty.EffContains.head
+                    obtain ⟨a'', b'', hEff, _, _⟩ := perform_op_mem_ambient hE hwk
                     refine Or.inr (Or.inr (Or.inr ⟨label, w, fenv, rest, ?_, a'', b'', hEff⟩))
                     simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
                       stackWf_doPerformR_unhandled hrest]
-          | @callwith _ arg fenv _ _ _ _ _ harg hrest =>
+          | @callwith _ arg fenv _ _ _ _ _ _ harg hwk hrest =>
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact Or.inl ⟨_, rfl⟩
               · cases hw with
@@ -1254,7 +1312,7 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                           by simp [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget]⟩
                 | @partialPerformNil label _ _ μ _ he =>
                     obtain ⟨_, hE, _⟩ := Ty.tyEquiv_fun_components he
-                    obtain ⟨a'', b'', hEff, _, _⟩ := Ty.tyEquiv_effContains_mp hE Ty.EffContains.head
+                    obtain ⟨a'', b'', hEff, _, _⟩ := perform_op_mem_ambient hE hwk
                     refine Or.inr (Or.inr (Or.inr ⟨label, arg, fenv, rest, ?_, a'', b'', hEff⟩))
                     simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
                       stackWf_doPerformR_unhandled hrest]
@@ -1470,8 +1528,8 @@ theorem scheme_cases {id : String} {s : Scheme} (h : Builtins.scheme id = some s
 `fixed` partial, so it is not covered by the generic `run`-typing). -/
 def FixPreserves (m : Type) [BEq m] : Prop :=
   ∀ {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m}
-    {rest : Stack m} {argTy retTy ε τ : Ty},
-    HasTypeV (.Partial (.Builtin "fix") applied) (.fun argTy ε retTy) →
+    {rest : Stack m} {argTy εf retTy ε τ : Ty},
+    HasTypeV (.Partial (.Builtin "fix") applied) (.fun argTy εf retTy) →
     HasTypeV arg argTy →
     StackWf rest retTy ε τ →
     (∀ cfg', reduceCall (.Partial (.Builtin "fix") applied) arg ann fenv rest = .tau cfg' →
@@ -1484,7 +1542,7 @@ builtin except `fix`, which defers to `hfix`). Per builtin: `scheme_cases` pins 
 name+scheme, the arity-1/2 driver peels the typed args and runs `Builtin.run`, and the
 `run_*` lemma types the result. -/
 theorem builtinAppPreserves [BEq m] (hfix : FixPreserves m) : BuiltinAppPreserves m := by
-  intro id applied arg ann fenv rest argTy retTy ε τ hp harg hst
+  intro id applied arg ann fenv rest argTy εf retTy ε τ hp harg hst
   cases hp with
   | @partialBuiltin _id s args _applied a' ε' r' _τ hs hpw he =>
     obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he

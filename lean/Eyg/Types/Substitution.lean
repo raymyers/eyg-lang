@@ -70,9 +70,9 @@ theorem hasType_subst {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} (σ : Nat → Ty
       simp only [substCtx_cons, Scheme.substScheme_mono] at ih
       simp only [Ty.subst]
       exact HasType.lam ih
-  | @app Γ f arg argTy retTy ε a hf harg ihf iharg =>
+  | @app Γ f arg argTy εf retTy ε a hf hw harg ihf iharg =>
       simp only [Ty.subst] at ihf
-      exact HasType.app ihf iharg
+      exact HasType.app ihf (Ty.subst_effWeaken σ hw) iharg
   | @let_ Γ x defn body defnTy bodyTy ε a hdefn hbody ihdefn ihbody =>
       simp only [substCtx_cons, Scheme.substScheme_mono] at ihbody
       exact HasType.let_ ihdefn ihbody

@@ -71,10 +71,15 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   | lam {Γ x body argTy εb retTy ε a} :
       HasType ((x, .mono argTy) :: Γ) body retTy εb →
       HasType Γ ⟨.Lambda x body, a⟩ (.fun argTy εb retTy) ε
-  /-- Application: the function's latent effect equals the ambient row `ε`
-  (`do_infer` unifies `test_eff` with `eff`); `f` and `arg` are evaluated at `ε`. -/
-  | app {Γ f arg argTy retTy ε a} :
-      HasType Γ f (.fun argTy ε retTy) ε →
+  /-- Application: the function's latent effect `εf` may be **weakened** to the ambient
+  row `ε` (`Ty.EffWeaken εf ε` — exact match for T3–T5, plus the pure-function-in-any-
+  ambient case `fix` needs; mirrors `do_infer`'s `unify(test_eff, eff)` in the
+  exact-match instance). `f` and `arg` are evaluated at `ε`. The `EffWeaken` premise is
+  substitution-stable (Open Question 3), so `weakenEff` is admissible and
+  `hasType_subst` survives. -/
+  | app {Γ f arg argTy εf retTy ε a} :
+      HasType Γ f (.fun argTy εf retTy) ε →
+      Ty.EffWeaken εf ε →
       HasType Γ arg argTy ε →
       HasType Γ ⟨.Apply f arg, a⟩ retTy ε
   /-- Monomorphic `let` (generalization is T6). -/
@@ -156,7 +161,7 @@ open Eyg.Ir.Tree
 -- `(\x. x) 1 : integer ! empty`
 example : HasType (m := Unit) [] (apply (lambda "x" (variable_ "x")) (integer 1))
     .integer .empty := by
-  apply HasType.app (argTy := .integer)
+  refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) ?_
   · exact HasType.lam (HasType.var (s := .mono .integer) (args := []) rfl)
   · exact HasType.int
 
@@ -168,8 +173,8 @@ example : HasType (m := Unit) [] (let_ "x" (integer 2) (variable_ "x")) .integer
 
 -- `int_add 2 3 : integer ! empty` (builtin instantiated, effect threading)
 example : HasType (m := Unit) [] (add (integer 2) (integer 3)) .integer .empty := by
-  apply HasType.app (argTy := .integer)
-  · apply HasType.app (argTy := .integer)
+  refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) ?_
+  · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) ?_
     · exact HasType.builtin (id := "int_add")
         (s := .mono (Ty.pure2 .integer .integer .integer)) (args := []) rfl
     · exact HasType.int
@@ -202,7 +207,7 @@ example : HasType (m := Unit) [] (lambda "x" (variable_ "x"))
 -- effect safety made visible: the term is only typeable when `Log ∈ ε`.
 example : HasType (m := Unit) [] (apply (perform "Log") (string "hi"))
     Ty.unit (.effectExtend "Log" .string Ty.unit .empty) := by
-  apply HasType.app (argTy := .string)
+  refine HasType.app (argTy := .string) ?_ (Ty.effWeaken_refl _) ?_
   · exact HasType.perform
   · exact HasType.str
 

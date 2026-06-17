@@ -628,7 +628,13 @@ for the **whole** core language.
       `progress/2026-06-17-T6b-effsub-foundation.md`) — the row-subsumption relation
       finding 3 demands; `effSub_empty` types the `fix` pure-builder application under the
       effectful recursion ambient. The `StackWf` weakening variant that consumes it is the
-      remaining step before `partialFixed`.
+      remaining step before `partialFixed`. **CONSUMING SLICE DELIVERED** (2026-06-17,
+      `progress/2026-06-17-T6b-effect-weakening-consuming-slice.md`): generalized
+      `HasType.app` + `StackWf.arg/applyf/callwith` carry `Ty.EffWeaken εf ε` (substitution-
+      stable `TyEquiv εf ε ∨ TyEquiv εf .empty`); `weakenEff` admissible; `inv_app`/
+      `hasType_subst` updated; builtin-saturation hypotheses decoupled (no `EffWeaken`
+      needed). Green, sorry-free, axioms clean, spec 104/104. Only `partialFixed` remains for
+      `fix`.
 - [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
 ## Milestone T7 — Packaging & corollaries
@@ -822,6 +828,22 @@ recorded here so the rationale is not lost:
    Execution checklist (5 files, one atomic no-green-intermediate slice) is in the
    architecture note; session-sized, comparable to `Handle`. Closes the "pure builtin only
    applicable in a pure ambient" gap too (finding 3).
+   **CONSUMING SLICE DELIVERED** (2026-06-17,
+   `progress/2026-06-17-T6b-effect-weakening-consuming-slice.md`): `Ty.EffWeaken εf ε :=
+   TyEquiv εf ε ∨ TyEquiv εf .empty` (the substitution-stable premise, implemented with
+   `TyEquiv` not syntactic `=` so it absorbs `conv`'s ambient move and `weakenEff` needs no
+   empty-inversion) is now the premise of the generalized `HasType.app` and of the
+   `StackWf.arg/applyf/callwith` frames; `weakenEff` (admissible), `inv_app` (the only
+   inversion that changed), `hasType_subst` (via `subst_effWeaken`), and the closure-
+   application crux (re-types the body at the ambient) all green. The four builtin-
+   saturation hypotheses were **decoupled** (function latent ⊥ stack ambient) rather than
+   given an `EffWeaken` premise — the discharge never reads the function latent, so the
+   T6a/T6b `run_*`/arity machinery is untouched. **Finding:** `hasTypeV_funWeaken` is *false*
+   as a general value lemma (operator partials pin their latent rigidly) and *unnecessary* —
+   the `fix` builder is applied through an `EffWeaken`-carrying frame, so the crux weakens it
+   directly. All sorry-free, axioms clean, `lake build` + `lake exe spec` 104/104. **`fix`'s
+   `partialFixed` slice is now unblocked** (apply the pure builder under the effectful
+   ambient via `effWeaken_empty` at the pushed `applyf` frame).
 
 ## Do we have what we need? (answer to the prompt's question)
 

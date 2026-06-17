@@ -82,6 +82,16 @@ theorem subst_tyEquiv (σ : Nat → Ty) {s t : Ty} (h : TyEquiv s t) :
   | swapRow hne => simp only [subst]; exact .swapRow hne
   | swapEff hne => simp only [subst]; exact .swapEff hne
 
+/-- **`EffWeaken` is substitution-stable.** Both disjuncts survive: `subst` preserves
+`TyEquiv` (`subst_tyEquiv`), and `subst σ .empty = .empty` definitionally. This is what
+lets `hasType_subst` reconstruct the generalized `app` rule's weakening premise — the
+reason `EffWeaken` (not the membership `EffSub`) is the rule's premise. -/
+theorem subst_effWeaken (σ : Nat → Ty) {e₁ e₂ : Ty} (h : EffWeaken e₁ e₂) :
+    EffWeaken (subst σ e₁) (subst σ e₂) := by
+  rcases h with h | h
+  · exact .inl (subst_tyEquiv σ h)
+  · exact .inr (subst_tyEquiv σ h)
+
 /-! ### Index shifting (`Ty.shift`)
 
 `Ty` has no internal binders, so a *shift* (renumber every variable up by `k`) is

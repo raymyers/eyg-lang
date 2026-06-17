@@ -244,15 +244,16 @@ theorem inv_perform {Γ : Ctx} {l : String} {a : m} {τ ε : Ty}
 
 theorem inv_app {Γ : Ctx} {f arg : Tree.Node m} {a : m} {τ ε : Ty}
     (h : HasType Γ (⟨.Apply f arg, a⟩ : Tree.Node m) τ ε) :
-    ∃ argTy, HasType Γ f (.fun argTy ε τ) ε ∧ HasType Γ arg argTy ε := by
+    ∃ argTy εf, Ty.EffWeaken εf ε ∧ HasType Γ f (.fun argTy εf τ) ε ∧
+      HasType Γ arg argTy ε := by
   generalize he : (⟨.Apply f arg, a⟩ : Tree.Node m) = e at h
   induction h with
-  | @app Γ f' arg' argTy retTy ε a hf harg =>
-      cases he; exact ⟨argTy, hf, harg⟩
+  | @app Γ f' arg' argTy εf retTy ε a hf hw harg =>
+      cases he; exact ⟨argTy, εf, hw, hf, harg⟩
   | conv hinner hτ hε ih =>
-      obtain ⟨argTy, hf, harg⟩ := ih he
-      refine ⟨argTy, ?_, ?_⟩
-      · exact HasType.conv hf (.congrFun (.refl _) hε hτ) hε
+      obtain ⟨argTy, εf, hw, hf, harg⟩ := ih he
+      refine ⟨argTy, εf, Ty.effWeaken_tyEquiv_right hw hε, ?_, ?_⟩
+      · exact HasType.conv hf (.congrFun (.refl _) (.refl _) hτ) hε
       · exact HasType.conv harg (.refl _) hε
   | _ => simp at he
 

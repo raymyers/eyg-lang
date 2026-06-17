@@ -49,25 +49,30 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
       HasType ((x, .mono defnTy) :: Γ) body bodyTy ε →
       StackWf rest bodyTy ε τout →
       StackWf ((Kontinue.Assign x body fenv, a) :: rest) defnTy ε τout
-  /-- `Arg`: the incoming value is the *function* `argTy →⟨ε⟩ retTy`; the stored
-  argument node is evaluated next, then applied. -/
-  | arg {a arg fenv Γ argTy retTy ε τout rest} :
+  /-- `Arg`: the incoming value is the *function* `argTy →⟨εf⟩ retTy`; the stored
+  argument node is evaluated next, then applied. The function's latent `εf` may be
+  weakened to the ambient `ε` (`EffWeaken εf ε` — a pure function applied in an
+  effectful ambient; exact match for T3–T5). -/
+  | arg {a arg fenv Γ argTy εf retTy ε τout rest} :
       EnvWf fenv Γ →
       HasType Γ arg argTy ε →
+      Ty.EffWeaken εf ε →
       StackWf rest retTy ε τout →
-      StackWf ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy ε retTy) ε τout
+      StackWf ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy εf retTy) ε τout
   /-- `Apply f`: the incoming value is the *argument* of type `argTy`; the stored
-  function value `f` has type `argTy →⟨ε⟩ retTy`. -/
-  | applyf {a f fenv argTy retTy ε τout rest} :
-      HasTypeV f (.fun argTy ε retTy) →
+  function value `f` has type `argTy →⟨εf⟩ retTy`, latent `εf` weakenable to `ε`. -/
+  | applyf {a f fenv argTy εf retTy ε τout rest} :
+      HasTypeV f (.fun argTy εf retTy) →
+      Ty.EffWeaken εf ε →
       StackWf rest retTy ε τout →
       StackWf ((Kontinue.Apply f fenv, a) :: rest) argTy ε τout
-  /-- `CallWith arg`: the incoming value is the *function* `argTy →⟨ε⟩ retTy`; the
-  stored value `arg` is its argument. -/
-  | callwith {a arg fenv argTy retTy ε τout rest} :
+  /-- `CallWith arg`: the incoming value is the *function* `argTy →⟨εf⟩ retTy`; the
+  stored value `arg` is its argument; latent `εf` weakenable to `ε`. -/
+  | callwith {a arg fenv argTy εf retTy ε τout rest} :
       HasTypeV arg argTy →
+      Ty.EffWeaken εf ε →
       StackWf rest retTy ε τout →
-      StackWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy ε retTy) ε τout
+      StackWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy εf retTy) ε τout
 
 /-! ## Stack composition (keystone for `Resume`/`Handle`, T5d)
 
@@ -95,9 +100,9 @@ theorem stackWf_append {m : Type} {seg k : Stack m} {σin σmid ε τ : Ty}
   | nil => exact hk
   | trace _ ih => exact .trace (ih hk)
   | assign henv hbody _ ih => exact .assign henv hbody (ih hk)
-  | arg henv harg _ ih => exact .arg henv harg (ih hk)
-  | applyf hf _ ih => exact .applyf hf (ih hk)
-  | callwith harg _ ih => exact .callwith harg (ih hk)
+  | arg henv harg hw _ ih => exact .arg henv harg hw (ih hk)
+  | applyf hf hw _ ih => exact .applyf hf hw (ih hk)
+  | callwith harg hw _ ih => exact .callwith harg hw (ih hk)
 
 /-- The interpreter's `move acc k` (re-push popped frames) is `acc.reverse ++ k`. -/
 theorem move_eq {m : Type} (acc k : Stack m) : move acc k = acc.reverse ++ k := by
@@ -157,7 +162,7 @@ open Eyg.Ir.Tree
 example : MStateWf (.run (Config.initial
     (apply (lambda "x" (variable_ "x")) (integer 1)))) .integer .empty := by
   apply mStateWf_initial
-  apply HasType.app (argTy := .integer)
+  refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) ?_
   · exact HasType.lam (HasType.var (s := .mono .integer) (args := []) rfl)
   · exact HasType.int
 
@@ -168,6 +173,7 @@ example : StackWf [(Kontinue.Apply (.Closure "x" (variable_ "x") []) ([] : Env U
   StackWf.applyf
     (HasTypeV.closure EnvWf.nil (HasType.var (s := .mono .integer) (args := []) rfl)
       (Ty.TyEquiv.refl _))
+    (Ty.effWeaken_refl _)
     StackWf.nil
 
 end

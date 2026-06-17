@@ -128,6 +128,47 @@ likewise. Named aliases mirror the plan's `RowEquiv`/`EffEquiv`. -/
 abbrev RowEquiv : Ty → Ty → Prop := TyEquiv
 abbrev EffEquiv : Ty → Ty → Prop := TyEquiv
 
+/-! ## Effect weakening (row subsumption for application — T6b / Open Question 3)
+
+The application frames must let a function's *latent* effect row `εf` be smaller than
+the ambient row `ε` (e.g. `fix`'s **pure** builder `α →⟨∅⟩ α` applied inside an
+effectful recursion ambient, or any pure builtin applied under a non-empty ambient).
+
+The natural notion is membership-based subsumption (`EffSub`, `Eyg/Types/EffSub.lean`),
+but a bare `EffSub εf ε` premise on the typing rule is **not substitution-stable**
+(`EffSub (var 0) .empty` holds vacuously, but its `σ`-image need not), which would break
+`hasType_subst` (needed by `gen`). `EffWeaken` is the **substitution-stable** restriction
+that is still sufficient for `fix` / pure builtins: the latent is (equivalent to) the
+ambient, or to the empty row. Both disjuncts survive substitution
+(`subst σ ε`/`subst σ .empty = .empty`); it absorbs the row reorderings the judgment
+already reasons up to (via `TyEquiv`), so the term-level weakening lemma `weakenEff`
+(admissible) and `inv_app`'s `conv` arm both go through. A general row-variable-aware
+subsumption (`⟨a⟩ ⊑ ⟨a,b⟩` with a shared tail var) is future work; `fix` does not need it. -/
+
+/-- The function latent row `εf` may be applied at ambient `ε` when `εf` is equivalent
+to `ε` or to the empty row. -/
+def EffWeaken (εf ε : Ty) : Prop := TyEquiv εf ε ∨ TyEquiv εf .empty
+
+/-- Reflexivity (the exact-match case, all of T3–T5). -/
+theorem effWeaken_refl (ε : Ty) : EffWeaken ε ε := .inl (.refl _)
+
+/-- **The empty latent is weakenable to any ambient** — the `fix` pure-builder /
+pure-builtin key. -/
+theorem effWeaken_empty (ε : Ty) : EffWeaken .empty ε := .inr (.refl _)
+
+/-- Transitivity (compose two weakenings). -/
+theorem effWeaken_trans {a b c : Ty} (h₁ : EffWeaken a b) (h₂ : EffWeaken b c) :
+    EffWeaken a c := by
+  rcases h₁ with h₁ | h₁
+  · rcases h₂ with h₂ | h₂
+    · exact .inl (h₁.trans h₂)
+    · exact .inr (h₁.trans h₂)
+  · exact .inr h₁
+
+/-- Rewrite the ambient by a `TyEquiv` on the right. -/
+theorem effWeaken_tyEquiv_right {a b c : Ty} (h : EffWeaken a b) (hbc : TyEquiv b c) :
+    EffWeaken a c := effWeaken_trans h (.inl hbc)
+
 /-! ## Sanity checks -/
 
 -- `{True :: unit, False :: unit}` ∼= `{False :: unit, True :: unit}` (distinct labels swap).
