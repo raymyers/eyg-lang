@@ -1940,4 +1940,18 @@ theorem soundness_behaviorsR_value [BEq m] (hpres : FixPreserves m)
   obtain ⟨fuel, hf⟩ := evalR_complete hmtr hsilent hterm _ rfl
   exact soundness_evalR_value hpres fuel hty hf
 
+/-- **Effect safety in `BehaviorsR` (open-boundary suspension).** A well-typed program
+that *suspends* at the boundary performing `op` does so on an operation **in its declared
+effect row** `ε` (`op ∈ ε`) — the open-system effect-safety statement. Via the
+`evalR_complete_effect` bridge (a single-`perform` observable trace is realized by an
+`evalR` effect emission) + `soundnessR_effect`. -/
+theorem soundness_behaviorsR_suspended [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+    {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {op : String} {lift : Value m}
+    (hty : HasType [] prog τ ε)
+    (hmem : Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog)) :
+    ∃ a b, Ty.EffContains ε op a b := by
+  obtain ⟨envP, kP, hmtr, hobs⟩ := hmem
+  obtain ⟨fuel, resume, hf⟩ := evalR_complete_effect hmtr hobs _ rfl
+  exact soundnessR_effect hpres hbad fuel (mStateWf_initial hty) hf
+
 end Eyg.Types

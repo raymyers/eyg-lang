@@ -117,4 +117,30 @@ theorem evalR_complete {m : Type} [BEq m] {o : Outcome m} :
       obtain ⟨fuel, hfuel⟩ := ih htau' hterm cfg' rfl
       exact ⟨fuel + 1, by rw [evalR_succ, hstep]; exact hfuel⟩
 
+/-- Completeness for **suspended** runs: a `Reduce`-multistep whose observable trace is
+the single `perform op lift` is realized by `evalR` emitting that effect. The (only)
+observable event is the `perform`, and `evalR` halts there. -/
+theorem evalR_complete_effect {m : Type} [BEq m] {op : String} {lift : Value m} :
+    ∀ {s : MState m} {trace : List (Label m)} {s' : MState m},
+      reduceLTS.MTr s trace s' → Label.observable trace = [Label.perform op lift] →
+      ∀ cfg, s = .run cfg → ∃ fuel resume, evalR fuel cfg = .effect op lift resume := by
+  intro s trace s' hmtr
+  induction hmtr with
+  | refl => intro hobs cfg hs; simp [Label.observable] at hobs
+  | @stepL s1 μ s2 μs s3 htr _hmtr' ih =>
+      intro hobs cfg hs
+      subst hs
+      cases htr with
+      | tau hstep =>
+          obtain ⟨fuel, resume, hf⟩ :=
+            ih (by simpa [Label.observable, Label.isObservable] using hobs) _ rfl
+          exact ⟨fuel + 1, resume, by rw [evalR_succ, hstep]; exact hf⟩
+      | @perform cfg₀ op' lift' envP' kP' hstep =>
+          rw [show Label.observable (Label.perform op' lift' :: μs)
+                = Label.perform op' lift' :: Label.observable μs from
+              by simp [Label.observable, Label.isObservable]] at hobs
+          obtain ⟨hhead, _⟩ := List.cons.inj hobs
+          obtain ⟨rfl, rfl⟩ := Label.perform.inj hhead
+          exact ⟨1, fun reply => (.V reply, envP', kP'), by rw [evalR_succ, hstep]⟩
+
 end Eyg.Semantics

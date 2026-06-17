@@ -622,9 +622,14 @@ for the **whole** core language.
       `eval_complete`) lifts the result to `soundness_behaviorsR_noBadCrash` /
       `soundness_behaviorsR_value` (`Soundness.lean`) — a well-typed program's *silent*
       terminating `BehaviorsR` behaviour is never a bad crash, and a terminating value
-      is typed. Axioms clean. **Remaining:** the general reply-containing traces (the
-      open-system case — needs the `ReplyContract` folded across `reply` steps), the
-      `suspended`/`diverges` behaviours, and discharge `fix`.
+      is typed. Axioms clean. **`suspended` (open-boundary) soundness DELIVERED**:
+      `evalR_complete_effect` (`BehaviorR.lean`, the suspended-run completeness bridge —
+      a single-`perform` observable trace is realized by an `evalR` effect emission) +
+      `soundness_behaviorsR_suspended` (`Soundness.lean`): a well-typed program that
+      suspends performing `op` at the boundary does so on `op ∈ ε` (open-system effect
+      safety). Axioms clean. **Remaining:** reply-containing terminating traces (needs
+      the `ReplyContract` folded across `reply` steps), the `diverges` behaviours, and
+      discharge `fix`.
 - [x] **Pure ⇒ effect-free** `pure_no_perform` (Eff's `A!∅` purity certificate)
       **DELIVERED** (`Eyg/Types/Soundness.lean`): `pure_no_perform_evalR` — a program
       typed at the **empty** effect row never has `evalR = .effect _ _ _` (the empty
