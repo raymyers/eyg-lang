@@ -112,3 +112,34 @@ The four commits above (substitution infrastructure, `hasType_subst`,
 `Ty.freeVars`/`subst_eq_of_fixes_free`, `hasTypeV_subst_closure`) are the durable,
 green, axiom-clean progress; they reduce `gen` to **(a)** the `MStateWf`
 context-freshness invariant + **(b)** the additive `gen`/`let_poly` rule cascade.
+
+## The Γcap sidestep (delivered) — `closure_typed_of_lambda(_subst)`
+
+The cleaner route that **avoids the existential `Γcap` entirely**:
+`closure_typed_of_lambda_subst` (`Substitution.lean`) types a lambda's runtime
+closure at `subst σ τ` from **the lambda term's typing under the *known* context
+`Γ`** (the one available at the use site via `StackWf`/`EnvWf`), needing only
+`substCtx σ Γ = Γ` — which `gen`'s disjointness (`vs ∩ FV(Γ) = ∅`,
+`subst_eq_of_fixes_free`) supplies. It composes `hasType_subst` (substitute the
+lambda term) with `closure_typed_of_lambda` (build the closure from `Γ`, no
+inversion). This **is** the per-`args` `EnvWf.cons` obligation for a generalized
+lambda binding, discharged without the value substitution lemma and without `Γcap`.
+
+## The single remaining invasive step (precisely isolated)
+
+What still blocks a green `let_poly` preservation is *connecting* this to the
+runtime: at the polymorphic `Assign` frame the control value `v` is met with only a
+**monomorphic** `HasTypeV v defnTy` (the `MStateWf` `.V` case is mono), so `v`'s
+*origin* (the let-bound lambda term) and hence its polymorphic typing are not
+available. The fix is a **polymorphic `Assign` frame** that carries the bound
+term's typing `HasType Γ defn defnTy ε` + `EnvWf env Γ` + the value-restriction
+flag, so the fire-step reconstructs `∀ args, HasTypeV v (subst σ_args defnTy)` via
+`closure_typed_of_lambda_subst` (with `σ_args` fixing `Γ` from `gen`'s
+disjointness). This is an **additive `StackWf` constructor** (`assignPoly`,
+mirroring the `delimit` addition) plus its cases at the ~4 `cases hst` sites
+(`preservation_V`, `progress`, `reduce1Run_done_value_typed`) and the `HasType.let_poly`
+rule + `inv_let_poly` + `hasType_expr_form` arm + the `preservation_E` let_poly push.
+Bounded, but it touches the shared `StackWf`/preservation cascade (no green
+intermediate once the constructor is added), so it is a focused slice, not a
+further additive lemma. Six green commits this session laid every piece that
+*precedes* that cascade; the cascade itself is the next session's unit of work.

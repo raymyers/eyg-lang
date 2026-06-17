@@ -122,4 +122,36 @@ theorem hasTypeV_subst_closure {x : String} {body : Tree.Node m} {env : Env m} {
       rw [substCtx_cons, Scheme.substScheme_mono, hfix] at hb
       exact hb
 
+/-! ## Typing a syntactic-value's evaluation result under a known context
+
+The route to `gen` soundness that **sidesteps the existential captured-context**
+(`Γcap`) of `HasTypeV.closure`: a syntactic value `defn` (here a `λ`) evaluating
+under `env : Γ` produces a value typed at *the same type*, with the closure's
+context taken to be the **known** `Γ` (from the surrounding `StackWf`/`EnvWf`), not
+an inverted existential. Composing this with `hasType_subst` types the value at
+*every* instantiation `subst σ defnTy` (for `σ` fixing `Γ`), which is exactly the
+`EnvWf.cons` polymorphic-readiness obligation `gen` must discharge — without ever
+needing the (false-for-open-rows) value substitution lemma. -/
+
+/-- A lambda's runtime closure is typed at the lambda term's type, with the
+closure's context taken to be the evaluation context `Γ` (no existential). -/
+theorem closure_typed_of_lambda {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
+    {env : Env m} {τ ε : Ty} (henv : EnvWf env Γ)
+    (h : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) :
+    HasTypeV (.Closure x body env) τ := by
+  obtain ⟨argTy, εb, retTy, hbody, heq⟩ := inv_lambda h
+  exact HasTypeV.closure henv hbody heq
+
+/-- **Polymorphic readiness for a value-restricted `let`-bound lambda.** If
+`σ` fixes the surrounding context `Γ`, the lambda's closure is typed at the
+substituted type — the per-`args` obligation behind `EnvWf.cons` for a generalized
+binding, proved via `hasType_subst` (no value substitution lemma needed). -/
+theorem closure_typed_of_lambda_subst {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
+    {env : Env m} {τ ε : Ty} (σ : Nat → Ty) (hfix : substCtx σ Γ = Γ)
+    (henv : EnvWf env Γ) (h : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) :
+    HasTypeV (.Closure x body env) (Ty.subst σ τ) := by
+  have h' := hasType_subst σ h
+  rw [hfix] at h'
+  exact closure_typed_of_lambda henv h'
+
 end Eyg.Types
