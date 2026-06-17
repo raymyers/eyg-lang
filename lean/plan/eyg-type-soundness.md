@@ -813,9 +813,15 @@ recorded here so the rationale is not lost:
    **(2) chosen surface** — **generalize the `HasType.app` rule** (function latent `εf`
    with `EffSub εf ε`), which makes `weakenEff` admissible and touches **only `inv_app`**
    among inversions; the `subEff`-constructor alternative (cascades through all ~18
-   inversions) is rejected. Execution checklist (5 files, one atomic no-green-intermediate
-   slice) is in the architecture note; session-sized, comparable to `Handle`. Closes the
-   "pure builtin only applicable in a pure ambient" gap too (finding 3).
+   inversions) is rejected. **⚠ Corrected premise (machine-checked counterexample):** the
+   bare membership `Ty.EffSub εf ε` is **not** substitution-stable (`EffSub (var 0) .empty`
+   holds vacuously but its `σ`-image `EffSub ⟨a⟩ .empty` is false), so it would break the
+   existing `hasType_subst` (needed by `gen`/`let_poly`). The substitution-stable premise
+   is `εf = ε ∨ εf = .empty` (the empty-restricted weakening — sufficient for `fix`'s pure
+   builder and pure builtins; a general row-variable-aware subsumption is future work).
+   Execution checklist (5 files, one atomic no-green-intermediate slice) is in the
+   architecture note; session-sized, comparable to `Handle`. Closes the "pure builtin only
+   applicable in a pure ambient" gap too (finding 3).
 
 ## Do we have what we need? (answer to the prompt's question)
 

@@ -85,3 +85,53 @@ frame — no further `StackWf` work — and `FixPreserves`/`FixNoBadCrash` follo
 The same weakening also closes the standing gap that a **pure builtin can currently
 only be applied in a pure ambient** (finding 3, `…fix-scoping.md`): once the frames
 accept `εf ⊑ ε`, the effectful fragment finally has effect weakening.
+
+## ⚠ CRITICAL CORRECTION (2026-06-17, found while implementing step 1)
+
+**The membership-based `EffSub` is NOT substitution-stable, so it cannot be the
+generalized `app` rule's premise as written above.** Verified with a machine-checked
+counterexample (`lake build`, then reverted):
+
+```
+EffSub (.var 0) .empty                                    -- HOLDS (a bare row var has
+                                                          --   no EffContains members)
+¬ EffSub (.effectExtend "a" .string unit .empty) .empty   -- HOLDS
+```
+
+So under `σ = [0 ↦ ⟨a:(…)⟩]`, the true `EffSub (var 0) .empty` maps to the **false**
+`EffSub ⟨a⟩ .empty`. Hence `subst_effSub : EffSub e₁ e₂ → EffSub (subst σ e₁)
+(subst σ e₂)` is **false**, and `hasType_subst`'s `app` arm cannot reconstruct the
+weakening premise — the generalized-`app` rule with a bare `Ty.EffSub εf ε` premise
+**breaks the existing substitution lemma** that `gen`/`let_poly` (T6) depend on. (A
+real derivation hits this: `\y.y` types at latent `var 0`, applied at ambient `.empty`
+with the vacuous `EffSub (var 0) .empty`; substitution then has no valid premise.)
+
+Root cause: membership treats a bare row *variable* as carrying no operations, so
+`EffSub _ _` goes vacuously true on open tails — correct for the **closed**
+effect-safety argument (preservation reasons about closed ambient rows, where
+membership is exactly right, and `effSub_empty`/`tyEquiv_effSub` are all
+substitution-stable *instances*), but wrong as a *typing-rule premise* that must
+survive substitution.
+
+### Revised resolution — use a **substitution-stable** weakening premise
+
+Two viable forms; `fix` needs only the first:
+
+* **(minimal, sufficient for `fix`) empty-restricted weakening.** Allow the function
+  latent to be `.empty` (pure function in any ambient): premise `εf = ε ∨ εf = .empty`
+  (or a dedicated pure-application path). Both disjuncts are substitution-stable
+  (`subst σ ε = subst σ ε`; `subst σ .empty = .empty`), so `hasType_subst` reconstructs
+  the `app` arm cleanly. This covers `fix`'s pure builder (latent `∅`) and pure-builtin
+  application — i.e. **everything the `fix` slice and finding 3 need**. `EffSub` is still
+  the right vehicle (`effSub_empty` is its substitution-stable core); the rule just must
+  not admit the vacuous open-variable case.
+* **(general, future) row-variable-aware subsumption.** A structural `EffSub'` that does
+  **not** go vacuous on a tail variable (Koka/Links-style `ε₁ <: ε₂` preserving the
+  shared tail var), which *is* substitution-stable. Larger; only needed for a function
+  with a non-empty proper sub-row latent (`⟨a⟩ ⊑ ⟨a,b⟩`), which `fix` does not require.
+
+So the corrected step-1 premise is the empty-restricted form, and the irreducibility
+result (Result 1) and the "generalize `app`, not `subEff`" choice (Result 2) **stand** —
+only the *premise shape* changes from bare `EffSub εf ε` to the substitution-stable
+`εf = ε ∨ εf = .empty`. The membership `EffSub` foundation (`EffSub.lean`) is unaffected
+and still used for the closed effect-safety reasoning.
