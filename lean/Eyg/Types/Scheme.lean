@@ -188,6 +188,55 @@ theorem subst_instantiate (σ : Nat → Ty) (s : Scheme) (args : List Ty)
       rw [if_neg (by omega), Nat.add_sub_cancel]
     rw [hid, Ty.subst_id]
 
+/-- The instantiation arguments that make `subst` commute with `instantiate` for an
+**arbitrarily-applied** scheme (the declarative `var`/`builtin` rules allow any
+`args`). For each quantifier `i < arity`: if `args` supplies a `i`-th argument, use
+its substitute `subst σ args[i]`; otherwise (an *under*-applied scheme leaves `var
+i` in place) the ambient substitution would act on the leaked `var i`, so we feed
+`σ i` directly. -/
+def instArgs (σ : Nat → Ty) (s : Scheme) (args : List Ty) : List Ty :=
+  (List.range s.arity).map (fun i => if i < args.length then Ty.subst σ (args.getD i (.var i)) else σ i)
+
+@[simp] theorem instArgs_length (σ : Nat → Ty) (s : Scheme) (args : List Ty) :
+    (instArgs σ s args).length = s.arity := by simp [instArgs]
+
+/-- **Substitution commutes with instantiation, unconditionally.** For *any* `args`
+(no `length = arity` requirement — the declarative `var`/`builtin` rules pick `args`
+freely), applying `σ` to an instantiated scheme equals instantiating the substituted
+scheme at `instArgs σ s args`. The witness `instArgs` absorbs the under-application
+mismatch (a leaked quantifier `var i` whose `σ`-image must be supplied directly). -/
+theorem subst_instantiate' (σ : Nat → Ty) (s : Scheme) (args : List Ty) :
+    Ty.subst σ (s.instantiate args) = (substScheme σ s).instantiate (instArgs σ s args) := by
+  unfold instantiate substScheme
+  rw [Ty.subst_subst, Ty.subst_subst]
+  congr 1
+  funext i
+  by_cases hi : i < s.arity
+  · -- quantified variable: read `instArgs` at index `i < arity`
+    have hb : i < (List.range s.arity).length := by rw [List.length_range]; exact hi
+    have hrng : ((List.range s.arity).map
+        (fun i => if i < args.length then Ty.subst σ (args.getD i (.var i)) else σ i)).getD i (.var i)
+        = if i < args.length then Ty.subst σ (args.getD i (.var i)) else σ i := by
+      rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hb]
+      simp [List.getElem_range]
+    simp only [hi, if_true, Ty.subst, instArgs, hrng]
+    by_cases hlt : i < args.length
+    · simp only [hlt, if_true]
+    · simp only [hlt, if_false]
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+      rfl
+  · -- ambient variable: identical to `subst_instantiate`
+    have hge : s.arity ≤ i := Nat.le_of_not_lt hi
+    rw [if_neg hi, if_neg hi]
+    show σ (i - s.arity) = Ty.subst _ (Ty.shift s.arity (σ (i - s.arity)))
+    rw [Ty.subst_shift]
+    have hid : (fun j => (if j + s.arity < s.arity
+        then (instArgs σ s args).getD (j + s.arity) (.var (j + s.arity))
+        else (.var (j + s.arity - s.arity) : Ty))) = (fun j => (.var j : Ty)) := by
+      funext j
+      rw [if_neg (by omega), Nat.add_sub_cancel]
+    rw [hid, Ty.subst_id]
+
 end Scheme
 
 /-! ## Scheme builders (`contextual.q`/`pure1`/`pure2`/`pure3`) -/
@@ -242,6 +291,14 @@ def scheme : String → Option Scheme
   | "string_starts_with" => some (.mono (pure2 string string boolean))
   | "string_ends_with" => some (.mono (pure2 string string boolean))
   | _ => none
+
+/-- Every builtin scheme is **closed** (its body uses only quantified variables),
+so an ambient substitution leaves it fixed. Used by the type-substitution lemma's
+`builtin` case: the substituted builtin is still the *same* builtin scheme. -/
+theorem scheme_substScheme {id : String} {s : Scheme} (σ : Nat → Ty)
+    (h : scheme id = some s) : Scheme.substScheme σ s = s := by
+  unfold scheme at h
+  split at h <;> first | (cases h; rfl) | cases h
 
 /-! ## Sanity checks -/
 

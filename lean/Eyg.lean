@@ -26,3 +26,4 @@ import Eyg.Types.Typing
 import Eyg.Types.Generation
 import Eyg.Types.Runtime
 import Eyg.Types.Machine
+import Eyg.Types.Substitution
