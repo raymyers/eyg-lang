@@ -526,8 +526,16 @@ pub fn builtins() {
 
     // debug is an effect because the format is not fully specified
     // #("debug", pure1(q(0), t.String)),
+    // The runtime passes the recursive function itself as `self` (see the
+    // `fixed` builtin in the interpreter), so `self` is always a function
+    // value. The fixed point `a` must therefore be a function type; typing it
+    // as an open `a` is unsound and accepts programs such as
+    // `!fix((x) -> !int_add(x, 1))` which fail at runtime.
     // if the passed in constructor raises an effect then fix does too
-    #("fix", t.Fun(t.Fun(q(0), q(1), q(0)), q(1), q(0))),
+    #("fix", {
+      let self = t.Fun(q(0), q(2), q(3))
+      t.Fun(t.Fun(self, q(1), self), q(1), self)
+    }),
     // TODO do we want a never type
     #("never", pure1(t.Never, q(1))),
 

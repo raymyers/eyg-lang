@@ -348,6 +348,23 @@ pub fn builtin_test() {
   |> should.equal([#(Error(error.MissingBuiltin("not_a_thing")), "0", "")])
 }
 
+// `!fix` passes the recursive function itself as `self`, so the builder must
+// return a function. Using `self` as a non-function value is unsound: the
+// program below type-checks as `Integer` but crashes at runtime adding the
+// recursive function to an integer. Regression for the fix-soundness bug.
+pub fn fix_self_must_be_a_function_test() {
+  let errors =
+    "!fix((x) -> { !int_add(x, 1) })"
+    |> calc(t.Empty)
+    |> list.filter(fn(node) {
+      let #(reason, _type, _eff) = node
+      reason != Ok(Nil)
+    })
+
+  errors
+  |> should.not_equal([])
+}
+
 // (x) -<Log String {}, Alert String 0, ..1> List(x)
 pub fn perform_test() {
   let state = j.new_state()
