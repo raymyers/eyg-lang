@@ -568,6 +568,27 @@ for the **whole** core language.
       ~13 general builtins via the (now-proven) `run_*` lemmas + the saturation/
       accumulation case split. So T6b reduces to: the `BuiltinPartialWf`/arity plumbing
       for the general builtins (mechanical, uses T6a) + the isolated `fix`.
+      **T6b ASSEMBLY DELIVERED** (`Eyg/Types/Soundness.lean`): `builtinAppPreserves`
+      (`FixPreserves m → BuiltinAppPreserves m`) and `builtinAppNoBadCrash`
+      (`FixNoBadCrash m → BuiltinAppNoBadCrash m`) — sorry-free, axioms clean. The
+      saturation machinery is factored into reusable lemmas: `reduceCallBuiltin_other`
+      (a non-special key takes the generic arity-dispatch branch — proved by `split`,
+      sidestepping the unreducible string-literal matcher), `reduceCallBuiltin_sat`/
+      `_acc`/`_sat_crash`/`ne_value` (the four outcomes), `builtinPartialWf_append`
+      (peel one more typed arg), and `scheme_cases` (enumerate the 16-entry table). Two
+      per-arity drivers (`builtinApp_arity1`/`arity2`, `builtinNoBad_arity1`/`arity2`)
+      do the `BuiltinPartialWf` peel + saturate/accumulate split once; each builtin case
+      just feeds in its `run_*` (or `run_*_noBad`, or an inline never-errors proof) lemma.
+      **Key structural fact:** a partial typed at a *single* residual arrow forces the
+      arg count to be exactly `arity − 1` or fewer, so saturate ⇔ codomain non-arrow and
+      accumulate ⇔ codomain still an arrow — the two branches line up with the typing
+      automatically. The `.done (.value _)` clause is vacuous (general builtins only
+      `.tau` or `.done (.crash _)`). Wrappers `preservation_fix`/`progress_fix`/
+      `soundness_value_fix` re-state the headline theorems with the general-builtin
+      obligation discharged, leaving only `fix`. `lake build` + `lake exe spec` 104/104.
+      **Remaining for T6b:** the isolated `fix` (`FixPreserves`/`FixNoBadCrash` — the
+      `fixed` internal partial, analogous to `Handle`'s `Resume`); and any new builtins
+      added to the scheme table (extend `scheme_cases`).
 - [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
 ## Milestone T7 — Packaging & corollaries

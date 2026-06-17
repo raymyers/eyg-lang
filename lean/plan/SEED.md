@@ -65,3 +65,9 @@ commit plan changes
 ---
 
 /goal Execute `lean/plan/eyg-type-soundness-STEP.md` until PLAN complete.
+
+---
+
+/goal Execute `lean/plan/eyg-type-soundness-STEP.md` until PLAN complete or you cannot make more progress.
+
+---
