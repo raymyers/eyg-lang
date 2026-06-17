@@ -99,3 +99,69 @@ proof obligation (downward `EffContains` across a shrink), of moderate difficult
 ## Verification of this revert
 `git status` clean; `lake build` ✔ (`Build completed successfully (1764 jobs)`). No code
 changed; only this note added.
+
+---
+
+# ⚙ 2nd execution pass (2026-06-17, later): ALL infrastructure (steps 1–3) built green
+
+This pass executed the full cascade and got **steps 1, 2, and 3 to compile green**
+(per-module: `Generation`, `Runtime`, `Machine` all ✔), then reverted because the
+**step-3-into-Soundness** boundary (the four-theorem refactor + step-4 T7 rework) is the
+atomic bulk and could not be finished green in one pass. **The infrastructure is saved as
+a re-appliable patch: `plan/progress/2026-06-17-T5-handle-infra.patch`** (389 lines; `git
+apply` it from the `lean/` dir to restore steps 1–3 instantly).
+
+## ✅ What now COMPILES (verified per-module, in the patch)
+- **Step 1** — `HasType.handle` (Typing); `inv_handle` + `hasType_expr_form` Handle arm
+  (`perform` → `Or.inl ⟨_,rfl⟩`, `handle` → `iterate 18`; statement gains `∨ ∃ l, .Handle l`).
+- **Step 2** — `Runtime` mutual-block restructure: `StackSegWf` **moved into** the
+  `HasTypeV`/`EnvWf` mutual block (its `delimit` frame **drops `EnvWf`**); `stackSeg_append`
+  re-proved by `induction seg generalizing σin εin; cases hseg`; new `HasTypeV` constructors
+  `partialHandleNil`/`partialHandleOne`/`partialResume` (the last stores `StackSegWf
+  acc.reverse reply εtop ret tail` + `TyEquiv (kontTy reply tail ret) τ`); their `conv` +
+  `canonical_arrow` arms.
+- **Step 3** — `Machine`: `StackWf.delimit` (no `EnvWf`) + **`StackWf.conv`** constructor;
+  the old uniform `stackWf_append`/`stackWf_move`/`stackSeg_move` **deleted**, replaced by
+  `stackSeg_toStackWf` (`StackSegWf seg ++ StackWf k → StackWf`, by `induction seg; cases
+  hseg` — non-delimit frames use `Ty.effWeaken_refl _`) and `stackWf_resume`.
+  **THE KEY RESULT: the six conv-folding inversion lemmas COMPILE** —
+  `stackWf_{trace,assign,arg,applyf,callwith,delimit}_inv`, each proved by `generalize hs :
+  (frame::rest) = s at h; induction h with | <frame> => cases hs; … | conv _ hσ hε ih => …
+  (hσ.symm.trans …) | _ => simp at hs`. This was "the one real design addition left" (note
+  above) and is now **proven to work** — the conv case folds via `TyEquiv.trans`, exactly as
+  designed. The inversion lemmas expose `TyEquiv σ <input> ∧ TyEquiv ε ε0 ∧ <frame data at
+  ε0>` (the `arg`/`callwith`/`delimit` inputs are the structured arrow/effectExtend; `trace`
+  folds conv straight into its result).
+
+## ⛔ Precise stall point: the Soundness cascade (45 errors) + T7 rework
+`lake build Eyg.Types.Soundness` after the patch = **45 errors**, all expected and mapped:
+- `weakenEffAux` (line ~52): `induction h` needs `| handle => exact fun _ _ => HasType.handle`.
+- `stackWf_doPerformR_unhandled` (~131): now **FALSE** (typed stacks may carry a `Delimit`)
+  — delete; replace with the **dispatch**: a lemma that `doPerformR … = .error unhandled →
+  ∃ a b, EffContains ε op a b` (effect safety — induct on `StackWf`, walking past a
+  `Delimit l' ` with `l' ≠ op` keeps `op` in the row via `EffContains.tail`), and the
+  handled `.ok` branch isolated behind `HandledPerformPreserves` (a `def … : Prop` threaded
+  like `BuiltinAppPreserves`). **This is §5 of the design note — the one genuinely hard proof.**
+- The four `cases hst` theorems — `preservation_V` (~527), `reduce1Run_done_value_typed`
+  (~?), `progress` (~930/1029), `preservation_perform` (~?) — convert `cases hst` → `cases
+  kont` + the inversion lemmas, threading the exposed `TyEquiv` equivs (`hv.conv hσ.symm`,
+  `HasType.conv`, `StackWf.conv` on `rest`). Each gains: `delimit`-pop (`.tau`, types at row
+  `tail`, needs `∃ε'`), and the new `HasTypeV` cases at the `cases hf/hv/hw` sites
+  (`partialHandleNil` accumulate → `partialHandleOne`; `partialHandleOne` → `reduceDeep`
+  pushes `Apply exec :: Delimit :: rest` via `StackWf.applyf` + `StackWf.delimit`;
+  `partialResume` → `stackWf_resume` + `StackWf.conv` to align the base stack's `(ret,tail)`
+  with the frame's `(retTy,ε)`; handled-`partialPerformNil` → `HandledPerformPreserves`).
+  The `cases expr` in `preservation_E`/`progress` also need an explicit `Handle l` eval arm
+  (produces `partialHandleNil`) before the `| _ =>` catch-all, and the `rcases
+  hasType_expr_form` patterns gain one `| ⟨_, h⟩`.
+- **Step 4 (T7)**: `preservation_tau`/`preservation_keep_fix` become row-output; rework
+  `soundnessR_effect` + `ωTr_all_wf` to thread the per-state row (read off `progress`'s
+  effect-escape witness) instead of a fixed `ε`. Re-green `soundness_behaviorsR_*`.
+
+## Assessment
+The novel/risky metatheory (the `conv` inversion-closure) is **done and compiles** — that
+was the genuine unknown across the prior 6 dry-runs. What remains is large but
+**mechanical-but-voluminous** (the four-theorem refactor) plus the **two isolated/bounded
+proofs** (`HandledPerformPreserves` as a hypothesis; the unhandled-effect-safety induction;
+the T7 row-threading). Next pass: `git apply` the patch, then grind the Soundness cascade
+top-to-bottom — it is now a finite, fully-mapped edit list with no remaining design unknowns.
