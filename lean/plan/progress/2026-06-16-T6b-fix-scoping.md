@@ -89,6 +89,34 @@ crash hypothesis is contradictory — `reduceCallBuiltin_other` does **not** app
 (fix/fixed are special), so prove a small `reduceCallBuiltin_fix_ne_crash` /
 `_fixed_ne_crash` by `unfold` + `simp`.
 
+## ⚠ Added finding: the arity-1 / special-arm interaction (harder than first scoped)
+
+`builtinArity "fix" = 1`, but the `reduceCallBuiltin` **special arm** `("fix",[builder])`
+fires only at list-length **1**. These interact badly across the `BuiltinPartialWf`
+peel of a typed `.Partial (.Builtin "fix") applied`:
+
+- `applied = []` → `reduceCallBuiltin "fix" [arg]` (length 1) → **special arm** → the
+  real fixpoint (`fixed` partial + pushed `Apply`). *This is the case `partialFixed`
+  is for.*
+- `applied = [x]` (only typeable when the fixpoint type `α` is itself an arrow) →
+  `reduceCallBuiltin "fix" [x, arg]` (length 2) → **generic `_,_` branch** → since
+  `2 ≠ arity 1`, accumulate `.Partial (.Builtin "fix") [x, arg]`. A *degenerate but
+  typeable* resting partial.
+- longer `applied` → likewise generic-accumulate.
+
+The catch: `reduceCallBuiltin_other` (the generic-branch lemma) **requires `key ≠
+"fix"`**, so it does *not* cover the degenerate accumulate cases. They need a
+**fix-specific** reduction lemma (`reduceCallBuiltin "fix" args = _,_`-branch when
+`args.length ≠ 1`) — provable by `unfold` + `split`, but it is extra plumbing the
+generic drivers can't reuse.
+
+So `FixPreserves` is **not** just "the `applied = []` fixpoint case": it must also
+discharge the degenerate `applied = x::_` accumulate cases (where `α` is an arrow).
+Practically: peel `hpw` like the arity drivers, branch on `applied = []` (special,
+`partialFixed`) vs `applied = _::_` (generic accumulate, re-`partialBuiltin` at the
+residual — `fix` *does* have a scheme, so this is available). Budget accordingly; the
+`partialFixed` cascade plus this two-mode split is why `fix` is its own slice.
+
 ## Recommended plan for next session
 
 1. Add `partialFixed` to `HasTypeV` (Runtime.lean), plus its `conv` arm and a
