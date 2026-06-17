@@ -60,17 +60,30 @@ keeps the canonical lemmas valid and excludes the footgun. This is a sound,
 conservative narrowing (covers all real recursion: the recursive *function* `D→⟨γ⟩R`
 may still be effectful when called).
 
-**Empirically confirmed** (`evalR 500` on `fix (\x. int_add x 1)`):
-```
-some (Reason.IncorrectTerm "Integer"
-        (Value.Partial (Switch.Builtin "fixed") [Closure "x" (int_add x 1) []]))
-```
-— a **bad** crash (`IncorrectTerm ∈ Reason.IsBad`): the `fixed` `Partial` is bound to
-`x` and fed to `int_add`, whose `Cast.asInteger` fails. So this is a **genuine
-soundness gap in EYG's `fix` as specified by the gleam scheme** — not merely a
-formalization convenience. **Consequence:** the *general* `FixPreserves` (gleam scheme,
-free fixpoint `q0`) is **false** and can **never** be discharged; only the
-arrow-fixpoint fragment is sound. Fully discharging `fix` therefore *requires*
+**Machine-checked counterexample** — `fix (\x. int_add x 1)` is well-typed by the
+reference analyzer yet bad-crashes. All three legs verified:
+
+1. **Typing — the reference analyzer, *executed*** (nix `gleam 1.17.0` + `nodejs_22`,
+   `j.infer` on the parsed source `!fix((x) -> { !int_add(x, 1) })`):
+   ```
+   top-level result: #(Ok(Nil), "Integer", "")   -- no error, type Integer, pure
+   ```
+   (Contrast: the arrow-typed `!fix((self) -> { (n) -> { !int_add(n, 1) } })` infers
+   `(Integer) -> Integer` — the sound case.)
+2. **Crash — both interpreters** (`eval` *and* `evalR`, `Config.initial`):
+   ```
+   some (Reason.IncorrectTerm "Integer"
+           (Value.Partial (Switch.Builtin "fixed") [Closure "x" (int_add x 1) []]))
+   ```
+   the `fixed` `Partial` is bound to `x` and fed to `int_add`, whose `Cast.asInteger`
+   fails.
+3. **Badness:** `IncorrectTerm ∈ Reason.IsBad` (only `Unrepresentable` is sanctioned).
+
+So this is a **genuine soundness counterexample for EYG's `fix`** — not a formalization
+convenience. It is the classic call-by-value-`fix`-at-a-base-type unsoundness (the
+fixpoint must be a function type in CBV). **Consequence:** the *general* `FixPreserves`
+(gleam scheme, free fixpoint `q0`) is **false** and can **never** be discharged; only
+the arrow-fixpoint fragment is sound. Fully discharging `fix` therefore *requires*
 restricting the `fix` scheme to arrow fixpoints (a deviation from the gleam reference)
 — a design decision for the EYG owner, not a mechanical proof step.
 

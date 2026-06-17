@@ -866,21 +866,28 @@ recorded here so the rationale is not lost:
    `partialFixed` slice is now unblocked** (apply the pure builder under the effectful
    ambient via `effWeaken_empty` at the pushed `applyf` frame).
 
-4. **⚠ `fix` is genuinely UNSOUND at base-type fixpoints — NEWLY SURFACED & EMPIRICALLY
-   CONFIRMED (2026-06-17, by the `partialFixed` slice;
-   `progress/2026-06-17-T6b-partialFixed-reapplication.md`).** The gleam `fix` scheme
-   `(q0→⟨q1⟩q0)→⟨q1⟩q0` leaves the fixpoint `q0` free, so `fix (\x. int_add x 1) : Int` is
-   **well-typed yet bad-crashes**: `evalR` yields
-   `Reason.IncorrectTerm "Integer" (Partial "fixed" [...])` (the `fixed` value is fed where an
-   `Int` is expected and the cast fails — `IncorrectTerm ∈ Reason.IsBad`). So **type soundness
-   for `fix` is FALSE under the gleam scheme**; it holds only for the **arrow-fixpoint**
-   fragment (`q0 = D→⟨γ⟩R`), which is what `HasTypeV.partialFixed` enforces and covers all real
-   recursion. **Consequence:** the general `FixPreserves` can never be discharged; fully
-   discharging `fix` *requires* restricting the `fix` scheme to arrow fixpoints (+ pure builder)
-   — a **deviation from the gleam reference** and hence a **design decision for the EYG owner**
-   (it narrows what the soundness theorem claims vs. the analyzer). Open Question 3's general
-   subsumption is *orthogonal* (it addresses effectful builders, not the base-type-fixpoint gap)
-   and does not, by itself, discharge `fix`.
+4. **⚠ `fix` is genuinely UNSOUND at base-type fixpoints — MACHINE-CHECKED COUNTEREXAMPLE
+   (2026-06-17, by the `partialFixed` slice;
+   `progress/2026-06-17-T6b-partialFixed-reapplication.md`).** A closed program well-typed by
+   the **reference analyzer** bad-crashes. Confirmed on all three legs:
+   - **Typing (reference analyzer, executed via nix `gleam 1.17.0`):** the gleam `fix` scheme
+     `(q0→⟨q1⟩q0)→⟨q1⟩q0` (`contextual.gleam:530`) leaves the fixpoint `q0` free. Running
+     `j.infer` on `!fix((x) -> { !int_add(x, 1) })` gives top-level `#(Ok(Nil), "Integer", "")`
+     — **no error, type `Integer`, pure**.
+   - **Crash (both interpreters):** FBS `eval` *and* `evalR` reduce it to
+     `Reason.IncorrectTerm "Integer" (Partial "fixed" [...])` (the `fixed` value is fed where an
+     `Int` is expected; the cast fails).
+   - **Badness:** `IncorrectTerm ∈ Reason.IsBad` (only `Unrepresentable` is sanctioned).
+   So **type soundness for EYG's `fix` is FALSE** as specified by the analyzer; it holds only for
+   the **arrow-fixpoint** fragment (`q0 = D→⟨γ⟩R`), which is what `HasTypeV.partialFixed` enforces
+   and which covers all real recursion (the arrow-typed `fix (\self. \n. …)` infers fine). This
+   is the classic call-by-value-`fix`-at-a-base-type unsoundness; the remedy is to restrict
+   `fix`'s fixpoint to function types (or make the recursive binding lazy). **Consequence:** the
+   general `FixPreserves` can never be discharged; fully discharging `fix` *requires* an
+   arrow-fixpoint scheme restriction — a **deviation from the gleam reference**, hence a **design
+   decision for the EYG owner** (it narrows what "well-typed" means vs. the analyzer). Open
+   Question 3's general subsumption is *orthogonal* (effectful builders, not the base-type gap)
+   and does not by itself discharge `fix`.
 
 ## Do we have what we need? (answer to the prompt's question)
 
