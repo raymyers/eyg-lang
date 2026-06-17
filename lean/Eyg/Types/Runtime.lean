@@ -150,6 +150,25 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   | partialPerformNil {label argTy replyTy μ τ} :
       Ty.TyEquiv (.fun argTy (.effectExtend label argTy replyTy μ) replyTy) τ →
       HasTypeV (.Partial (.Perform label) []) τ
+  /-- The internal `fixed` partial produced when `fix` saturates on a **pure** builder.
+  `fix : ∀α β. (α →⟨β⟩ α) →⟨β⟩ α`; the fixpoint type `α` is pinned to an **arrow**
+  `D →⟨γ⟩ R` — the only shape at which `fix` is operationally sound. (A base-type
+  fixpoint such as `fix (\x. x+1) : Int` is well-typed under the raw gleam scheme but
+  *crashes* — `fixed` is a `Partial`, so feeding it where an `Int` is expected fails the
+  cast; restricting to arrows keeps every canonical-forms lemma valid and excludes that
+  footgun.) The builder's *evaluation* latent is pinned to `∅` (building the recursive
+  function — usually a lambda — does not itself perform); this is exactly the
+  standard-recursion fragment (the recursive function `D →⟨γ⟩ R` may still be effectful
+  when *called*). The pure builder is what makes the `fixed` re-application's
+  `Apply builder` frame dischargeable with the empty-restricted `EffWeaken` (a non-pure
+  builder needs general row subsumption — see `progress/2026-06-16-T6b-fix-scoping.md`).
+  The stored value has the fixpoint arrow type (`fix builder = builder (fix builder)`).
+  `Builtins.scheme "fixed" = none`, so this is the *only* way a `fixed` partial is typed
+  (it has no `partialBuiltin` typing). -/
+  | partialFixed {builder D γ R τ} :
+      HasTypeV builder (.fun (.fun D γ R) .empty (.fun D γ R)) →
+      Ty.TyEquiv (.fun D γ R) τ →
+      HasTypeV (.Partial (.Builtin "fixed") [builder]) τ
 
 /-- An environment realizes a context, binding-for-binding. The value bound to a
 scheme must inhabit *every* instantiation of it (polymorphic readiness; for the
@@ -283,6 +302,7 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | partialOverwriteNil he => exact .partialOverwriteNil (he.trans heq)
   | partialOverwriteOne hvf he => exact .partialOverwriteOne hvf (he.trans heq)
   | partialPerformNil he => exact .partialPerformNil (he.trans heq)
+  | partialFixed hb he => exact .partialFixed hb (he.trans heq)
 
 /-! ## Canonical forms
 
@@ -404,6 +424,7 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
   | partialOverwriteNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialOverwriteOne _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialPerformNil _ => exact Or.inr ⟨_, _, rfl⟩
+  | partialFixed _ _ => exact Or.inr ⟨_, _, rfl⟩
   | record _ _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | tagged _ he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
   | int he => obtain ⟨_, _, _, hc⟩ := Ty.tyEquiv_fun_inv he; simp at hc
@@ -431,6 +452,17 @@ example : HasTypeV (.Partial (.Builtin "int_add") [.Integer 2] : Value Unit)
 example : HasTypeV (.Closure "x" (Eyg.Ir.Tree.variable_ "x") [] : Value Unit)
     (.fun .integer .empty .integer) :=
   HasTypeV.closure EnvWf.nil (HasType.var (s := .mono .integer) (args := []) rfl)
+    (Ty.TyEquiv.refl _)
+
+-- The `fixed` value of the pure builder `\f. f` (a `(Int→Int)→(Int→Int)` closure)
+-- inhabits the fixpoint arrow `Int → Int` (`fix : ((Int→Int)→(Int→Int)) → (Int→Int)`).
+example : HasTypeV (.Partial (.Builtin "fixed")
+    [.Closure "f" (Eyg.Ir.Tree.variable_ "f") []] : Value Unit)
+    (.fun .integer .empty .integer) :=
+  HasTypeV.partialFixed
+    (HasTypeV.closure EnvWf.nil
+      (HasType.var (s := .mono (.fun .integer .empty .integer)) (args := []) rfl)
+      (Ty.TyEquiv.refl _))
     (Ty.TyEquiv.refl _)
 
 end Eyg.Types

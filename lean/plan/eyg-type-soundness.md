@@ -634,7 +634,26 @@ for the **whole** core language.
       stable `TyEquiv εf ε ∨ TyEquiv εf .empty`); `weakenEff` admissible; `inv_app`/
       `hasType_subst` updated; builtin-saturation hypotheses decoupled (no `EffWeaken`
       needed). Green, sorry-free, axioms clean, spec 104/104. Only `partialFixed` remains for
-      `fix`.
+      `fix`. **`partialFixed` + `fixed` RE-APPLICATION DELIVERED** (2026-06-17,
+      `progress/2026-06-17-T6b-partialFixed-reapplication.md`): `HasTypeV.partialFixed`
+      (the bespoke rule for the unscheme'd `fixed` partial, pinned to an **arrow** fixpoint
+      `D→⟨γ⟩R` with a **pure** builder) + the full `HasTypeV` cascade (conv/`canonical_arrow`/
+      the 7 `cases` sites) + `reduceCall_fixed`/`fixed_reapply_preserves` (the unrolling
+      `builder (fix builder) arg` preserves — `Apply builder` weakens via `effWeaken_empty`,
+      `CallWith arg` via the calling frame's `hw`). **Constraint A done:** added the
+      `EffWeaken εf ε` premise to `BuiltinAppPreserves`/`FixPreserves`, threaded `hw` at every
+      `hsat`/`hfix` site. The `fixed` re-application is **proven** inside `builtinAppPreserves`/
+      `builtinAppNoBadCrash`. Green, sorry-free, axioms clean, spec 104/104. **⚠ Correctness
+      finding:** the fixpoint type **must** be an arrow — typing it at an arbitrary `α` (per
+      the raw gleam scheme) is *unsound* (a `fixed` `Partial` would inhabit base types,
+      breaking canonical forms; `fix (\x.x+1) : Int` is well-typed yet cast-crashes). The
+      arrow restriction is sound and covers all real recursion. **Still a hypothesis:**
+      `FixPreserves`/`FixNoBadCrash` (the fix *creation* `reduceCall (fix-partial)`) — general-`B`
+      creation needs the builder pure but the scheme's `q1` is free, so it is *not* dischargeable
+      without either (i) pinning the `fix` scheme to a `∅`-latent builder (sound, analyzer-
+      divergent narrowing) or (ii) general row subsumption (Open Question 3). The slice makes
+      `FixPreserves` a *satisfiable* (pure-builder-inhabitable) hypothesis and does the novel
+      `fixed`-re-application metatheory; the residual creation discharge is the planner (i)/(ii) fork.
 - [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
 ## Milestone T7 — Packaging & corollaries
@@ -746,7 +765,9 @@ checker / compiler.
       `Perform` + effect safety ✅, **`Handle`/`Delimit` remaining** (the central novel
       slice, design in `progress/2026-06-16-T5-handle-design.md`); **T6** — full builtin
       table + per-builtin run typing ✅ and the saturation obligations discharged for all
-      general builtins ✅ (`fix` isolated, scoped in `progress/2026-06-16-T6b-fix-scoping.md`);
+      general builtins ✅; **`fix`** — `partialFixed` + the `fixed` re-application proven ✅
+      (`progress/2026-06-17-T6b-partialFixed-reapplication.md`), the fix *creation*
+      (`FixPreserves`/`FixNoBadCrash`) still a hypothesis pending the (i)/(ii) discharge fork;
       **let-generalization `gen`** — substitution *foundation* ✅ (`Ty.shift`/`substScheme`/
       `subst_instantiate'`/`hasType_subst`, `progress/2026-06-16-T6-gen-substitution-infra.md`),
       value-restricted `hasTypeV_subst` + `let_poly` rule remaining.

@@ -462,6 +462,42 @@ theorem run_int_parse [BEq m] {a v : Value m} (ha : HasTypeV a .string)
     · cases h; exact hasTypeV_ok (HasTypeV.int (.refl _))
     · exact absurd h (by simp)
 
+/-! ## The `fixed` partial: re-application (`fix` unrolling)
+
+`fix builder = builder (fix builder)`. When the internal `fixed builder` value (typed
+via `HasTypeV.partialFixed` at an arrow `D →⟨γ⟩ R`) is applied to an argument, the
+machine pushes `Apply builder :: CallWith arg`: it computes `builder (fixed builder)`
+(the unrolled recursive function) and applies it to `arg`. The two lemmas below — the
+reduction equation and its preservation — are shared by `preservation_V` and
+`builtinAppPreserves` (both reach the `fixed` value). -/
+
+/-- The `fixed` partial's `reduceCall` always pushes the unrolling frames (`fix`'s
+`builder (fix builder)`). A `rfl` reduction over the concrete `"fixed"` key. -/
+theorem reduceCall_fixed [BEq m] (builder arg : Value m) (ann : m) (fenv : Env m)
+    (rest : Stack m) :
+    reduceCall (.Partial (.Builtin "fixed") [builder]) arg ann fenv rest =
+      .tau (.V (.Partial (.Builtin "fixed") [builder]), fenv,
+        (Kontinue.Apply builder fenv, ann) :: (Kontinue.CallWith arg fenv, ann) :: rest) :=
+  rfl
+
+/-- **`fixed` re-application preserves typing.** The unrolling successor `builder (fixed
+builder) arg` is well-typed at the answer `τ`: feed the `fixed builder : D→⟨γ⟩R` value
+into `Apply builder` (the **pure** builder consumes it, `EffWeaken ∅ ε` discharged by
+`effWeaken_empty`), yielding the recursive function, then `CallWith arg` applies it
+(`EffWeaken γ ε = hw`, supplied by the calling frame). The builder is converted to the
+frame's exact arrow form, sidestepping any stack-endpoint conversion. -/
+theorem fixed_reapply_preserves [BEq m] {builder arg : Value m} {ann : m} {fenv : Env m}
+    {rest : Stack m} {D γ R argTy εf retTy ε τ : Ty}
+    (hbuilder : HasTypeV builder (.fun (.fun D γ R) .empty (.fun D γ R)))
+    (he : Ty.TyEquiv (.fun D γ R) (.fun argTy εf retTy))
+    (harg : HasTypeV arg argTy) (hw : Ty.EffWeaken εf ε) (hrest : StackWf rest retTy ε τ) :
+    MStateWf (.run (.V (.Partial (.Builtin "fixed") [builder]), fenv,
+      (Kontinue.Apply builder fenv, ann) :: (Kontinue.CallWith arg fenv, ann) :: rest)) τ ε := by
+  have hb' : HasTypeV builder (.fun (.fun argTy εf retTy) .empty (.fun argTy εf retTy)) :=
+    hbuilder.conv (.congrFun he (.refl _) he)
+  exact ⟨_, HasTypeV.partialFixed hb' (.refl _),
+    StackWf.applyf hb' (Ty.effWeaken_empty _) (StackWf.callwith harg hw hrest)⟩
+
 /-- The builtin **application/saturation** preservation obligation, isolated as a
 hypothesis (the **T6** deliverable — it needs the per-builtin `Builtin.run` typing,
 and `int_add` may legitimately trap with the sanctioned `Unrepresentable`). When a
@@ -472,6 +508,7 @@ def BuiltinAppPreserves (m : Type) [BEq m] : Prop :=
     {rest : Stack m} {argTy εf retTy ε τ : Ty},
     HasTypeV (.Partial (.Builtin id) applied) (.fun argTy εf retTy) →
     HasTypeV arg argTy →
+    Ty.EffWeaken εf ε →
     StackWf rest retTy ε τ →
     (∀ cfg', reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .tau cfg' →
         MStateWf (.run cfg') τ ε) ∧
@@ -511,7 +548,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
       · cases hf with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact (hsat (.partialBuiltin hs hp he) hv hrest).1 _ hr
+            exact (hsat (.partialBuiltin hs hp he) hv hw hrest).1 _ hr
+        | partialFixed hbuilder he =>
+            simp only [reduce1Run, reduceApply, reduceCall_fixed] at hr; cases hr
+            exact fixed_reapply_preserves hbuilder he hv hw hrest
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
@@ -658,7 +698,10 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
       · cases hv with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact (hsat (.partialBuiltin hs hp he) harg hrest).1 _ hr
+            exact (hsat (.partialBuiltin hs hp he) harg hw hrest).1 _ hr
+        | partialFixed hbuilder he =>
+            simp only [reduce1Run, reduceApply, reduceCall_fixed] at hr; cases hr
+            exact fixed_reapply_preserves hbuilder he harg hw hrest
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
@@ -829,6 +872,7 @@ theorem reduceCall_perform_wait [BEq m] {f arg : Value m} {ann : m} {fenv : Env 
   · exact absurd h (by simp [reduceCall])
   · cases hf with
     | partialBuiltin _ _ _ => exact absurd h reduceCall_builtin_ne_perform
+    | partialFixed _ _ => rw [reduceCall_fixed] at h; exact absurd h (by simp)
     | partialConsNil _ => exact absurd h (by simp [reduceCall])
     | partialConsOne _ _ =>
         simp only [reduceCall] at h; split at h <;> exact absurd h (by simp)
@@ -986,13 +1030,16 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
           | trace _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
           | assign _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
           | arg _ _ _ _ => simp only [reduce1Run, reduceApply] at h; exact absurd h (by simp)
-          | applyf hf _ hrest =>
+          | applyf hf hwk hrest =>
               rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
               · cases hf with
                 | partialBuiltin hs hp he =>
                     simp only [reduce1Run, reduceApply] at h
-                    exact (hsat (.partialBuiltin hs hp he) hw hrest).2 _ h
+                    exact (hsat (.partialBuiltin hs hp he) hw hwk hrest).2 _ h
+                | partialFixed _ _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall_fixed] at h
+                    exact absurd h (by simp)
                 | partialConsNil _ =>
                     simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
                 | partialConsOne _ _ =>
@@ -1033,13 +1080,16 @@ theorem reduce1Run_done_value_typed [BEq m] (hsat : BuiltinAppPreserves m)
                     simp only [reduce1Run, reduceApply, reduceCall, reducePerform,
                       stackWf_doPerformR_unhandled hrest] at h
                     exact absurd h (by simp)
-          | callwith harg _ hrest =>
+          | callwith harg hwk hrest =>
               rcases canonical_arrow hw with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
               · exact absurd h (by simp [reduce1Run, reduceApply, reduceCall])
               · cases hw with
                 | partialBuiltin hs hp he =>
                     simp only [reduce1Run, reduceApply] at h
-                    exact (hsat (.partialBuiltin hs hp he) harg hrest).2 _ h
+                    exact (hsat (.partialBuiltin hs hp he) harg hwk hrest).2 _ h
+                | partialFixed _ _ =>
+                    simp only [reduce1Run, reduceApply, reduceCall_fixed] at h
+                    exact absurd h (by simp)
                 | partialConsNil _ =>
                     simp only [reduce1Run, reduceApply, reduceCall] at h; exact absurd h (by simp)
                 | partialConsOne _ _ =>
@@ -1192,6 +1242,7 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                             exact Or.inr (Or.inr (Or.inl
                               ⟨r, rfl, hbad (.partialBuiltin hs hp he) hw hres⟩))
                     | perform _ _ _ _ => exact absurd hres reduceCall_builtin_ne_perform
+                | partialFixed _ _ => exact Or.inl ⟨_, reduceCall_fixed _ _ _ _ _⟩
                 | partialConsNil _ => exact Or.inl ⟨_, rfl⟩
                 | partialConsOne hh he =>
                     obtain ⟨hD, _, _⟩ := Ty.tyEquiv_fun_components he
@@ -1262,6 +1313,7 @@ theorem progress [BEq m] (hbad : BuiltinAppNoBadCrash m)
                             exact Or.inr (Or.inr (Or.inl
                               ⟨r, rfl, hbad (.partialBuiltin hs hp he) harg hres⟩))
                     | perform _ _ _ _ => exact absurd hres reduceCall_builtin_ne_perform
+                | partialFixed _ _ => exact Or.inl ⟨_, reduceCall_fixed _ _ _ _ _⟩
                 | partialConsNil _ => exact Or.inl ⟨_, rfl⟩
                 | partialConsOne hh he =>
                     obtain ⟨hD, _, _⟩ := Ty.tyEquiv_fun_components he
@@ -1531,6 +1583,7 @@ def FixPreserves (m : Type) [BEq m] : Prop :=
     {rest : Stack m} {argTy εf retTy ε τ : Ty},
     HasTypeV (.Partial (.Builtin "fix") applied) (.fun argTy εf retTy) →
     HasTypeV arg argTy →
+    Ty.EffWeaken εf ε →
     StackWf rest retTy ε τ →
     (∀ cfg', reduceCall (.Partial (.Builtin "fix") applied) arg ann fenv rest = .tau cfg' →
         MStateWf (.run cfg') τ ε) ∧
@@ -1542,8 +1595,16 @@ builtin except `fix`, which defers to `hfix`). Per builtin: `scheme_cases` pins 
 name+scheme, the arity-1/2 driver peels the typed args and runs `Builtin.run`, and the
 `run_*` lemma types the result. -/
 theorem builtinAppPreserves [BEq m] (hfix : FixPreserves m) : BuiltinAppPreserves m := by
-  intro id applied arg ann fenv rest argTy εf retTy ε τ hp harg hst
+  intro id applied arg ann fenv rest argTy εf retTy ε τ hp harg hw hst
   cases hp with
+  | @partialFixed builder _D _γ _R _τ hbuilder he =>
+    -- the `fixed` re-application (`fix builder = builder (fix builder)`): provable here
+    -- (the builder is pure, so `Apply builder` weakens via `effWeaken_empty`; the
+    -- recursion arrow's latent is `hw` from the calling frame)
+    refine ⟨fun cfg' hrr => ?_, fun v hvv => ?_⟩
+    · rw [reduceCall_fixed] at hrr; cases hrr
+      exact fixed_reapply_preserves hbuilder he harg hw hst
+    · rw [reduceCall_fixed] at hvv; exact absurd hvv (by simp)
   | @partialBuiltin _id s args _applied a' ε' r' _τ hs hpw he =>
     obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
     have harg' : HasTypeV arg a' := harg.conv ha.symm
@@ -1560,7 +1621,7 @@ theorem builtinAppPreserves [BEq m] (hfix : FixPreserves m) : BuiltinAppPreserve
         (fun _ _ hh => run_equal hh)
         (by simpa [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q] using hpw) harg' hr hst
     · -- fix (isolated)
-      exact hfix (HasTypeV.partialBuiltin hs hpw he) harg hst
+      exact hfix (HasTypeV.partialBuiltin hs hpw he) harg hw hst
     · -- int_compare
       exact builtinApp_arity2 (by decide) (by decide) (by decide) (by decide) (by decide)
         (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
@@ -1705,6 +1766,9 @@ crash is a sanctioned `Unrepresentable` trap. -/
 theorem builtinAppNoBadCrash [BEq m] (hfix : FixNoBadCrash m) : BuiltinAppNoBadCrash m := by
   intro id applied arg ann fenv rest argTy retTy ε r hp harg hcrash
   cases hp with
+  | @partialFixed builder _D _γ _R _τ _hbuilder _he =>
+    -- the `fixed` re-application only ever `.tau`-steps, so it never crashes
+    rw [reduceCall_fixed] at hcrash; exact absurd hcrash (by simp)
   | @partialBuiltin _id s args _applied a' ε' r' _τ hs hpw he =>
     obtain ⟨ha, _, _⟩ := Ty.tyEquiv_fun_components he
     have harg' : HasTypeV arg a' := harg.conv ha.symm
