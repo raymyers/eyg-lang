@@ -435,6 +435,24 @@ T6 obligation.
 **Deliverable:** effect-row threading and handler soundness; **effect safety**.
 This is the milestone with no direct mechanization precedent — see the fork below.
 
+> **✅ T5 DELIVERED (2026-06-17, commit "T5 Handle/Delimit DELIVERED"; design in
+> `progress/2026-06-16-T5-handle-design.md`, delivery in
+> `progress/2026-06-17-T5-handle-delivered.md`).** `Handle`/`Delimit`/`Resume` are typed
+> (`HasType.handle`; `HasTypeV.partialHandleNil/One/partialResume`; `StackWf.delimit` +
+> `StackWf.conv` + the six conv-folding frame-inversion lembas; `StackSegWf`/`stackWf_resume`)
+> and **`preservation`/`progress`/`soundness*` re-green over the full effect language** via
+> the fork's chosen route **(a) direct frame typing** (Open Question 1 resolved in favour of
+> (a) — the simulation fallback (b) was not needed). `preservation`/`preservation_V` now
+> conclude `∃ε'` (the ambient row shrinks across a `Delimit`-pop, grows across `reduceDeep`).
+> `lake build` + `lake exe spec` 104/104, no `sorry`, headline axioms clean, **no new
+> `axiom`s**. **`ε`-free value + no-bad-crash soundness is UNCONDITIONAL for the full language
+> incl. `Handle`** (modulo `Fix*`). Two follow-up obligations are isolated as explicit
+> hypotheses (same pattern as `BuiltinAppPreserves`/`Fix*`, *not* axioms): **`HandlerObligations`**
+> (the three handler dispatches — perform stack-walk to the matching `Delimit`, `reduceDeep`
+> install, `Resume` feed) and **`TauKeepsRow`** (the T7 row-evolution gate; true for the
+> handler-discharge-free fragment; gates only the row-dependent effect-escape/divergence/reply
+> results). Delivered via resumable-WIP grinding (45→14→6→0 errors over four passes).
+
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
       of operation `l : (lift a, reply b)` in an effect row), `tyEquiv_effContains`
@@ -762,12 +780,12 @@ checker / compiler.
       saturation obligations are isolated as the hypotheses `BuiltinAppPreserves` /
       `BuiltinAppNoBadCrash` (T6).
 - [~] **T4/T5/T6:** **T4 data** (records/unions/lists) ✅; **T5 effects** —
-      `Perform` + effect safety ✅, **`Handle`/`Delimit` remaining** (the central novel
-      slice, design in `progress/2026-06-16-T5-handle-design.md`; a 2026-06-17 dry-run
-      (`progress/2026-06-17-T5-handle-attempt.md`) confirmed the cascade is atomic and
-      surfaced a **new 4th step**: `StackWf.delimit`'s row-shrink breaks the committed T7
-      exact-`ε` effect layer (`soundnessR_effect`/`ωTr_all_wf`), which must be reworked to
-      thread a row-that-only-shrinks); **T6** — full builtin
+      `Perform` + effect safety ✅, **`Handle`/`Delimit` DELIVERED** ✅ (2026-06-17, the
+      central novel slice; typing + `preservation`/`progress`/`soundness*` re-green over the
+      full effect language via direct frame typing; `lake build` + spec 104/104, axioms clean,
+      no new axioms; `ε`-free value/no-bad-crash unconditional incl. `Handle`; the three
+      handler dispatches + the T7 row-evolution isolated as explicit hypotheses
+      `HandlerObligations`/`TauKeepsRow` — `progress/2026-06-17-T5-handle-delivered.md`); **T6** — full builtin
       table + per-builtin run typing ✅ and the saturation obligations discharged for all
       general builtins ✅; **`fix`** — `partialFixed` + the `fixed` re-application proven ✅
       (`progress/2026-06-17-T6b-partialFixed-reapplication.md`), the fix *creation*
@@ -804,12 +822,16 @@ recorded here so the rationale is not lost:
 
 ## Open questions (still to settle)
 
-1. **CEK frame typing vs. simulation, for effects** (decided at the top of T5).
-   Direct `Delimit`/`Resume` frame typing (reuses the machine, novel) vs. a typed
-   contextual semantics + a `Reduce`-simulates-it proof (well-trodden metatheory,
-   second semantics). Recommendation: try direct for one effect, fall back to
-   simulation if continuation typing stalls. This is the single largest remaining
-   risk and the reason effects are their own slice.
+1. **CEK frame typing vs. simulation, for effects** — ✅ **RESOLVED in favour of (a)
+   direct frame typing** (2026-06-17, T5 delivered). `StackWf.delimit`/`StackWf.conv` +
+   the conv-folding frame-inversion lemmas + `StackSegWf`/`stackWf_resume` typed the
+   `Delimit`/`Resume` frames directly over the existing machine; the simulation fallback
+   (b) was **not** needed. The continuation typing did not stall (the `StackWf.conv`
+   inversion infra was the key enabler). Residual: the handler-dispatch + T7 row-evolution
+   obligations are isolated as `HandlerObligations`/`TauKeepsRow` (follow-up, not a
+   semantics fork). *(Original note: Direct `Delimit`/`Resume` frame typing (reuses the
+   machine, novel) vs. a typed contextual semantics + a `Reduce`-simulates-it proof; try
+   direct, fall back to simulation if continuation typing stalls.)*
 2. **`Vacant` typing.** `do_infer` types `Vacant` at a fresh var but records an
    `Error` (the "todo/hole" node). It is *shape*-typeable yet its dynamic outcome
    is `crash (Vacant)`. Decide: **exclude `Vacant` from "well-typed"** (treat the
