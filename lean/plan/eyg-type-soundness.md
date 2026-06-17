@@ -588,7 +588,10 @@ for the **whole** core language.
       obligation discharged, leaving only `fix`. `lake build` + `lake exe spec` 104/104.
       **Remaining for T6b:** the isolated `fix` (`FixPreserves`/`FixNoBadCrash` — the
       `fixed` internal partial, analogous to `Handle`'s `Resume`); and any new builtins
-      added to the scheme table (extend `scheme_cases`).
+      added to the scheme table (extend `scheme_cases`). The `fix` slice is **scoped** in
+      `progress/2026-06-16-T6b-fix-scoping.md`: it needs a bespoke `HasTypeV.partialFixed`
+      rule + a ~5-site `HasTypeV` cascade (a self-contained mini-`Handle`, lower risk than
+      real `Handle` — no continuation capture/row discharge), deferred as its own slice.
 - [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
 ## Milestone T7 — Packaging & corollaries
