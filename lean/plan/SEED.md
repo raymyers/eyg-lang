@@ -87,3 +87,22 @@ Add a new file in `lean/plan/progress` with an explanation of the `fix` soundnes
 Isn't fix (\x. int_add x 1) on a function type? Maybe this is just non-termination, not a bad crash?
 
 ---
+
+There is a proposal to address this by changing `packages/gleam_analysis/src/eyg/analysis/inference/levels_j/contextual.gleam`
+Before:
+```
+#("fix", t.Fun(t.Fun(q(0), q(1), q(0)), q(1), q(0))),
+```
+After:
+```
+#("fix", {
+  let self = t.Fun(q(0), q(2), q(3))
+  t.Fun(t.Fun(self, q(1), self), q(1), self)
+}),
+```
+Does this address it? Confirm by running EYG tests with Nix. And then updating your Lean model.
+---
+
+/goal Execute `lean/plan/eyg-type-soundness-STEP.md` until PLAN complete or you cannot make more progress.
+
+---

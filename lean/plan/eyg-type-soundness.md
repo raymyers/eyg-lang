@@ -763,7 +763,11 @@ checker / compiler.
       `BuiltinAppNoBadCrash` (T6).
 - [~] **T4/T5/T6:** **T4 data** (records/unions/lists) ✅; **T5 effects** —
       `Perform` + effect safety ✅, **`Handle`/`Delimit` remaining** (the central novel
-      slice, design in `progress/2026-06-16-T5-handle-design.md`); **T6** — full builtin
+      slice, design in `progress/2026-06-16-T5-handle-design.md`; a 2026-06-17 dry-run
+      (`progress/2026-06-17-T5-handle-attempt.md`) confirmed the cascade is atomic and
+      surfaced a **new 4th step**: `StackWf.delimit`'s row-shrink breaks the committed T7
+      exact-`ε` effect layer (`soundnessR_effect`/`ωTr_all_wf`), which must be reworked to
+      thread a row-that-only-shrinks); **T6** — full builtin
       table + per-builtin run typing ✅ and the saturation obligations discharged for all
       general builtins ✅; **`fix`** — `partialFixed` + the `fixed` re-application proven ✅
       (`progress/2026-06-17-T6b-partialFixed-reapplication.md`), the fix *creation*

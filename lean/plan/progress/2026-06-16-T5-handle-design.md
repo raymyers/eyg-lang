@@ -1,5 +1,16 @@
 # T5 — Typing `Handle`: Delimit / Resume frame typing (design)
 
+> **⚠ Added scope (2026-06-17, `progress/2026-06-17-T5-handle-attempt.md`).** A further
+> dry-run surfaced a blocker this note did **not** scope: `StackWf.delimit` makes the
+> `Delimit`-value-pop (a `.tau` step) **shrink the ambient row**, which falsifies the
+> *exact-`ε`* `preservation_tau`/`preservation_keep_fix` — and those are consumed by the
+> now-**committed T7 effect-escape/divergence soundness** (`soundnessR_effect`,
+> `ωTr_all_wf`). So re-greening is bigger than "`preservation`/`progress`/`soundness_value`";
+> it also requires reworking the T7 effect layer to thread a *row-that-only-shrinks*
+> (membership preserved downward across the discharge). Budget this as a 4th cascade step.
+> Two edits confirmed green & ready to re-apply: `HasType.handle`, `inv_handle` + the
+> `hasType_expr_form` Handle arm.
+
 **Status:** design. Prereqs done: T5a (`EffRow`), T5b (`doPerformR`), T5c (`Perform`
 + effect safety, `wait` typing, `ReplyContract`, the effect-escape `progress`). This
 is the **last** T5 piece and the fork's *direct frame typing* route (no published
