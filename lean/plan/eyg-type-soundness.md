@@ -541,9 +541,16 @@ This is the milestone with no direct mechanization precedent — see the fork be
 **Deliverable:** the remaining generality; `progress`+`preservation`+`soundness`
 for the **whole** core language.
 
-- [ ] **Let-generalization** `gen` (deferred from T2), declaratively and
+- [~] **Let-generalization** `gen` (deferred from T2), declaratively and
       **effect-safe** (only generalize effect tails that don't escape — mirror
       `close`/`close_eff`; Open Question #3). Extend the `Let` rule and re-green.
+      **SCOPED** (`progress/2026-06-16-T6-gen-scoping.md`): blocked on a **type
+      substitution lemma** over the mutual `HasType`/`HasTypeV`/`EnvWf`, which needs a
+      de Bruijn `substScheme` with shifting (a `Ty.shift` + an `instantiate`-commutes-
+      with-`subst` lemma) — and first pinning down the scheme type-var convention that
+      `Scheme.instantiate` silently assumes (ambient vars must avoid `0..arity-1`). A
+      dedicated slice, comparable to `fix`/`Handle`; purely additive (a second `let`
+      rule keeps the monomorphic one and all existing theorems green).
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
