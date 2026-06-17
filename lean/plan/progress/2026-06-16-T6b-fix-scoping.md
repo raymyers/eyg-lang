@@ -232,11 +232,25 @@ subsumption** (deferred future work, per Open Question 3).
 **Recommended scoping for the next session:** deliver `partialFixed` + `FixPreserves`
 **restricted to pure builders** (`ε_b = ∅`, via an explicit premise `Ty.TyEquiv ε_b .empty`
 in the rule, discharged by `effWeaken_empty` at the `Apply builder` frame), which covers
-all standard recursion. Confirm against `gleam_analysis` whether a non-`∅` builder latent
-is even reachable through `do_infer`'s `fix` scheme; if `do_infer` forces the builder pure
-(likely, since the scheme's `(α→β α)→β α` with `β` shared may pin `β=∅` in practice for
-value-restricted let-bound `fix`), the restriction is complete, not partial. The α-vs-arrow
-type mismatch in the stack (Constraint, original finding 2) is handled by converting the
-builder via `HasTypeV.conv (… congrFun hα …)` to `.fun arrow ε_b arrow` so the
-`CallWith arg` frame's exact-`.fun argTy εf retTy` input is met — no stack-conversion lemma
-needed.
+all standard recursion. The α-vs-arrow type mismatch in the stack (original finding 2) is
+handled by converting the builder via `HasTypeV.conv (… congrFun hα …)` to
+`.fun arrow ε_b arrow` so the `CallWith arg` frame's exact-`.fun argTy εf retTy` input is
+met — no stack-conversion lemma needed.
+
+### ⚠ Confirmed (2026-06-17): the gleam `fix` scheme forces the pure-builder slice to be *partial*
+
+`contextual.gleam:530` — `#("fix", t.Fun(t.Fun(q(0), q(1), q(0)), q(1), q(0)))`, i.e.
+`fix : (q0 →⟨q1⟩ q0) →⟨q1⟩ q0` with **`q1` a free quantified row variable**. So `do_infer`
+does **not** force the builder pure — a non-`∅` builder latent (`q1 ↦ ⟨Foo|…⟩`) is genuinely
+typeable. Hence a `partialFixed` restricted to `ε_b = ∅` discharges `FixPreserves` only for
+the (overwhelmingly common) pure-builder programs; the **non-pure-builder case stays
+conditional** and needs `EffWeaken ε_b γ` for a *proper sub-row* `ε_b ⊑ γ` — the
+**general row-variable-aware subsumption** (`EffSub'` in
+`2026-06-17-T6b-effect-weakening-architecture.md`), which the empty-restricted `EffWeaken`
+cannot express. **So fully discharging `fix` is blocked on that larger subsumption slice**;
+a pure-builder `partialFixed` is a sound, real, but *partial* step (it would isolate the
+non-pure case behind a residual sub-hypothesis rather than removing `FixPreserves` entirely).
+Decision for the planner: either (i) accept the partial pure-builder `partialFixed` now and
+keep a narrowed `FixPreserves` for non-pure builders, or (ii) build the general
+row-variable subsumption foundation first (unblocks fix *and* a realistic effectful
+fragment), then `partialFixed` lands unconditionally. (ii) is the cleaner end state.
