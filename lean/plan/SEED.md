@@ -71,3 +71,19 @@ commit plan changes
 /goal Execute `lean/plan/eyg-type-soundness-STEP.md` until PLAN complete or you cannot make more progress.
 
 ---
+
+Are you saying we can show EYG unsound?
+
+---
+
+Use nix flake to get the toolchain you need to run it
+
+---
+
+Add a new file in `lean/plan/progress` with an explanation of the `fix` soundness issue gleam code snippet showing the type checker and eval having those contradictory results. Should be self-contained besides including that eyg eval and analayzer.
+
+---
+
+Isn't fix (\x. int_add x 1) on a function type? Maybe this is just non-termination, not a bad crash?
+
+---

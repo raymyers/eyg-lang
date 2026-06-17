@@ -526,8 +526,15 @@ pub fn builtins() {
 
     // debug is an effect because the format is not fully specified
     // #("debug", pure1(q(0), t.String)),
-    // if the passed in constructor raises an effect then fix does too
-    #("fix", t.Fun(t.Fun(q(0), q(1), q(0)), q(1), q(0))),
+    // if the passed in constructor raises an effect then fix does too.
+    // the fixpoint `self` is forced to be a *function* type (q0 -><q2> q3): a
+    // base-type fixpoint such as `fix (\x. int_add x 1) : Integer` is unsound in
+    // call-by-value (the internal `fixed` value is fed where a base value is
+    // expected and the cast crashes), so it must not type-check.
+    #("fix", {
+      let self = t.Fun(q(0), q(2), q(3))
+      t.Fun(t.Fun(self, q(1), self), q(1), self)
+    }),
     // TODO do we want a never type
     #("never", pure1(t.Never, q(1))),
 

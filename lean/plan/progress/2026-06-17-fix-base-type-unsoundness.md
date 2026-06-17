@@ -2,10 +2,16 @@
 date: 2026-06-17
 kind: soundness-counterexample
 component: gleam_analysis (type checker) + gleam_interpreter (evaluator)
-status: confirmed (both reference tools executed)
+status: RESOLVED — scheme hardened in gleam_analysis + Lean, verified by running the analyzer
 ---
 
 # EYG type-soundness counterexample: `fix` at a base-type fixpoint
+
+> **Resolution (2026-06-17).** Fixed by hardening the `fix` scheme so the fixpoint is
+> forced to a **function** type (`contextual.gleam:530`, mirrored in the Lean
+> `Builtins.scheme`). The base-type program below now **fails to type-check**
+> (`TypeMismatch(Integer, Fun(…))`) while real (arrow-typed) recursion still checks; the
+> full analyzer suite still passes. See "Resolution" at the bottom.
 
 ## TL;DR
 
@@ -188,3 +194,44 @@ are unsound anyway — and is the restriction the Lean soundness proof encodes a
 `progress/2026-06-17-T6b-partialFixed-reapplication.md` and Open Question 4 in
 `eyg-type-soundness.md`. Alternatively, make the recursive binding lazy so the fixpoint
 can inhabit any type.
+
+## Resolution (applied & verified)
+
+The first remedy was adopted. The `fix` scheme now forces the fixpoint `self` to be a
+function type.
+
+**`gleam_analysis` — `contextual.gleam:530`:**
+
+```gleam
+#("fix", {
+  let self = t.Fun(q(0), q(2), q(3))           // the fixpoint is an arrow
+  t.Fun(t.Fun(self, q(1), self), q(1), self)   // (self -><q1> self) -><q1> self
+}),
+```
+
+**Verified by running the analyzer** (`nix shell nixpkgs#gleam nixpkgs#nodejs_22 --command
+gleam test`), top-level result triples:
+
+```
+base-type   !fix((x) -> { !int_add(x, 1) })
+  ->  #(Error(TypeMismatch(Integer, Fun(Var(0), Var(1), Var(2)))), …)   -- REJECTED
+arrow-type  !fix((self) -> { (n) -> { !int_add(n, 1) } })
+  ->  #(Ok(Nil), "(Integer) -> Integer", "")                           -- still accepted
+```
+
+The full `gleam_analysis` test suite still passes (no regressions).
+
+**Lean model** updated to match (`lean/Eyg/Types/Scheme.lean`, `Builtins.scheme "fix"`,
+arity 4):
+
+```
+fix : ((q0 →⟨q2⟩ q3) →⟨q1⟩ (q0 →⟨q2⟩ q3)) →⟨q1⟩ (q0 →⟨q2⟩ q3)
+```
+
+so the Lean `HasType` likewise cannot type `fix (\x. x+1)` (the builder's codomain
+`Integer` can't equal the forced arrow `q0→⟨q2⟩q3`). `lake build` + `lake exe spec`
+104/104, axioms clean. This also **aligns the reference with `HasTypeV.partialFixed`**:
+both now force an arrow fixpoint, so the arrow restriction is no longer a Lean-side
+divergence from gleam. The only remaining Lean under-approximation is the **pure-builder**
+restriction (`partialFixed` pins the builder's eval latent to `∅`, while the scheme leaves
+`q1` free) — sound, and liftable once effect-row subsumption (Open Question 3) lands.

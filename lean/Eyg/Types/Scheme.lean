@@ -327,7 +327,12 @@ def intCompareResult : Ty := union' [("Lt", unit), ("Eq", unit), ("Gt", unit)]
 `contextual.builtins()`. Returns `none` for builtins not yet transcribed. -/
 def scheme : String → Option Scheme
   | "equal" => some ⟨1, pure2 (q 0) (q 0) boolean⟩
-  | "fix" => some ⟨2, .fun (.fun (q 0) (q 1) (q 0)) (q 1) (q 0)⟩
+  -- `fix : ((self →⟨q1⟩ self) →⟨q1⟩ self)` with `self = (q0 →⟨q2⟩ q3)` — the fixpoint
+  -- is forced to be a **function** type (mirrors the hardened `contextual.gleam` scheme),
+  -- so the unsound base-type fixpoint `fix (\x. x+1) : Integer` no longer type-checks.
+  | "fix" => some ⟨4,
+      .fun (.fun (.fun (q 0) (q 2) (q 3)) (q 1) (.fun (q 0) (q 2) (q 3)))
+        (q 1) (.fun (q 0) (q 2) (q 3))⟩
   | "int_compare" => some (.mono (pure2 integer integer intCompareResult))
   | "int_add" => some (.mono (pure2 integer integer integer))
   | "int_subtract" => some (.mono (pure2 integer integer integer))
@@ -362,10 +367,17 @@ example : scheme "int_add" = some (.mono (.fun .integer .empty (.fun .integer .e
 example : (Scheme.instantiate ⟨1, Ty.pure2 (Ty.q 0) (Ty.q 0) Ty.boolean⟩ [Ty.integer])
     = Ty.pure2 Ty.integer Ty.integer Ty.boolean := rfl
 
--- `fix` instantiated at `α := Integer, β := ∅`: `(Integer →⟨∅⟩ Integer) →⟨∅⟩ Integer`.
-example : (Scheme.instantiate ⟨2, .fun (.fun (Ty.q 0) (Ty.q 1) (Ty.q 0)) (Ty.q 1) (Ty.q 0)⟩
-    [Ty.integer, Ty.empty])
-    = .fun (.fun Ty.integer Ty.empty Ty.integer) Ty.empty Ty.integer := rfl
+-- `fix` instantiated at `q0:=Integer, q1:=∅, q2:=∅, q3:=Integer` (so `self = Integer →⟨∅⟩
+-- Integer`): `((Integer→Integer) →⟨∅⟩ (Integer→Integer)) →⟨∅⟩ (Integer→Integer)`. The
+-- fixpoint is a function type, as the hardened scheme requires.
+example :
+    (Scheme.instantiate
+      ⟨4, .fun (.fun (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3)) (Ty.q 1) (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3)))
+        (Ty.q 1) (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3))⟩
+      [Ty.integer, Ty.empty, Ty.empty, Ty.integer])
+    = .fun (.fun (.fun Ty.integer Ty.empty Ty.integer) Ty.empty
+        (.fun Ty.integer Ty.empty Ty.integer)) Ty.empty
+        (.fun Ty.integer Ty.empty Ty.integer) := rfl
 
 end Builtins
 

@@ -6,6 +6,15 @@ status: delivered (partial — `fixed` re-application done; `fix` creation still
 
 # T6b: `partialFixed` rule + `fixed` re-application preservation
 
+> **Update (2026-06-17, later same day).** The "arrow-fixpoint restriction diverges from
+> the gleam reference" framing below is now **superseded**: the gleam `fix` scheme was
+> hardened to force an arrow fixpoint (`contextual.gleam:530`), verified by running the
+> analyzer, and the Lean `Builtins.scheme "fix"` was updated to match (arity 4). So
+> `partialFixed`'s arrow restriction now **agrees with** the reference — it is no longer a
+> divergence. The only remaining Lean-side under-approximation is the **pure-builder** pin
+> (`q1` free in the scheme vs. `∅` in `partialFixed`). See
+> `progress/2026-06-17-fix-base-type-unsoundness.md` (Resolution) and Open Question 4.
+
 ## What was delivered (green, sorry-free, axioms clean, spec 104/104)
 
 The internal `fixed` partial that `fix` produces is now **typed** and its

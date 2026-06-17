@@ -1557,7 +1557,8 @@ open Ty in
 and its scheme. -/
 theorem scheme_cases {id : String} {s : Scheme} (h : Builtins.scheme id = some s) :
     (id = "equal" ∧ s = ⟨1, pure2 (q 0) (q 0) boolean⟩) ∨
-    (id = "fix" ∧ s = ⟨2, .fun (.fun (q 0) (q 1) (q 0)) (q 1) (q 0)⟩) ∨
+    (id = "fix" ∧ s = ⟨4, .fun (.fun (.fun (q 0) (q 2) (q 3)) (q 1) (.fun (q 0) (q 2) (q 3)))
+        (q 1) (.fun (q 0) (q 2) (q 3))⟩) ∨
     (id = "int_compare" ∧ s = .mono (pure2 integer integer Builtins.intCompareResult)) ∨
     (id = "int_add" ∧ s = .mono (pure2 integer integer integer)) ∨
     (id = "int_subtract" ∧ s = .mono (pure2 integer integer integer)) ∨

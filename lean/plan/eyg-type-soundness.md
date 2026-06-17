@@ -866,10 +866,22 @@ recorded here so the rationale is not lost:
    `partialFixed` slice is now unblocked** (apply the pure builder under the effectful
    ambient via `effWeaken_empty` at the pushed `applyf` frame).
 
-4. **⚠ `fix` is genuinely UNSOUND at base-type fixpoints — MACHINE-CHECKED COUNTEREXAMPLE
-   (2026-06-17, by the `partialFixed` slice;
-   `progress/2026-06-17-T6b-partialFixed-reapplication.md`).** A closed program well-typed by
-   the **reference analyzer** bad-crashes. Confirmed on all three legs:
+4. **`fix` was UNSOUND at base-type fixpoints — now RESOLVED by hardening the scheme
+   (2026-06-17; `progress/2026-06-17-fix-base-type-unsoundness.md`).** The fix: force the
+   fixpoint to a **function** type. `contextual.gleam:530` is now
+   `let self = t.Fun(q0,q2,q3); t.Fun(t.Fun(self,q1,self), q1, self)`, and the Lean
+   `Builtins.scheme "fix"` (arity 4) mirrors it. **Verified by running the analyzer** (nix
+   gleam): `!fix((x) -> { !int_add(x, 1) })` now gives `Error(TypeMismatch(Integer, Fun …))`
+   (rejected), arrow-typed recursion still checks, full analyzer suite green; Lean `lake
+   build` + spec 104/104, axioms clean. This also aligns the reference with
+   `HasTypeV.partialFixed` (both force an arrow fixpoint), so that restriction is no longer a
+   Lean-side divergence — the only remaining Lean under-approximation is the **pure-builder**
+   pin (`q1` free in the scheme vs. `∅` in `partialFixed`), liftable via Open Question 3.
+
+   <details><summary>Original counterexample (machine-checked, pre-fix)</summary>
+
+   A closed program well-typed by the **reference analyzer** bad-crashed. Confirmed on all
+   three legs:
    - **Typing (reference analyzer, executed via nix `gleam 1.17.0`):** the gleam `fix` scheme
      `(q0→⟨q1⟩q0)→⟨q1⟩q0` (`contextual.gleam:530`) leaves the fixpoint `q0` free. Running
      `j.infer` on `!fix((x) -> { !int_add(x, 1) })` gives top-level `#(Ok(Nil), "Integer", "")`
@@ -882,12 +894,13 @@ recorded here so the rationale is not lost:
    the **arrow-fixpoint** fragment (`q0 = D→⟨γ⟩R`), which is what `HasTypeV.partialFixed` enforces
    and which covers all real recursion (the arrow-typed `fix (\self. \n. …)` infers fine). This
    is the classic call-by-value-`fix`-at-a-base-type unsoundness; the remedy is to restrict
-   `fix`'s fixpoint to function types (or make the recursive binding lazy). **Consequence:** the
-   general `FixPreserves` can never be discharged; fully discharging `fix` *requires* an
-   arrow-fixpoint scheme restriction — a **deviation from the gleam reference**, hence a **design
-   decision for the EYG owner** (it narrows what "well-typed" means vs. the analyzer). Open
-   Question 3's general subsumption is *orthogonal* (effectful builders, not the base-type gap)
-   and does not by itself discharge `fix`.
+   `fix`'s fixpoint to function types (or make the recursive binding lazy).
+
+   </details>
+
+   (Post-fix: the general `FixPreserves`/`FixNoBadCrash` remain isolated hypotheses,
+   dischargeable for the **pure-builder** fragment via `partialFixed`; effectful builders
+   (`q1 ≠ ∅`) await Open Question 3's effect-row subsumption.)
 
 ## Do we have what we need? (answer to the prompt's question)
 
