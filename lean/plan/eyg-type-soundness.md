@@ -623,6 +623,12 @@ for the **whole** core language.
       `progress/2026-06-16-T6b-fix-scoping.md`: it needs a bespoke `HasTypeV.partialFixed`
       rule + a ~5-site `HasTypeV` cascade (a self-contained mini-`Handle`, lower risk than
       real `Handle` — no continuation capture/row discharge), deferred as its own slice.
+      **Effect-weakening foundation for `fix` DELIVERED** (2026-06-17): `EffSub`
+      (`Eyg/Types/EffSub.lean`, see Open Question 3 +
+      `progress/2026-06-17-T6b-effsub-foundation.md`) — the row-subsumption relation
+      finding 3 demands; `effSub_empty` types the `fix` pure-builder application under the
+      effectful recursion ambient. The `StackWf` weakening variant that consumes it is the
+      remaining step before `partialFixed`.
 - [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
 
 ## Milestone T7 — Packaging & corollaries
@@ -793,7 +799,14 @@ recorded here so the rationale is not lost:
    metatheory. A core type-system change (touches `StackWf` and likely `HasType.app`),
    comparable in weight to `Handle`. Full diagnosis in
    `progress/2026-06-16-T6b-fix-scoping.md` (finding 3); it subsumes the earlier
-   effect-consistency concern.
+   effect-consistency concern. **FOUNDATION DELIVERED** (2026-06-17,
+   `progress/2026-06-17-T6b-effsub-foundation.md`): the `EffSub` (effect subrow)
+   relation + its metatheory (`Eyg/Types/EffSub.lean`, green, axiom-clean, additive) —
+   `effSub_refl`/`trans`, **`effSub_empty`** (the pure-function-under-effectful-ambient
+   key), `tyEquiv_effSub` compat, guarded `effSub_extend`, `effContains_mono`,
+   `effContains_extend_inv`. Membership-based, so effect safety survives weakening by
+   construction. **Remaining:** the *consuming* slice — a weakening `StackWf.applyf`/
+   `callwith` variant (`ε_f ⊑ ε`) + re-greened application preservation/progress.
 
 ## Do we have what we need? (answer to the prompt's question)
 
