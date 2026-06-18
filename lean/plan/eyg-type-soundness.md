@@ -468,22 +468,26 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > results). The `ε`-free value + no-bad-crash soundness is **unconditional for the full
 > language including `Handle`** (modulo `Fix*`).
 >
-> **➡ NEXT — discharge `TauKeepsRow` (T7 RowEvolves; base-row engine + keystone DELIVERED
-> 2026-06-18, `progress/2026-06-18-T7-rowevolves-Bpreservation-delivered.md`).** The whole
-> base-row **preservation engine** is now proved and on the branch: `StackWfB` (+ a `conv`
-> constructor, the seven `stackWfB_*_inv`, `stackWfB_toStackWf`), the dispatch B-lemmas
-> (`stackSeg_toStackWfB`/`resume`/`install`/`perform_walk_B`/…), **`preservation_E_B`/`_V_B`/
-> `preservation_tau_B`** (`εbot` invariant across `.tau`; the builtin-saturation case isolated as
-> the *true, dischargeable* hypothesis **`BuiltinAppPreservesB`**, which **replaces the false
-> `TauKeepsRow`**), the escape boundary (`doPerformR_unhandled_noHandler`,
-> `mStateWfB_perform_escape`), and the **keystone `soundnessR_effect_B`** + `soundness_evalR_effect_B`
-> — effect safety over `evalR` **with no `TauKeepsRow`** (axioms clean, spec 104/104). **Remaining
-> (mechanical):** (i) re-thread the 15 `hkeep` consumers to `MStateWfB`+`hsatB` and delete
-> `TauKeepsRow` — `evalR`-level (no reply) is a direct redirect to `soundnessR_effect_B`; the
-> `BehaviorsR` divergence/`mTr`/`suspended` results need a `preservation_keep_B` whose **reply**
-> case uses a `ReplyContractB εbot` + a `stackWfB_escape` strengthened to carry the reply
-> `TyEquiv` (the one design point — links `εtop`'s reply type to the world's `εbot` contract);
-> (ii) discharge `BuiltinAppPreservesB` by re-running the T6b per-arity machinery threading `εbot`.
+> **✅ `TauKeepsRow` ELIMINATED (T7 RowEvolves; 2026-06-18, 6 commits,
+> `progress/2026-06-18-T7-rowevolves-Bpreservation-delivered.md`).** The false `TauKeepsRow`
+> hypothesis is **deleted**: the row-dependent soundness results (effect escape / divergence /
+> suspension / reply-containing terminating traces) are now **unconditional in `TauKeepsRow`**,
+> gated only on the *true, dischargeable* `BuiltinAppPreservesB` (+ pre-existing `Fix*`). Built
+> via the base-row engine — `StackWfB` (+ `conv`, the seven `stackWfB_*_inv`, `stackWfB_toStackWf`),
+> the dispatch B-lemmas (`stackSeg_toStackWfB`/`resume`/`install`/`perform_walk_B`/…),
+> `preservation_E_B`/`_V_B`/`preservation_tau_B`/`preservation_keep_B`, the escape boundary
+> (`stackWfB_escape` with the reply-`TyEquiv` link, `noHandlerFor` baked into `MStateWfB.wait`,
+> `mStateWfB_perform_escape`), and `soundnessR_effect_B` — then re-threaded all 15 consumers
+> (`soundness`/`soundness_behaviorsR_diverges`/`_suspended`/`_terminates_*`/`soundness_evalR`/
+> `pure_*`) to `MStateWfB`+`hsatB`. Axioms clean (`propext`/`Classical.choice`/`Quot.sound`), no
+> new `axiom`s, `lake build` 1771 + `lake exe spec` 104/104.
+>
+> **➡ NEXT — discharge `BuiltinAppPreservesB`** (the one isolated hypothesis this milestone
+> added). A ~160-line **mechanical mirror** of the T6b machinery (template in the progress note):
+> `builtinApp_arity1_B`/`_arity2_B` (copy + `StackWf`→`StackWfB`, drop the `.done value` clause —
+> the builtin successor lands on the same `rest`, so the input `StackWfB` is reused),
+> `builtinAppPreservesB : FixPreservesB → BuiltinAppPreservesB` (the `scheme_cases` dispatch), then
+> `_B_fix` wrappers so `soundness` ends up gated only on `Fix*` (matching the ε-free results).
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership

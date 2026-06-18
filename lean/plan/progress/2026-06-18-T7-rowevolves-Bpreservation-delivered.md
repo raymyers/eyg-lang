@@ -1,16 +1,18 @@
 ---
 date: 2026-06-18
-milestone: T7 — discharge `TauKeepsRow` (base-row preservation engine + effect-escape keystone DELIVERED)
-status: KEYSTONE DELIVERED — full consumer re-thread (remove `TauKeepsRow`) remains
+milestone: T7 — `TauKeepsRow` ELIMINATED (base-row preservation engine + full consumer re-thread)
+status: DONE — `TauKeepsRow` removed; row-dependent soundness unconditional (modulo `BuiltinAppPreservesB`/`Fix*`)
 ---
 
-# T7 RowEvolves — base-row preservation + `soundnessR_effect_B` delivered
+# T7 RowEvolves — `TauKeepsRow` eliminated
 
-Builds on `2026-06-18-T7-rowevolves.md` (the design). The **base-row preservation engine and
-the effect-escape keystone are now proved and on the branch** (4 commits). The honest
-effect-escape soundness (`op` escapes ⇒ `op ∈ ε_init`) holds **without `TauKeepsRow`**, modulo
-only the dischargeable `BuiltinAppPreservesB`. What remains is the *mechanical-but-voluminous*
-re-thread of the ~15 `hkeep`-gated consumers to actually delete `TauKeepsRow`.
+Builds on `2026-06-18-T7-rowevolves.md` (the design). The **base-row preservation engine, the
+effect-escape keystone, AND the full consumer re-thread are done** (6 commits). The false
+`TauKeepsRow` hypothesis is **deleted** from the codebase; the row-dependent soundness results
+(effect escape / divergence / suspension / reply-containing traces) are now **unconditional in
+`TauKeepsRow`**, gated only on the *true, dischargeable* `BuiltinAppPreservesB` (+ the
+pre-existing `Fix*`). All headline theorems axiom-clean; `lake build` 1771 + `lake exe spec`
+104/104.
 
 ## Delivered (commits on `lean-cslib-subproject`)
 
@@ -37,50 +39,44 @@ re-thread of the ~15 `hkeep`-gated consumers to actually delete `TauKeepsRow`.
    `mStateWfB_perform_escape`. Axioms clean (`propext`/`Classical.choice`/`Quot.sound`);
    `lake build` 1771 + `lake exe spec` 104/104; no `sorry`, no new `axiom`s.
 
-## Remaining: re-thread the 15 `hkeep` consumers, then delete `TauKeepsRow`
+## Consumer re-thread — DONE (commit "remove TauKeepsRow")
 
-`TauKeepsRow` is still *defined* and taken by 15 theorems (grep `(hkeep : TauKeepsRow`):
-`preservation_keep_fix`, `soundnessR_effect` (superseded by `_B`), `soundness_evalR`,
-`pure_no_perform_evalR`, `soundness_evalR_pure`, `soundness_behaviorsR_suspended`, `ωTr_all_wf`,
-`ωTr_effect_safe`, `soundness_behaviorsR_diverges`, `mTr_terminal_wf`,
-`soundness_behaviorsR_terminates_value`/`_noBadCrash`, `pure_no_suspend_behaviorsR`,
-`pure_no_perform_diverges`, `soundness` (headline). Each must swap `MStateWf`+`hkeep` for
-`MStateWfB`+`hsatB`, concluding `op ∈ εbot` off the escape instead of `op ∈ ε` off `hkeep`.
+All 15 `hkeep` consumers were swapped to `MStateWfB`+`hsatB` and `TauKeepsRow`/`preservation_keep_fix`/
+the old `soundnessR_effect` deleted. Key new pieces:
+- **`preservation_keep_B`** (tau→`preservation_tau_B`, perform→`preservation_perform_B`, reply→the
+  world `ReplyContract εbot` reply, re-typed at the stack's expected reply type).
+- The **reply subtlety** was resolved as predicted: `stackWfB_escape` strengthened to return the
+  reply `TyEquiv` link (`∃ a' b', EffContains εbot op a' b' ∧ TyEquiv a a' ∧ TyEquiv b b'`), and
+  **`noHandlerFor op k` baked into `MStateWfB`'s `wait` clause** (waits only arise from escaped
+  performs — `preservation_perform_B`/`reduceCall_perform_wait_B` now establish it), so the reply
+  case reflects `op ∈ εbot` and re-types the reply at `replyTy ≈ b ≈ b'`.
+- **`mStateWfB_toMStateWf`** (forget `εbot`) lets the `MStateWf`-stated terminal lemmas
+  (`reduce1Run_done_value_typed`, `progress_fix`) consume the base-row-tracked terminal state.
 
-**Two sub-cases, by difficulty:**
+## Remaining: discharge `BuiltinAppPreservesB`
 
-- **`evalR`-level (no reply) — easy.** `soundness_evalR`/`pure_no_perform_evalR`/`soundness_evalR_pure`
-  only see `tau`+`perform` (closed `evalR` never replies). Redirect their effect arm to
-  `soundnessR_effect_B` (start from `mStateWfB_initial`); thread `hsatB` instead of `hkeep`. The
-  value/no-bad-crash arms are already unconditional (`FixPreserves`/`FixNoBadCrash`). Mechanical.
-
-- **`BehaviorsR`-level with reply (divergence / mTr / suspended) — one subtlety.** `ωTr_all_wf`/
-  `mTr_terminal_wf` fold `preservation_keep_fix` over traces that contain `reply` labels, so they
-  need a **`preservation_keep_B`** (tau→`preservation_tau_B`, perform→`(preservation_perform_B …).1`,
-  **reply→a `ReplyContractB`**). The reply case is the only real design point:
-  - the `wait` is typed with **`εtop`'s** op-membership reply `b` (stack expects `replyTy ≈ b`),
-    but the world's reply contract is naturally about the **declared `εbot`** (`= ε_init`).
-  - so the reply value typed at `εbot`'s reply `b''` must be re-typed at `replyTy ≈ b`. This needs
-    **`b ≈ b''`**, i.e. the `εtop→εbot` membership transfer must carry the reply **`TyEquiv`**.
-  - **Action:** strengthen `stackWfB_escape` to return `∃ a' b', EffContains εbot op a' b' ∧
-    TyEquiv a a' ∧ TyEquiv b b'` (the proof already has these links — `tyEquiv_effContains_mp`
-    returns them; they are currently dropped with `_`). Then `ReplyContractB εbot` + the link
-    types the reply at `replyTy`. With `preservation_keep_B`, mirror `ωTr_all_wf`/`ωTr_effect_safe`/
-    `soundness_behaviorsR_diverges`/`mTr_terminal_wf`/`_terminates_*`/`_suspended`/`pure_*` as `_B`.
-
-Finally delete `TauKeepsRow`/`preservation_keep_fix` and point `soundness` at the `_B` chain. Net:
-the row-dependent effect-safety / divergence / suspension results become unconditional in
-`TauKeepsRow` (gated only on `BuiltinAppPreservesB` + `Fix*`, both true & dischargeable).
-
-## Then: discharge `BuiltinAppPreservesB`
-
-The `.tau` builtin-saturation base-row obligation. The non-`B` `BuiltinAppPreserves` is *proven*
+The single isolated hypothesis introduced this milestone (besides the pre-existing `Fix*`). The
+`.tau` builtin-saturation base-row obligation. The non-`B` `BuiltinAppPreserves` is *proven*
 (`builtinAppPreserves : FixPreserves → BuiltinAppPreserves`); the B-form re-runs the same T6b
-per-arity machinery (`builtinApp_arity1/2`, `scheme_cases`, the saturate/accumulate split)
-threading `εbot` — the successor lands on `rest` (general builtins) or pushes `fixed` frames, so
-`εbot` is preserved structurally. Mechanical; isolate `FixPreservesB` like `FixPreserves`.
+per-arity machinery threading `εbot`, **and is a ~160-line mechanical mirror** with a clear
+template:
+- **`builtinApp_arity1_B`/`_arity2_B`** — copy `builtinApp_arity1/2` with `StackWf`→`StackWfB`,
+  result `MStateWf`→`MStateWfB`, **drop the `.done value` clause** (only the `.tau` half is in
+  `BuiltinAppPreservesB`). The successor is always `(.V value/partial, env, rest)` — same `rest` —
+  so the input `hstB : StackWfB rest …` is reused verbatim; the value typing (`hrunTy`/
+  `partialBuiltin`) is identical to the non-`B` driver.
+- **`builtinAppPreservesB : FixPreservesB → BuiltinAppPreservesB`** — copy `builtinAppPreserves`'s
+  `scheme_cases` dispatch (16 arms), calling `_arity{1,2}_B`; `partialFixed`→`fixed_reapply_preserves_B`;
+  `fix`→`hfixB`. Define `FixPreservesB` like `FixPreserves` (the `fix`-creation `.tau`, `MStateWfB`).
+- **Wire it like the non-`B` chain:** add `_B_fix` wrappers that take `FixPreserves`/`FixNoBadCrash`/
+  `FixPreservesB` and discharge `BuiltinAppPreservesB` internally via `builtinAppPreservesB`, so the
+  headline `soundness` ends up gated only on `Fix*` (matching the ε-free results). `FixPreservesB`
+  is satisfiable for the pure-builder fragment exactly like `FixPreserves` (Open Question 3 fork
+  for effectful builders).
 
 ## Verified this pass
-- All 4 commits: `lake build` 1771 green, `lake exe spec` 104/104, axioms clean, no new `axiom`s.
+- All 6 commits: `lake build` 1771 green, `lake exe spec` 104/104, axioms clean, no new `axiom`s.
 - The `StackSegWf`-needs-no-B insight held: every dispatch B-lemma reused the segment machinery
   verbatim, only threading `εbot` on the base — kept the mirrors purely mechanical.
+- `#print axioms soundness`/`_behaviorsR_diverges`/`_terminates_value`/`soundness_evalR` →
+  `propext`/`Classical.choice`/`Quot.sound` only, with **no `TauKeepsRow`** in scope.
