@@ -57,13 +57,39 @@ Adding the rule is the build-breaking, atomic part (a new `HasType` constructor 
 2. `inv_let_poly` + extend `hasType_expr_form`'s `Let` disjunct to cover `let_poly`.
 3. Preservation: the `Let`-eval-step (push `Assign`) is rule-agnostic; the **`Assign`-pop**
    case for a generalized binding uses `generalizes_closure_ready` to build `EnvWf.cons` for
-   `(x, s)`. The `StackWf`/`StackSegWf.assign` frame must carry a scheme (currently pins
-   `.mono defnTy`) — generalize it to an arbitrary `s` with the stored `Generalizes` witness.
+   `(x, s)`. The `StackWf`/`StackWfB`/`StackSegWf.assign` frame must carry a scheme (currently
+   pins `.mono defnTy`) — generalize it (or add a parallel `assignGen` constructor) to an
+   arbitrary `s` with the stored `Generalizes` witness. **~20 sites** across the three frame
+   typings and their B-mirrors / perform-walk cases — an atomic, all-or-nothing cascade
+   comparable in weight to `Handle`.
 4. Re-green `progress` (new `let_poly` node case — same reduction as `let_`).
 5. A typing `example` exercising polymorphic reuse (e.g. `let id = \x.x in (id 1, id "a")`).
 
 This cascade is the genuine multi-file slice; the keystone above is its hardest *semantic*
 lemma (closure polymorphic readiness without a value-substitution lemma), now banked green.
+
+## ⚠ Sharpened finding (surfaced this session) — the `Assign`-frame ↔ control invariant
+
+`generalizes_closure_ready` needs the lambda typed at the **specific** let-site `Γ`
+(`HasType Γ ⟨Lambda…⟩ defnTy ε` + `EnvWf fenv Γ`). But at the `Assign`-pop step the incoming
+value's typing is only `HasTypeV (Closure x' b' fenv) defnTy`, whose `HasTypeV.closure`
+inversion exposes an **existential** captured context `Γcap` (and `EnvWf` is non-unique), so
+the keystone is **not** directly applicable from the value typing — this is the same
+existential-capture wall the `eyg-type-soundness.md` T6 "deepened finding" named.
+
+Resolution (the design the next session must implement, *not* a mechanical edit): the
+generalized/`assignGen` frame must **store the let-site facts** — `Γ`, `EnvWf fenv Γ`, the
+lambda typing `HasType Γ ⟨Lambda x' b'⟩ defnTy ε`, the scheme `s`, `Generalizes s Γ defnTy`,
+and the body typing under `(x,s)::Γ` — and preservation must carry an **`MStateWf`-level
+invariant** linking the frame's stored lambda to the control between push and pop (the
+control *is* that lambda until it reduces, deterministically, to `Closure x' b' fenv`, which
+is exactly what the frame stores its `fenv`/lambda for). With those stored facts the
+existential `Γcap` from the value typing is **bypassed** — `generalizes_closure_ready` is fed
+the *stored* `Γ`-typing instead. This invariant (frame-remembers-its-value-shape) is the
+genuine remaining design work; the value restriction makes it tractable (the bound `defn` is
+syntactically a `λ`, reducing in one step), but it is a focused milestone slice, not a quick
+edit. The semantic keystone (`generalizes_closure_ready`) is what makes the payoff a one-liner
+once the stored `Γ`-typing is in hand.
 
 ## Verified
 - `lake build` 1772 jobs green; `lake exe spec` 104/104; `#print axioms` on the three new
