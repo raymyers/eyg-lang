@@ -1,0 +1,427 @@
+diff --git a/lean/Eyg/Types/Machine.lean b/lean/Eyg/Types/Machine.lean
+index 95de2520..ce1b3b70 100644
+--- a/lean/Eyg/Types/Machine.lean
++++ b/lean/Eyg/Types/Machine.lean
+@@ -115,7 +115,7 @@ theorem stackSeg_toStackWf {m : Type} {seg k : Stack m} {σin εin σmid εmid 
+     (hseg : StackSegWf seg σin εin σmid εmid) (hk : StackWf k σmid εmid τ) :
+     StackWf (seg ++ k) σin εin τ := by
+   induction seg generalizing σin εin with
+-  | nil => cases hseg; exact hk
++  | nil => cases hseg with | nil h1 h2 => exact StackWf.conv hk h1.symm h2.symm
+   | cons hd rest ih =>
+       obtain ⟨kont, ann⟩ := hd
+       cases hseg with
+diff --git a/lean/Eyg/Types/Runtime.lean b/lean/Eyg/Types/Runtime.lean
+index 1a8fd03b..2c79e360 100644
+--- a/lean/Eyg/Types/Runtime.lean
++++ b/lean/Eyg/Types/Runtime.lean
+@@ -222,7 +222,7 @@ delimited continuation that `Resume` captures (`acc`, re-pushed via `move`); see
+ only `delimit` shrinks it. In the `HasTypeV` mutual block because `partialResume`
+ references it and it references `HasTypeV`. -/
+ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop where
+-  | nil {σ ε} : StackSegWf [] σ ε σ ε
++  | nil {σ σ' ε ε'} : Ty.TyEquiv σ σ' → Ty.TyEquiv ε ε' → StackSegWf [] σ ε σ' ε'
+   | trace {a w rest σin εin σout εout} :
+       StackSegWf rest σin εin σout εout →
+       StackSegWf ((Kontinue.Trace w, a) :: rest) σin εin σout εout
+@@ -264,6 +264,103 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
+ 
+ end
+ 
++/-- **Value conversion** (derived): a value's type may be replaced by a
++`TyEquiv`-equal one. Each constructor already carries a `TyEquiv` to its natural
++type; compose it with `trans`. -/
++theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
++    (h : HasTypeV v τ) (heq : Ty.TyEquiv τ τ') : HasTypeV v τ' := by
++  cases h with
++  | int he => exact .int (he.trans heq)
++  | str he => exact .str (he.trans heq)
++  | bin he => exact .bin (he.trans heq)
++  | closure henv hbody he => exact .closure henv hbody (he.trans heq)
++  | partialBuiltin hs hp he => exact .partialBuiltin hs hp (he.trans heq)
++  | listNil he => exact .listNil (he.trans heq)
++  | listCons hh ht he => exact .listCons hh ht (he.trans heq)
++  | partialConsNil he => exact .partialConsNil (he.trans heq)
++  | partialConsOne hh he => exact .partialConsOne hh (he.trans heq)
++  | tagged hv he => exact .tagged hv (he.trans heq)
++  | partialTag he => exact .partialTag (he.trans heq)
++  | partialNoCases he => exact .partialNoCases (he.trans heq)
++  | partialMatchNil he => exact .partialMatchNil (he.trans heq)
++  | partialMatchOne hb he => exact .partialMatchOne hb (he.trans heq)
++  | partialMatchTwo hb ho he => exact .partialMatchTwo hb ho (he.trans heq)
++  | record hpres hmatch he => exact .record hpres hmatch (he.trans heq)
++  | partialSelect he => exact .partialSelect (he.trans heq)
++  | partialExtendNil he => exact .partialExtendNil (he.trans heq)
++  | partialExtendOne hvf he => exact .partialExtendOne hvf (he.trans heq)
++  | partialOverwriteNil he => exact .partialOverwriteNil (he.trans heq)
++  | partialOverwriteOne hvf he => exact .partialOverwriteOne hvf (he.trans heq)
++  | partialPerformNil he => exact .partialPerformNil (he.trans heq)
++  | partialFixed hb he => exact .partialFixed hb (he.trans heq)
++  | partialHandleNil he => exact .partialHandleNil (he.trans heq)
++  | partialHandleOne hh he => exact .partialHandleOne hh (he.trans heq)
++  | partialResume hseg he => exact .partialResume hseg (he.trans heq)
++
++/-- **Segment output-endpoint conversion.** The hole endpoints may be replaced by
++`TyEquiv`-equal ones. Simpler than input-conversion (the frame cases just thread to the
++tail; only the `nil` case composes). -/
++theorem stackSeg_conv_output {m : Type} {seg : Stack m} :
++    ∀ {σin εin σout εout σout' εout' : Ty},
++    StackSegWf seg σin εin σout εout → Ty.TyEquiv σout σout' → Ty.TyEquiv εout εout' →
++    StackSegWf seg σin εin σout' εout' := by
++  induction seg with
++  | nil =>
++      intro σin εin σout εout σout' εout' h hσ hε
++      cases h with | nil h1 h2 => exact .nil (h1.trans hσ) (h2.trans hε)
++  | cons hd rest ih =>
++      intro σin εin σout εout σout' εout' h hσ hε
++      obtain ⟨kont, ann⟩ := hd
++      cases h with
++      | trace h' => exact .trace (ih h' hσ hε)
++      | assign henv hbody h' => exact .assign henv hbody (ih h' hσ hε)
++      | arg henv harg hw h' => exact .arg henv harg hw (ih h' hσ hε)
++      | applyf hf hw h' => exact .applyf hf hw (ih h' hσ hε)
++      | callwith harg hw h' => exact .callwith harg hw (ih h' hσ hε)
++      | delimit hh he hweak h' => exact .delimit hh he hweak (ih h' hσ hε)
++
++/-- **Segment input-endpoint conversion.** A segment's input type/row may be replaced by
++`TyEquiv`-equal ones (the arrow frames invert with `tyEquiv_fun_inv'` + `HasTypeV.conv`;
++`assign` via `hasType_ctxHead_conv`; `delimit` folds the equiv into its membership row). -/
++theorem stackSeg_conv_input {m : Type} {seg : Stack m} :
++    ∀ {σin εin σout εout σin' εin' : Ty},
++    StackSegWf seg σin εin σout εout → Ty.TyEquiv σin' σin → Ty.TyEquiv εin' εin →
++    StackSegWf seg σin' εin' σout εout := by
++  induction seg with
++  | nil =>
++      intro σin εin σout εout σin' εin' h hσ hε
++      cases h with | nil h1 h2 => exact .nil (hσ.trans h1) (hε.trans h2)
++  | cons hd rest ih =>
++      intro σin εin σout εout σin' εin' h hσ hε
++      obtain ⟨kont, ann⟩ := hd
++      cases h with
++      | trace h' => exact .trace (ih h' hσ hε)
++      | assign henv hbody h' =>
++          exact .assign henv ((hasType_ctxHead_conv hbody hσ).conv (.refl _) hε.symm)
++            (ih h' (.refl _) hε)
++      | @arg _ arg fenv Γ argTy εf retTy εin₀ _ _ rest' henv harg hw h' =>
++          obtain ⟨a', e', r', rfl, ha', he', hr'⟩ := Ty.tyEquiv_fun_inv' hσ
++          have hw' : Ty.EffWeaken e' εin' := by
++            rcases Ty.effWeaken_tyEquiv_right hw hε.symm with h | h
++            · exact .inl (he'.trans h)
++            · exact .inr (he'.trans h)
++          exact .arg henv (harg.conv ha'.symm hε.symm) hw' (ih h' hr' hε)
++      | @applyf _ f fenv argTy εf retTy εin₀ _ _ rest' hf hw h' =>
++          have hf' : HasTypeV f (.fun σin' εf retTy) :=
++            hf.conv (.congrFun hσ.symm (.refl _) (.refl _))
++          exact .applyf hf' (Ty.effWeaken_tyEquiv_right hw hε.symm) (ih h' (.refl _) hε)
++      | @callwith _ arg fenv argTy εf retTy εin₀ _ _ rest' harg hw h' =>
++          obtain ⟨a', e', r', rfl, ha', he', hr'⟩ := Ty.tyEquiv_fun_inv' hσ
++          have hw' : Ty.EffWeaken e' εin' := by
++            rcases Ty.effWeaken_tyEquiv_right hw hε.symm with h | h
++            · exact .inl (he'.trans h)
++            · exact .inr (he'.trans h)
++          exact .callwith (harg.conv ha'.symm) hw' (ih h' hr' hε)
++      | @delimit _ l handler henv lift reply tail ret εin₀ εBelow _ _ rest' hh heq hweak h' =>
++          refine .delimit (hh.conv ?_) (hε.trans heq) hweak (ih h' hσ (.refl _))
++          exact .congrFun (.refl _) (.refl _)
++            (.congrFun (.congrFun (.refl _) (.refl _) hσ.symm) (.refl _) hσ.symm)
++
+ /-- **Segment composition** (the corrected `Resume` keystone). Two segments compose
+ end-to-end: the first's hole `(σmid, εmid)` is filled by the second. This *is*
+ provable across the row-changing `delimit` frame (the row is tracked per-endpoint),
+@@ -273,7 +370,7 @@ theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σou
+     (hseg : StackSegWf seg σin εin σmid εmid) (hk : StackSegWf k σmid εmid σout εout) :
+     StackSegWf (seg ++ k) σin εin σout εout := by
+   induction seg generalizing σin εin with
+-  | nil => cases hseg; exact hk
++  | nil => cases hseg with | nil h1 h2 => exact stackSeg_conv_input hk h1 h2
+   | cons hd rest ih =>
+       obtain ⟨kont, ann⟩ := hd
+       cases hseg with
+@@ -307,38 +404,6 @@ theorem envwf_lookup {m : Type} {env : Env m} {Γ : Ctx} {x : String} {s : Schem
+           · simp only [hxy] at hl ⊢
+             exact ih henv hl
+ 
+-/-- **Value conversion** (derived): a value's type may be replaced by a
+-`TyEquiv`-equal one. Each constructor already carries a `TyEquiv` to its natural
+-type; compose it with `trans`. -/
+-theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
+-    (h : HasTypeV v τ) (heq : Ty.TyEquiv τ τ') : HasTypeV v τ' := by
+-  cases h with
+-  | int he => exact .int (he.trans heq)
+-  | str he => exact .str (he.trans heq)
+-  | bin he => exact .bin (he.trans heq)
+-  | closure henv hbody he => exact .closure henv hbody (he.trans heq)
+-  | partialBuiltin hs hp he => exact .partialBuiltin hs hp (he.trans heq)
+-  | listNil he => exact .listNil (he.trans heq)
+-  | listCons hh ht he => exact .listCons hh ht (he.trans heq)
+-  | partialConsNil he => exact .partialConsNil (he.trans heq)
+-  | partialConsOne hh he => exact .partialConsOne hh (he.trans heq)
+-  | tagged hv he => exact .tagged hv (he.trans heq)
+-  | partialTag he => exact .partialTag (he.trans heq)
+-  | partialNoCases he => exact .partialNoCases (he.trans heq)
+-  | partialMatchNil he => exact .partialMatchNil (he.trans heq)
+-  | partialMatchOne hb he => exact .partialMatchOne hb (he.trans heq)
+-  | partialMatchTwo hb ho he => exact .partialMatchTwo hb ho (he.trans heq)
+-  | record hpres hmatch he => exact .record hpres hmatch (he.trans heq)
+-  | partialSelect he => exact .partialSelect (he.trans heq)
+-  | partialExtendNil he => exact .partialExtendNil (he.trans heq)
+-  | partialExtendOne hvf he => exact .partialExtendOne hvf (he.trans heq)
+-  | partialOverwriteNil he => exact .partialOverwriteNil (he.trans heq)
+-  | partialOverwriteOne hvf he => exact .partialOverwriteOne hvf (he.trans heq)
+-  | partialPerformNil he => exact .partialPerformNil (he.trans heq)
+-  | partialFixed hb he => exact .partialFixed hb (he.trans heq)
+-  | partialHandleNil he => exact .partialHandleNil (he.trans heq)
+-  | partialHandleOne hh he => exact .partialHandleOne hh (he.trans heq)
+-  | partialResume hseg he => exact .partialResume hseg (he.trans heq)
+ 
+ /-! ## Canonical forms
+ 
+diff --git a/lean/Eyg/Types/Soundness.lean b/lean/Eyg/Types/Soundness.lean
+index 13bf8659..3f723558 100644
+--- a/lean/Eyg/Types/Soundness.lean
++++ b/lean/Eyg/Types/Soundness.lean
+@@ -629,6 +629,166 @@ theorem install_preserves [BEq m] {l : String} {handler v : Value m}
+           (StackWf.delimit hhandler (hw.imp (fun h => heff.trans h) (fun h => heff.trans h))
+             (StackWf.conv hrest hr'.symm (.refl _)))⟩
+ 
++/-- No operation is a member of the empty effect row. -/
++theorem effContains_empty {l : String} {a b : Ty} (h : Ty.EffContains .empty l a b) : False := by
++  cases h
++
++/-- **`perform` dispatch — the stack walk (design §5).** `doPerformR` walks `rest`,
++accumulating the traversed frames into `acc` (the deep re-push), to the nearest matching
++`Delimit label`; on `.ok` the handled successor (`handler` applied to `arg : lift` then
++`resume : kontTy`) is well-typed. Proved by induction on `rest`: the invariant threads
++`StackWf rest σcur εcur τ`, the current operation binding `EffContains εcur label lift
++reply` (with `v : lift`), and the captured prefix as a segment `StackSegWf acc.reverse
++reply εtop σcur εcur`. Non-`Delimit` frames extend the segment (`stackSeg_append`, bridging
++the inversion `TyEquiv` slack via `stackSeg_conv_input/output`); a non-matching `Delimit l'`
++discharges `l'` and keeps `label` in the shrunk row; the matching `Delimit` builds the
++resume via the quantified `partialResume` and types the handler application. -/
++theorem perform_walk [BEq m] {label : String} {v : Value m} {iEnv : Env m} (rest : Stack m) :
++    ∀ {acc : Stack m} {σcur εcur εtop τ lift reply : Ty} {cfg' : Config m},
++      HasTypeV v lift →
++      StackWf rest σcur εcur τ →
++      Ty.EffContains εcur label lift reply →
++      StackSegWf acc.reverse reply εtop σcur εcur →
++      doPerformR label v iEnv rest acc = .ok cfg' →
++      ∃ ε', MStateWf (.run cfg') τ ε' := by
++  induction rest with
++  | nil => intro acc σcur εcur εtop τ lift reply cfg' _ _ _ _ hdp; simp [doPerformR] at hdp
++  | cons hd rest' ih =>
++      intro acc σcur εcur εtop τ lift reply cfg' hv hrest hmem hacc hdp
++      obtain ⟨kont, mt⟩ := hd
++      cases kont with
++      | Trace w =>
++          simp only [doPerformR] at hdp
++          have hacc' : StackSegWf ((Kontinue.Trace w, mt) :: acc).reverse reply εtop σcur εcur := by
++            rw [List.reverse_cons]; exact stackSeg_append hacc (.trace (.nil (.refl _) (.refl _)))
++          exact ih hv (stackWf_trace_inv hrest) hmem hacc' hdp
++      | Assign x body fenv =>
++          simp only [doPerformR] at hdp
++          obtain ⟨Γ, defnTy, bodyTy, ε0, hσ', hε', henv, hbody, hrest'⟩ := stackWf_assign_inv hrest
++          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
++          have hacc' : StackSegWf ((Kontinue.Assign x body fenv, mt) :: acc).reverse b' εtop
++              bodyTy ε0 := by
++            rw [List.reverse_cons]
++            exact stackSeg_append
++              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
++              (.assign henv hbody (.nil (.refl _) (.refl _)))
++          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
++      | Arg arg fenv =>
++          simp only [doPerformR] at hdp
++          obtain ⟨Γ, argTy, εfa, retTya, ε0, hσ', hε', henv, harg, hweff, hrest'⟩ :=
++            stackWf_arg_inv hrest
++          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
++          have hacc' : StackSegWf ((Kontinue.Arg arg fenv, mt) :: acc).reverse b' εtop
++              retTya ε0 := by
++            rw [List.reverse_cons]
++            exact stackSeg_append
++              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
++              (.arg henv harg hweff (.nil (.refl _) (.refl _)))
++          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
++      | Apply f fenv =>
++          simp only [doPerformR] at hdp
++          obtain ⟨argTy, εfa, retTya, ε0, hσ', hε', hf, hweff, hrest'⟩ := stackWf_applyf_inv hrest
++          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
++          have hacc' : StackSegWf ((Kontinue.Apply f fenv, mt) :: acc).reverse b' εtop
++              retTya ε0 := by
++            rw [List.reverse_cons]
++            exact stackSeg_append
++              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
++              (.applyf hf hweff (.nil (.refl _) (.refl _)))
++          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
++      | CallWith arg fenv =>
++          simp only [doPerformR] at hdp
++          obtain ⟨argTy, εfa, retTya, ε0, hσ', hε', harg, hweff, hrest'⟩ := stackWf_callwith_inv hrest
++          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
++          have hacc' : StackSegWf ((Kontinue.CallWith arg fenv, mt) :: acc).reverse b' εtop
++              retTya ε0 := by
++            rw [List.reverse_cons]
++            exact stackSeg_append
++              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
++              (.callwith harg hweff (.nil (.refl _) (.refl _)))
++          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
++      | Delimit l h e_ shallow =>
++          obtain ⟨lift_d, reply_d, tail_d, ret_d, εInner, rfl, hσ', hε', hweff, hh, hrest'⟩ :=
++            stackWf_delimit_inv hrest
++          by_cases hll : (l == label) = true
++          · -- matching Delimit: handled, build the resume
++            obtain rfl := eq_of_beq hll
++            simp only [doPerformR, hll, if_true] at hdp
++            -- εcur ≈ ⟨l:(lift_d,reply_d)|tail_d⟩, and label = l carries (lift,reply): so they match
++            obtain ⟨a', b', hmemH, hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
++            cases hmemH with
++            | head =>
++                -- a' = lift_d, b' = reply_d
++                cases hdp
++                refine ⟨εInner, _, hh, ?_⟩
++                -- stack: CallWith v :: CallWith resume :: rest', control = handler h
++                refine StackWf.callwith (hv.conv hla) (Ty.effWeaken_empty _) ?_
++                refine StackWf.callwith ?_ hweff hrest'
++                -- resume : kontTy reply_d tail_d ret_d
++                refine HasTypeV.partialResume (εtop := εtop) (fun εBelow hwB => ?_) (.refl _)
++                rw [List.reverse_cons]
++                exact stackSeg_append
++                  (stackSeg_conv_input (stackSeg_conv_output hacc hσ' (.refl _)) hrb.symm (.refl _))
++                  (.delimit hh hε' hwB (.nil (.refl _) (.refl _)))
++            | tail hne _ => exact absurd rfl hne
++          · -- non-matching Delimit l' ≠ label: walk past, discharge l'
++            simp only [doPerformR, hll, Bool.false_eq_true, if_false] at hdp
++            obtain ⟨a', b', hmemT, hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
++            -- label is in ⟨l:…|tail_d⟩ and l ≠ label, so it is in tail_d, hence in εInner
++            have hlne : l ≠ label := fun h => by subst h; simp at hll
++            have hmemTail : Ty.EffContains tail_d label a' b' := by
++              cases hmemT with
++              | head => exact absurd rfl hlne
++              | tail _ hc => exact hc
++            obtain ⟨a'', b'', hc, ha'', hb''⟩ :
++                ∃ a'' b'', Ty.EffContains εInner label a'' b'' ∧ Ty.TyEquiv a' a'' ∧
++                  Ty.TyEquiv b' b'' := by
++              rcases hweff with he | he
++              · exact Ty.tyEquiv_effContains_mp he hmemTail
++              · exact absurd (Ty.tyEquiv_effContains_mp he hmemTail)
++                  (fun ⟨_, _, hcc, _, _⟩ => effContains_empty hcc)
++            have hacc' : StackSegWf ((Kontinue.Delimit l h e_ false, mt) :: acc).reverse b'' εtop
++                ret_d εInner := by
++              rw [List.reverse_cons]
++              exact stackSeg_append
++                (stackSeg_conv_input (stackSeg_conv_output hacc hσ' (.refl _))
++                  (hrb.trans hb'').symm (.refl _))
++                (.delimit hh hε' hweff (.nil (.refl _) (.refl _)))
++            exact ih (hv.conv (hla.trans ha'')) hrest' hc hacc' hdp
++
++/-- **`perform` dispatch DISCHARGED.** The handled-`perform` successor is well-typed —
++the last `HandlerObligations` field, proved via `perform_walk`. -/
++theorem perform_preserves [BEq m] {label : String} {v : Value m} {ann : m} {fenv : Env m}
++    {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m}
++    (hperf : HasTypeV (.Partial (.Perform label) [] : Value m) (.fun argTy εf retTy))
++    (hv : HasTypeV v argTy) (hw : Ty.EffWeaken εf ε) (hrest : StackWf rest retTy ε τ)
++    (hr : reduceCall (.Partial (.Perform label) []) v ann fenv rest = .tau cfg') :
++    ∃ ε', MStateWf (.run cfg') τ ε' := by
++  cases hperf with
++  | @partialPerformNil _ argTy' replyTy' μ _ he =>
++      obtain ⟨ha, heff, hr'⟩ := Ty.tyEquiv_fun_components he
++      -- εf ≈ ⟨label:(argTy',replyTy')|μ⟩, so the exact disjunct of EffWeaken holds and label ∈ ε
++      obtain ⟨a1, b1, hc1, e1a, e1b⟩ := Ty.tyEquiv_effContains_mp heff Ty.EffContains.head
++      obtain ⟨a2, b2, hmemE, e2a, e2b⟩ :
++          ∃ a2 b2, Ty.EffContains ε label a2 b2 ∧ Ty.TyEquiv argTy' a2 ∧ Ty.TyEquiv replyTy' b2 := by
++        rcases hw with hwe | hwe
++        · obtain ⟨a2, b2, hc2, e2a, e2b⟩ := Ty.tyEquiv_effContains_mp hwe hc1
++          exact ⟨a2, b2, hc2, e1a.trans e2a, e1b.trans e2b⟩
++        · exact absurd (Ty.tyEquiv_effContains_mp hwe hc1)
++            (fun ⟨_, _, hcc, _, _⟩ => effContains_empty hcc)
++      -- extract `doPerformR … = .ok cfg'` from the `.tau` step
++      rw [show reduceCall (.Partial (.Perform label) []) v ann fenv rest
++          = reducePerform label v fenv rest from rfl, reducePerform] at hr
++      split at hr
++      · next p hdp =>
++          cases hr
++          -- v : a2 (= argTy' ≈ argTy); segment input b2 (≈ replyTy' ≈ retTy)
++          refine perform_walk rest (hv.conv (ha.symm.trans e2a)) hrest hmemE
++            (.nil ?_ (.refl _)) hdp
++          exact e2b.symm.trans hr'
++      · next hdp => exact absurd hr (by simp)
++      · next hdp => exact absurd hr (by simp)
++
+ /-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
+ application case is the crux; the builtin-application case defers to `hsat`; the three
+ effect-partial dispatches defer to `hho`. The successor row is an *output* `∃ε'` —
+diff --git a/lean/Eyg/Types/Typing.lean b/lean/Eyg/Types/Typing.lean
+index e1a8926c..f281074d 100644
+--- a/lean/Eyg/Types/Typing.lean
++++ b/lean/Eyg/Types/Typing.lean
+@@ -155,6 +155,73 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
+       HasType Γ e τ ε → Ty.TyEquiv τ τ' → Ty.TyEquiv ε ε' →
+       HasType Γ e τ' ε'
+ 
++/-- **Context-binding conversion** (depth-general). Replacing one binding's
++monomorphic type by a `TyEquiv`-equal one preserves typing. The `var` case at the
++converted binding bridges via the leaf `conv` rule (`instantiate (.mono σ) = σ`); the
++`lam`/`let_` cases extend the prefix `Δ` shadowing-aware. Needed by `stackSeg_conv_input`
++(the `Assign` segment frame). -/
++theorem hasType_ctxConv {m : Type} {Γ₀ : Ctx} {e : Tree.Node m} {τ ε : Ty}
++    (h : HasType Γ₀ e τ ε) :
++    ∀ (Δ Γ : Ctx) (x : String) (σ σ' : Ty),
++      Γ₀ = Δ ++ (x, .mono σ) :: Γ → Ty.TyEquiv σ' σ →
++      HasType (Δ ++ (x, .mono σ') :: Γ) e τ ε := by
++  induction h with
++  | @var Γ₁ y s args ε' a hl =>
++      intro Δ Γ x σ σ' heq hc; subst heq
++      rw [List.lookup_append] at hl
++      cases hΔ : Δ.lookup y with
++      | some v =>
++          rw [hΔ, Option.some_or] at hl; cases hl
++          exact HasType.var (by rw [List.lookup_append, hΔ, Option.some_or])
++      | none =>
++          rw [hΔ, Option.none_or] at hl
++          by_cases hyx : (y == x) = true
++          · simp only [List.lookup_cons, hyx] at hl; cases hl
++            -- s = .mono σ; target lookup gives .mono σ', bridge via conv
++            refine HasType.conv
++              (HasType.var (s := .mono σ') (args := args)
++                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx]))
++              ?_ (.refl _)
++            simp only [Scheme.instantiate_mono]; exact hc
++          · simp only [List.lookup_cons, hyx, Bool.false_eq_true] at hl ⊢
++            exact HasType.var (s := s) (args := args)
++              (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx,
++                Bool.false_eq_true]; exact hl)
++  | @lam Γ₁ z body argTy εb retTy ε' a hbody ih =>
++      intro Δ Γ x σ σ' heq hc; subst heq
++      exact HasType.lam (ih ((z, .mono argTy) :: Δ) Γ x σ σ' rfl hc)
++  | @app Γ₁ f arg argTy εf retTy ε' a hf hw harg ihf iharg =>
++      intro Δ Γ x σ σ' heq hc; subst heq
++      exact HasType.app (ihf Δ Γ x σ σ' rfl hc) hw (iharg Δ Γ x σ σ' rfl hc)
++  | @let_ Γ₁ z defn body defnTy bodyTy ε' a hdefn hbody ihdefn ihbody =>
++      intro Δ Γ x σ σ' heq hc; subst heq
++      exact HasType.let_ (ihdefn Δ Γ x σ σ' rfl hc)
++        (ihbody ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc)
++  | int => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.int
++  | str => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.str
++  | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.bin
++  | builtin hs => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.builtin hs
++  | tail => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.tail
++  | cons => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.cons
++  | tag => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.tag
++  | nocases => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.nocases
++  | case_ => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.case_
++  | select => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.select
++  | extend => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.extend
++  | overwrite => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.overwrite
++  | empty => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.empty
++  | perform => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.perform
++  | handle => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.handle
++  | @conv Γ₁ e' τ' τ'' ε₁ ε₂ hbody hτ hε ih =>
++      intro Δ Γ x σ σ' heq hc; subst heq
++      exact HasType.conv (ih Δ Γ x σ σ' rfl hc) hτ hε
++
++/-- The head-binding specialization (`Δ = []`), the form `stackSeg_conv_input` uses. -/
++theorem hasType_ctxHead_conv {m : Type} {Γ : Ctx} {e : Tree.Node m} {x : String}
++    {σ σ' τ ε : Ty} (h : HasType ((x, .mono σ) :: Γ) e τ ε) (hc : Ty.TyEquiv σ' σ) :
++    HasType ((x, .mono σ') :: Γ) e τ ε :=
++  hasType_ctxConv h [] Γ x σ σ' rfl hc
++
+ /-! ## Sanity checks: typing real fixtures
+ 
+ Each `example` is a derivation exercising the rules end-to-end (the closed terms
