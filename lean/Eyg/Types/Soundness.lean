@@ -2331,6 +2331,13 @@ inductive StackWfB {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop whe
       StackWfB rest ret εInner εbot τout →
       StackWfB ((Kontinue.Delimit l handler henv false, a) :: rest)
         ret (.effectExtend l lift reply tail) εbot τout
+  /-- **Conversion closure** (mirrors `StackWf.conv`): the input type and the *top*
+  ambient row may be replaced by `TyEquiv`-equal ones; the base row `εbot` is untouched.
+  The preservation re-thread needs `StackWfB` closed under conversion exactly as `StackWf`
+  is (the `Resume`/`Handle` frame typing produces `conv`-wrapped stacks). -/
+  | conv {k σ σ' εtop εtop' εbot τout} :
+      StackWfB k σ εtop εbot τout → Ty.TyEquiv σ σ' → Ty.TyEquiv εtop εtop' →
+      StackWfB k σ' εtop' εbot τout
 
 /-- The stack has no `Delimit` frame handling `op` (so a `perform op` walks past every
 `Delimit` and escapes to the base). -/
@@ -2367,6 +2374,121 @@ theorem stackWfB_escape {m : Type} {k : Stack m} {σ εtop εbot τ : Ty} {op : 
             exact ih hnh' hcI
           · obtain ⟨a', b', hcE, _, _⟩ := Ty.tyEquiv_effContains_mp htyeq hct
             exact (effContains_empty hcE).elim
+  | @conv _ _ _ εtop εtop' _ _ _ _ hε ih =>
+      intro a b hnh hc
+      obtain ⟨a', b', hc', _, _⟩ := Ty.tyEquiv_effContains_mp hε.symm hc
+      exact ih hnh hc'
+
+/-- **Forget the base row.** A `StackWfB` is in particular a `StackWf` at its *top* row
+(drop `εbot`; each constructor maps to the matching `StackWf` one). -/
+theorem stackWfB_toStackWf {m : Type} {k : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfB k σ εtop εbot τ) : StackWf k σ εtop τ := by
+  induction h with
+  | nil => exact .nil
+  | trace _ ih => exact .trace ih
+  | assign henv hbody _ ih => exact .assign henv hbody ih
+  | arg henv harg hw _ ih => exact .arg henv harg hw ih
+  | applyf hf hw _ ih => exact .applyf hf hw ih
+  | callwith harg hw _ ih => exact .callwith harg hw ih
+  | delimit hh hw _ ih => exact .delimit hh hw ih
+  | conv _ hσ hε ih => exact .conv ih hσ hε
+
+/-! ### `StackWfB` per-frame inversion lemmas
+
+The base-row analogues of the `stackWf_*_inv` lemmas (`Machine.lean`), folding the new
+`conv` constructor via `TyEquiv.trans`. The base row `εbot` is an extra passive output,
+unchanged by every non-`delimit` frame and recursed-into by `delimit`. -/
+
+theorem stackWfB_trace_inv {m : Type} {w : Value m} {a : m} {rest : Stack m}
+    {σ εtop εbot τ : Ty}
+    (h : StackWfB ((Kontinue.Trace w, a) :: rest) σ εtop εbot τ) :
+    StackWfB rest σ εtop εbot τ := by
+  generalize hs : ((Kontinue.Trace w, a) :: rest) = s at h
+  induction h with
+  | trace h' => cases hs; exact h'
+  | conv h' hσ hε ih => exact .conv (ih hs) hσ hε
+  | _ => simp at hs
+
+theorem stackWfB_assign_inv {m : Type} {x : String} {body : Tree.Node m} {fenv : Env m}
+    {a : m} {rest : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfB ((Kontinue.Assign x body fenv, a) :: rest) σ εtop εbot τ) :
+    ∃ Γ defnTy bodyTy εtop0, Ty.TyEquiv σ defnTy ∧ Ty.TyEquiv εtop εtop0 ∧ EnvWf fenv Γ ∧
+      HasType ((x, .mono defnTy) :: Γ) body bodyTy εtop0 ∧
+      StackWfB rest bodyTy εtop0 εbot τ := by
+  generalize hs : ((Kontinue.Assign x body fenv, a) :: rest) = s at h
+  induction h with
+  | assign henv hbody hrest =>
+      cases hs; exact ⟨_, _, _, _, .refl _, .refl _, henv, hbody, hrest⟩
+  | conv _ hσ hε ih =>
+      obtain ⟨Γ, dT, bT, ε0, hσ', hε', henv, hbody, hrest⟩ := ih hs
+      exact ⟨Γ, dT, bT, ε0, hσ.symm.trans hσ', hε.symm.trans hε', henv, hbody, hrest⟩
+  | _ => simp at hs
+
+theorem stackWfB_arg_inv {m : Type} {arg : Tree.Node m} {fenv : Env m} {a : m}
+    {rest : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfB ((Kontinue.Arg arg fenv, a) :: rest) σ εtop εbot τ) :
+    ∃ Γ argTy εf retTy εtop0, Ty.TyEquiv σ (.fun argTy εf retTy) ∧ Ty.TyEquiv εtop εtop0 ∧
+      EnvWf fenv Γ ∧ HasType Γ arg argTy εtop0 ∧ Ty.EffWeaken εf εtop0 ∧
+      StackWfB rest retTy εtop0 εbot τ := by
+  generalize hs : ((Kontinue.Arg arg fenv, a) :: rest) = s at h
+  induction h with
+  | arg henv harg hw hrest =>
+      cases hs; exact ⟨_, _, _, _, _, .refl _, .refl _, henv, harg, hw, hrest⟩
+  | conv _ hσ hε ih =>
+      obtain ⟨Γ, aT, εf, rT, ε0, hσ', hε', henv, harg, hw, hrest⟩ := ih hs
+      exact ⟨Γ, aT, εf, rT, ε0, hσ.symm.trans hσ', hε.symm.trans hε', henv, harg, hw, hrest⟩
+  | _ => simp at hs
+
+theorem stackWfB_applyf_inv {m : Type} {f : Value m} {fenv : Env m} {a : m}
+    {rest : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfB ((Kontinue.Apply f fenv, a) :: rest) σ εtop εbot τ) :
+    ∃ argTy εf retTy εtop0, Ty.TyEquiv σ argTy ∧ Ty.TyEquiv εtop εtop0 ∧
+      HasTypeV f (.fun argTy εf retTy) ∧ Ty.EffWeaken εf εtop0 ∧
+      StackWfB rest retTy εtop0 εbot τ := by
+  generalize hs : ((Kontinue.Apply f fenv, a) :: rest) = s at h
+  induction h with
+  | applyf hf hw hrest => cases hs; exact ⟨_, _, _, _, .refl _, .refl _, hf, hw, hrest⟩
+  | conv _ hσ hε ih =>
+      obtain ⟨aT, εf, rT, ε0, hσ', hε', hf, hw, hrest⟩ := ih hs
+      exact ⟨aT, εf, rT, ε0, hσ.symm.trans hσ', hε.symm.trans hε', hf, hw, hrest⟩
+  | _ => simp at hs
+
+theorem stackWfB_callwith_inv {m : Type} {arg : Value m} {fenv : Env m} {a : m}
+    {rest : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfB ((Kontinue.CallWith arg fenv, a) :: rest) σ εtop εbot τ) :
+    ∃ argTy εf retTy εtop0, Ty.TyEquiv σ (.fun argTy εf retTy) ∧ Ty.TyEquiv εtop εtop0 ∧
+      HasTypeV arg argTy ∧ Ty.EffWeaken εf εtop0 ∧ StackWfB rest retTy εtop0 εbot τ := by
+  generalize hs : ((Kontinue.CallWith arg fenv, a) :: rest) = s at h
+  induction h with
+  | callwith harg hw hrest => cases hs; exact ⟨_, _, _, _, .refl _, .refl _, harg, hw, hrest⟩
+  | conv _ hσ hε ih =>
+      obtain ⟨aT, εf, rT, ε0, hσ', hε', harg, hw, hrest⟩ := ih hs
+      exact ⟨aT, εf, rT, ε0, hσ.symm.trans hσ', hε.symm.trans hε', harg, hw, hrest⟩
+  | _ => simp at hs
+
+theorem stackWfB_delimit_inv {m : Type} {l : String} {handler : Value m} {henv : Env m}
+    {shallow : Bool} {a : m} {rest : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfB ((Kontinue.Delimit l handler henv shallow, a) :: rest) σ εtop εbot τ) :
+    ∃ lift reply tail ret εInner, shallow = false ∧ Ty.TyEquiv σ ret ∧
+      Ty.TyEquiv εtop (.effectExtend l lift reply tail) ∧ Ty.EffWeaken tail εInner ∧
+      HasTypeV handler (handlerTy lift reply tail ret) ∧
+      StackWfB rest ret εInner εbot τ := by
+  generalize hs : ((Kontinue.Delimit l handler henv shallow, a) :: rest) = s at h
+  induction h with
+  | delimit hh hw hrest =>
+      cases hs; exact ⟨_, _, _, _, _, rfl, .refl _, .refl _, hw, hh, hrest⟩
+  | conv _ hσ hε ih =>
+      obtain ⟨li, r, t, re, ei, hsh, hσ', hε', hweff, hh, hrest⟩ := ih hs
+      exact ⟨li, r, t, re, ei, hsh, hσ.symm.trans hσ', hε.symm.trans hε', hweff, hh, hrest⟩
+  | _ => simp at hs
+
+theorem stackWfB_nil_inv {m : Type} {σ εtop εbot τ : Ty}
+    (h : StackWfB ([] : Stack m) σ εtop εbot τ) : Ty.TyEquiv σ τ := by
+  generalize hs : ([] : Stack m) = s at h
+  induction h with
+  | nil => exact .refl _
+  | conv _ hσ hε ih => exact hσ.symm.trans (ih hs)
+  | _ => simp at hs
 
 /-- **`MStateWfB`** — the base-row-tracking analogue of `MStateWf`: the stack is typed by
 `StackWfB` carrying the bottom-of-stack row `εbot` (invariantly `ε_init` across a run), while
@@ -2386,6 +2508,16 @@ def MStateWfB {m : Type} : MState m → Ty → Ty → Prop
 theorem mStateWfB_initial {m : Type} {prog : Tree.Node m} {τ εinit : Ty}
     (h : HasType [] prog τ εinit) : MStateWfB (.run (Config.initial prog)) τ εinit :=
   ⟨[], τ, εinit, EnvWf.nil, h, StackWfB.nil⟩
+
+/-- Unfold `MStateWfB` on a running `.E` state. -/
+theorem mStateWfB_E {m : Type} {e : Tree.Node m} {env k τ εbot}
+    (h : MStateWfB (.run (.E e, env, k)) τ εbot) :
+    ∃ Γ τin εtop, EnvWf env Γ ∧ HasType Γ e τin εtop ∧ StackWfB k τin εtop εbot τ := h
+
+/-- Unfold `MStateWfB` on a running `.V` state. -/
+theorem mStateWfB_V {m : Type} {v : Value m} {env k τ εbot}
+    (h : MStateWfB (.run (.V v, env, k)) τ εbot) :
+    ∃ τin εtop, HasTypeV v τin ∧ StackWfB k τin εtop εbot τ := h
 
 /-- **Exact-row tau-preservation, isolated.** A silent step keeps the ambient row `ε`
 *exactly*. This holds for the **handler-discharge-free** fragment (pure/data/`Perform`/
