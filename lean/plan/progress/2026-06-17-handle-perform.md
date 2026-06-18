@@ -72,3 +72,42 @@ first (smaller surface), falling back to (2). The `perform` field stays isolated
 `HandlerObligations` until then; the ε-free value/no-bad-crash soundness is unconditional
 regardless. Tree green (no code change this pass; obstacle-1 `EffWeaken`-on-segment-frames
 remains banked from the prior pass).
+
+## ⚠ Update (next pass): fix (1) DELIVERED green; fix (2) is ALSO required (sharper finding)
+
+**Fix (1) — membership-based `StackSegWf.delimit` — DELIVERED** (commit `9542b082`,
+green, `lake build` 1771 jobs + spec 104/104). Implemented as `TyEquiv εin
+(.effectExtend l lift reply tail)` carried on the frame (input row up to reorder), the
+`StackSegWf.delimit` indexed by a free `εin`. `stackSeg_append` threads the equiv;
+`stackSeg_toStackWf`'s `delimit` case bridges to the head-based `StackWf.delimit` via
+`StackWf.conv (.delimit …) (.refl _) he.symm`. This resolves the **row-slack at
+`Delimit` boundaries** (the `εcur ≈ head-shaped` mismatch).
+
+**But tracing the full walk shows fix (2) is unavoidable too** — the membership-`delimit`
+only fixes the *row* slack; there is an independent **type slack at the segment frame
+junctions** that `value-conv` cannot fully absorb:
+
+- The walk is `induction` on the stack list, using the `stackWf_*_inv` lemmas (they fold
+  `conv`, giving each frame's data with `TyEquiv σ <frame-input>` + `TyEquiv ε ε0`).
+  Extending the captured segment `acc.reverse` by the next frame requires the junction
+  type to match **syntactically** (`stackSeg_append` middle endpoints), but inversion only
+  gives `TyEquiv`.
+- **`applyf`/`arg`/`delimit`** frames absorb the slack via **`HasTypeV.conv` on the frame
+  *value*** (convert the function value's *domain* `argTy → σ` with `.congrFun`; the frame
+  input then *is* `σ`). The row slack is absorbed by `StackWf.conv` on the tail (rows are
+  constant across non-`delimit` frames) and, at `delimit`, by membership (fix 1).
+- **`callwith` (and `assign`) CANNOT.** A `StackSegWf.callwith` frame's input is
+  structurally `.fun argTy εf retTy` (resp. `assign`'s `defnTy`); the walk only gives
+  `TyEquiv σ (.fun argTy εf retTy)`, and `σ` need not be *syntactically* an arrow (an
+  earlier `conv` frame can have reordered/renamed it). Value-conv lives on the stored value,
+  not the segment's *input endpoint*, so it cannot move `σ`→arrow there. This is exactly a
+  **segment input-endpoint `conv`**, i.e. fix (2).
+
+**Conclusion:** the walk needs BOTH — membership-`delimit` (done) for the row slack, and a
+**`StackSegWf` endpoint type-conv** for the `callwith`/`assign` junction slack. Fix (2) is
+the mutual-recursor re-architecture (`@StackSegWf.rec` with `True` motives for the other 3
+members, re-proving `stackSeg_append`/`stackSeg_toStackWf` with a `conv` case) — a real
+metatheory slice, the genuine remaining obstacle. The successor-typing half (handler applied
+to `arg`/`resume`, lift/reply via `EffContains` determinism) is still ready. Membership-
+`delimit` is banked and green regardless; `perform` stays the lone isolated
+`HandlerObligations` field. ε-free value/no-bad-crash soundness unconditional throughout.

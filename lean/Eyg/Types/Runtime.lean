@@ -254,12 +254,13 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
   ambient (the row-bridge for a pure-tail continuation invoked in an effectful context).
   **No `EnvWf` premise** — the frame's stored env is never used for typing (the handler is
   a self-contained value), and at `reduceDeep` the frame env is arbitrary. -/
-  | delimit {a l handler henv lift reply tail ret εBelow σout εout rest} :
+  | delimit {a l handler henv lift reply tail ret εin εBelow σout εout rest} :
       HasTypeV handler (handlerTy lift reply tail ret) →
+      Ty.TyEquiv εin (.effectExtend l lift reply tail) →
       Ty.EffWeaken tail εBelow →
       StackSegWf rest ret εBelow σout εout →
       StackSegWf ((Kontinue.Delimit l handler henv false, a) :: rest)
-        ret (.effectExtend l lift reply tail) σout εout
+        ret εin σout εout
 
 end
 
@@ -281,7 +282,7 @@ theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σou
       | arg henv harg hw h => exact .arg henv harg hw (ih h)
       | applyf hf hw h => exact .applyf hf hw (ih h)
       | callwith harg hw h => exact .callwith harg hw (ih h)
-      | delimit hh hweak h => exact .delimit hh hweak (ih h)
+      | delimit hh he hweak h => exact .delimit hh he hweak (ih h)
 
 /-! ## The lookup lemma (replaces the substitution lemma)
 
