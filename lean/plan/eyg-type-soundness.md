@@ -497,14 +497,26 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > builder needed). Removed from the headline; `soundness`/`soundness_evalR`/`soundness_evalR_pure`
 > now take **only the two preservation hypotheses `FixPreserves` + `FixPreservesB`**.
 >
-> **➡ NEXT — `FixPreserves`/`FixPreservesB` are the last isolated hypotheses** (Open Question 3
-> territory). Unlike the no-bad-crash side, these need the *typed successor* of `fix` creation,
-> i.e. `partialFixed`, which requires the **builder pure** (`∅` latent) — but the `fix` scheme
-> leaves `q1` free (effectful recursion). So they are dischargeable only for the **pure-builder**
-> fragment; the general (`q1 ≠ ∅`) discharge is the documented fork: (i) narrow the `fix` scheme to
-> a `∅`-latent builder (sound but **analyzer-divergent** — would reject valid effectful recursion,
-> a judgment call) or (ii) the general substitution-stable effect-row subsumption foundation
-> (Open Question 3, a major slice). Not a mechanical task — the next genuine research milestone.
+> **✅ `FixPreserves`/`FixPreservesB` DISCHARGED (2026-06-18) — headline soundness is now
+> UNCONDITIONAL.** Per the user's decision (fork (i): narrow the `fix` scheme to a `∅`-latent
+> **pure builder**, accepting analyzer-divergence — it rejects builder-side-effecting recursion the
+> reference analyzer accepts, but covers all standard curried recursion). Two changes were needed,
+> not one: (1) the pure-builder narrowing (`Builtins.scheme "fix"` `q1 → ∅`) handles the
+> **saturation** case (the partial's argument is exactly `partialFixed`'s pure builder); (2) a
+> newly-discovered **over-application gap** — `FixPreserves` was *unsatisfiable as stated* because
+> `fix`'s arrow return type let `partialBuiltin` type a fictional over-applied `Partial "fix" [b₀]`,
+> whose application accumulates to an untypeable partial — was closed by enforcing the (already
+> *intended*, never *enforced*) **strict-under-application invariant** `applied.length < arity` on
+> `HasTypeV.partialBuiltin` (bundled as `PartialBuiltinWf`), which forces `applied = []`. Then
+> `fixPreserves`/`fixPreservesB` are *proved* (the `fixed[builder]` successor types via
+> `partialFixed` + `applyf` with `retTy = self`), and the headline `soundness`/`soundness_evalR`/
+> `soundness_evalR_pure` re-pointed to supply them internally — they now take **only**
+> `HasType [] prog τ ε`. Axioms `propext`/`Classical.choice`/`Quot.sound`; no `sorry`; no new
+> `axiom`s; `lake build` 1772 + `lake exe spec` 104/104. The only remaining Lean-side
+> under-approximation vs. the reference analyzer is the pure-builder pin (effectful-builder `fix`
+> awaits Open Question 3's row subsumption); the **value/no-bad-crash/effect-safety soundness for
+> the full language is now hypothesis-free** (modulo that pure-builder fragment). Findings:
+> `progress/2026-06-18-fix-discharge-overapplication-blocker.md`.
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
@@ -885,12 +897,15 @@ checker / compiler.
       RowEvolves base-row engine — `StackWfB`/`preservation_*_B`/`stackWfB_escape`/
       `soundnessR_effect_B`; row-dependent soundness now gated on the `Fix*` family only;
       `progress/2026-06-18-T7-rowevolves-Bpreservation-delivered.md`).
-      **`FixNoBadCrash` discharged** ✅ (2026-06-18, `fixNoBadCrash` — fix creation never
-      crashes; headline now takes only `FixPreserves` + `FixPreservesB`).
-      **Remaining:** discharging the two *preservation* `fix` hypotheses
-      (`FixPreserves`/`FixPreservesB`) — the only isolated hypotheses left; they need a pure
-      builder, so the general (effectful) discharge is the Open Question 3 fork (scheme
-      narrowing vs. row subsumption).
+      **`FixNoBadCrash` discharged** ✅ (2026-06-18, `fixNoBadCrash`).
+      **`FixPreserves`/`FixPreservesB` DISCHARGED** ✅ (2026-06-18) — via the user-chosen
+      pure-builder `fix`-scheme narrowing **+** the strict-under-application invariant
+      (`PartialBuiltinWf`, closing the over-application gap that made the bare hypothesis
+      unsatisfiable). `fixPreserves`/`fixPreservesB` proved; headline `soundness`/`soundness_evalR`/
+      `soundness_evalR_pure` now take **only `HasType [] prog τ ε`** — *no isolated hypotheses
+      remain*. Axioms clean, no `sorry`, `lake build` 1772 + spec 104/104. The single residual
+      under-approximation vs. the reference analyzer is the pure-builder pin (effectful-builder
+      `fix` ⇒ Open Question 3). See `progress/2026-06-18-fix-discharge-overapplication-blocker.md`.
 
 ## Decisions made (baked into the milestones)
 

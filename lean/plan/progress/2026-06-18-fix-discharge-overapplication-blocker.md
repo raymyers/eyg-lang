@@ -1,8 +1,16 @@
 ---
 date: 2026-06-18
-milestone: T7 — `FixPreserves` discharge attempt (user chose: narrow fix scheme to pure builder)
-status: BLOCKED on a newly-discovered over-application gap; scheme narrowing alone is insufficient
+milestone: T7 — `FixPreserves`/`FixPreservesB` DISCHARGED (user chose: narrow fix scheme to pure builder)
+status: DONE — both changes landed; headline soundness now takes only `HasType [] prog τ ε`
 ---
+
+> **✅ RESOLVED (same day).** The over-application gap below was closed by enforcing the
+> strict-under-application invariant (`applied.length < arity`) on `HasTypeV.partialBuiltin`
+> (bundled as `PartialBuiltinWf`, so destructuring keeps one hypothesis). With that **plus** the
+> pure-builder narrowing, `fixPreserves`/`fixPreservesB` are *proved* and the headline
+> `soundness`/`soundness_evalR`/`soundness_evalR_pure` are **unconditional** (commit "Discharge
+> FixPreserves/FixPreservesB"). Axioms clean, no `sorry`, `lake build` 1772 + spec 104/104. The
+> analysis below stands as the record of *why* both changes were needed.
 
 # Discharging `FixPreserves` — the over-application gap (critical finding)
 
