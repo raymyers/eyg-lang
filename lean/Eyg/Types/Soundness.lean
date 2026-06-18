@@ -546,31 +546,18 @@ def BuiltinAppPreserves (m : Type) [BEq m] : Prop :=
     (∀ v, reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .done (.value v) →
         HasTypeV v τ)
 
-/-- **The three handler-dispatch obligations, isolated** (the T5 novel core — no
-precedent — plus the effect-weakening row-threading at `Delimit`). Each is the successor
-of applying an *effect* partial that takes a `.tau` step whose ambient row changes:
-* `perform` — a `Perform l` whose stack has a matching `Delimit`: `reducePerform` walks to
-  it, builds the reified `Resume`, dispatches to the handler. (The design's intended
-  isolated piece — the stack walk.)
-* `install` — a saturated `Handle l` (`reduceDeep`): push `Apply exec :: Delimit`, running
-  `exec ()` under the handled row. Subtle because `EffWeaken` may make the handle's scheme
-  `tail` differ from the runtime ambient.
-* `resume` — a `Resume acc` applied to a reply: re-push `move acc rest` (via
-  `stackWf_resume`), same `EffWeaken`/row subtlety.
-Each concludes the successor is well-typed at *some* row `ε'`. Isolated exactly like
-`BuiltinAppPreserves`/`FixPreserves`; threaded as one bundle to minimize plumbing.
-**`install` and `resume` are now DISCHARGED** (proved below as `install_preserves` via the
-generalized `StackWf.delimit`, and `resume_preserves` via the generalized
-`StackSegWf.delimit` + the quantified `partialResume`) and are no longer fields. The lone
-remaining field is **`perform`**, the genuinely hard stack-walk dispatch (design §5; recipe
-in `progress/2026-06-17-handle-segwf.md`). -/
-structure HandlerObligations (m : Type) [BEq m] : Prop where
-  perform : ∀ {label : String} {v : Value m} {ann : m} {fenv : Env m} {rest : Stack m}
-    {argTy εf retTy ε τ : Ty} {cfg' : Config m},
-    HasTypeV (.Partial (.Perform label) [] : Value m) (.fun argTy εf retTy) → HasTypeV v argTy →
-    Ty.EffWeaken εf ε → StackWf rest retTy ε τ →
-    reduceCall (.Partial (.Perform label) []) v ann fenv rest = .tau cfg' →
-    ∃ ε', MStateWf (.run cfg') τ ε'
+/-! **The three handler-dispatch obligations are now all DISCHARGED** (the T5 novel core —
+no precedent — plus the effect-weakening row-threading at `Delimit`), proved below and
+called directly from `preservation_V`:
+* `install` — saturated `Handle l` (`reduceDeep`): `install_preserves`, via the generalized
+  `StackWf.delimit` (row subsumption `tail ⊑ ε`).
+* `resume` — `Resume acc` applied to a reply: `resume_preserves`, via the generalized
+  `StackSegWf.delimit` + the quantified `partialResume`.
+* `perform` — `Perform l` whose stack has a matching `Delimit` (the stack walk to it,
+  building the reified `Resume`): `perform_preserves`/`perform_walk`, via the generalized
+  `StackSegWf.nil` + `stackSeg_conv_input`/`_output` + `hasType_ctxConv`.
+So there is no remaining handler-dispatch hypothesis — `preservation`/`progress`/`soundness*`
+no longer assume any `HandlerObligations`. -/
 
 /-! ### Discharging the handler dispatches
 
@@ -578,8 +565,8 @@ structure HandlerObligations (m : Type) [BEq m] : Prop where
 dispatches **fully generally** (no exact-row hypothesis), via the generalized
 `StackWf.delimit`/`StackSegWf.delimit` (which discharge a label from the *ambient* with
 `tail ⊑ ε`) and the discharge-row-quantified `partialResume`. They are called directly from
-`preservation_V`. Only the `perform` stack-walk dispatch remains isolated in
-`HandlerObligations` (design §5). -/
+`preservation_V`, as is the `perform` stack-walk dispatch (`perform_preserves`/`perform_walk`,
+design §5). All three handler dispatches are proved — no `HandlerObligations` hypothesis remains. -/
 
 /-- **`Resume` dispatch — fully general.** Feeding the reply `v` into the reified
 continuation `move acc rest` is well-typed at any ambient `ε`. The captured segment is
@@ -758,7 +745,7 @@ theorem perform_walk [BEq m] {label : String} {v : Value m} {iEnv : Env m} (rest
             exact ih (hv.conv (hla.trans ha'')) hrest' hc hacc' hdp
 
 /-- **`perform` dispatch DISCHARGED.** The handled-`perform` successor is well-typed —
-the last `HandlerObligations` field, proved via `perform_walk`. -/
+the last handler dispatch, proved via `perform_walk`; called directly from `preservation_V`. -/
 theorem perform_preserves [BEq m] {label : String} {v : Value m} {ann : m} {fenv : Env m}
     {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m}
     (hperf : HasTypeV (.Partial (.Perform label) [] : Value m) (.fun argTy εf retTy))
@@ -792,10 +779,11 @@ theorem perform_preserves [BEq m] {label : String} {v : Value m} {ann : m} {fenv
 
 /-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
 application case is the crux; the builtin-application case defers to `hsat`; the three
-effect-partial dispatches defer to `hho`. The successor row is an *output* `∃ε'` —
+effect-partial dispatches (`perform`/`install`/`resume`) are discharged directly. The
+successor row is an *output* `∃ε'` —
 it equals the ambient `ε` (up to `TyEquiv`) for the pure/data fragment, but **shrinks**
 across a `Delimit` pop and **grows** across a `reduceDeep` handler-install. -/
-theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m)
+theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
     {v : Value m} {env : Env m} {kont : Kontinue m} {ann : m} {rest : Stack m}
     {cfg' : Config m} {τ ε : Ty}
     (hwf : MStateWf (.run (.V v, env, (kont, ann) :: rest)) τ ε)
@@ -1271,7 +1259,7 @@ lands a well-typed `wait` (effect safety: `op ∈ ε`, `preservation_perform`); 
 resumes with a reply value typed by the `ReplyContract` (`hrep`) — vacuous for
 `tau`/`perform`, and never exercised by closed `evalR` (which makes `perform`
 terminal). -/
-theorem preservation [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m)
+theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
     {s s' : MState m} {μ : Label m} {τ ε : Ty}
     (hwf : MStateWf s τ ε) (hr : Reduce s μ s') (hrep : ReplyContract ε s μ) :
     ∃ ε', MStateWf s' τ ε' := by
@@ -1286,7 +1274,7 @@ theorem preservation [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObliga
           | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
           | cons kontann rest =>
               obtain ⟨kont, ann⟩ := kontann
-              exact preservation_V hsat hho hwf h
+              exact preservation_V hsat hwf h
   | perform h => exact ⟨ε, preservation_perform hwf h⟩
   | reply =>
       obtain ⟨a, b, replyTy, hEff, hbr, hStack⟩ := hwf
@@ -1297,7 +1285,7 @@ theorem preservation [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObliga
 machine moves keep the ambient `ε` (the `tau` case of `preservation` returns the same
 `ε`), which the `∃ ε'` wrapper of `preservation` hides — this variant exposes it, so a
 soundness fold can thread `ε` through a silent run (used by the effect-escape soundness). -/
-theorem preservation_tau [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m)
+theorem preservation_tau [BEq m] (hsat : BuiltinAppPreserves m)
     {cfg cfg' : Config m}
     {τ ε : Ty} (hwf : MStateWf (.run cfg) τ ε) (h : reduce1Run cfg = .tau cfg') :
     ∃ ε', MStateWf (.run cfg') τ ε' := by
@@ -1308,7 +1296,7 @@ theorem preservation_tau [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerOb
       cases k with
       | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
       | cons kontann rest =>
-          obtain ⟨kont, ann⟩ := kontann; exact preservation_V hsat hho hwf h
+          obtain ⟨kont, ann⟩ := kontann; exact preservation_V hsat hwf h
 
 /-! ## Soundness: a well-typed run never crashes; its result is typed
 
@@ -1466,7 +1454,7 @@ fuel-bounded evaluation, if it terminates with a value, terminates with a value 
 the answer type `τ` — the type is *preserved through the whole run* (modulo the T6
 builtin obligation `hsat`). Proof: fuel induction, `preservation` across each `tau`
 step, `reduce1Run_done_value_typed` at the terminal. -/
-theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObligations m) :
+theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) :
     ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {v : Value m},
       MStateWf (.run cfg) τ ε → evalR fuel cfg = .done (.value v) → HasTypeV v τ := by
   intro fuel
@@ -1478,7 +1466,7 @@ theorem soundness_value [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObl
       cases hrr : reduce1Run cfg with
       | tau cfg' =>
           rw [hrr] at h
-          obtain ⟨ε', hwf'⟩ := preservation hsat hho hwf (Reduce.tau hrr) trivial
+          obtain ⟨ε', hwf'⟩ := preservation hsat hwf (Reduce.tau hrr) trivial
           exact ih hwf' h
       | done o =>
           rw [hrr] at h
@@ -2235,18 +2223,18 @@ those for the entire general-builtin table, so the only residual builtin assumpt
 the stack-coupled `fix` (`FixPreserves`/`FixNoBadCrash`). -/
 
 /-- **Preservation** with the general-builtin obligation discharged (only `fix` left). -/
-theorem preservation_fix [BEq m] (hfix : FixPreserves m) (hho : HandlerObligations m)
+theorem preservation_fix [BEq m] (hfix : FixPreserves m)
     {s s' : MState m} {μ : Label m} {τ ε : Ty}
     (hwf : MStateWf s τ ε) (hr : Reduce s μ s') (hrep : ReplyContract ε s μ) :
     ∃ ε', MStateWf s' τ ε' :=
-  preservation (builtinAppPreserves hfix) hho hwf hr hrep
+  preservation (builtinAppPreserves hfix) hwf hr hrep
 
 /-- **Value soundness** with the general-builtin obligation discharged (only `fix` left). -/
-theorem soundness_value_fix [BEq m] (hfix : FixPreserves m) (hho : HandlerObligations m)
+theorem soundness_value_fix [BEq m] (hfix : FixPreserves m)
     (fuel : Nat) {cfg : Config m}
     {τ ε : Ty} {v : Value m} (hwf : MStateWf (.run cfg) τ ε)
     (h : evalR fuel cfg = .done (.value v)) : HasTypeV v τ :=
-  soundness_value (builtinAppPreserves hfix) hho fuel hwf h
+  soundness_value (builtinAppPreserves hfix) fuel hwf h
 
 /-- **Progress** with the general-builtin no-bad-crash obligation discharged (only `fix`
 left): a well-typed state steps, is a value, suspends on an in-row effect, or crashes
@@ -2264,18 +2252,18 @@ transparent `evalR` terminates with a value yields a value of the program's type
 end-to-end statement combining `mStateWf_initial` (a well-typed program is a well-typed
 initial state) with `soundness_value_fix`. Modulo the isolated `fix` obligation, this
 holds for the whole general-builtin language. -/
-theorem soundness_evalR_value [BEq m] (hfix : FixPreserves m) (hho : HandlerObligations m)
+theorem soundness_evalR_value [BEq m] (hfix : FixPreserves m)
     {prog : Tree.Node m}
     {τ ε : Ty} {v : Value m} (fuel : Nat) (hty : HasType [] prog τ ε)
     (h : evalR fuel (Config.initial prog) = .done (.value v)) : HasTypeV v τ :=
-  soundness_value_fix hfix hho fuel (mStateWf_initial hty) h
+  soundness_value_fix hfix fuel (mStateWf_initial hty) h
 
 /-- **No-bad-crash over `evalR`.** A well-typed config whose `evalR` terminates in a
 crash only ever reaches the *sanctioned* `Unrepresentable` trap — never a type-error
 crash (`Vacant`/`NotAFunction`/`NoMatch`/…). Fuel induction folding `preservation_fix`
 (step) and `progress_fix` (the terminal crash is `¬ IsBad`). -/
 theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hho : HandlerObligations m) :
+    :
     ∀ (fuel : Nat) {cfg : Config m} {τ ε : Ty} {r : Reason m},
       MStateWf (.run cfg) τ ε → evalR fuel cfg = .done (.crash r) → ¬ Reason.IsBad r := by
   intro fuel
@@ -2287,7 +2275,7 @@ theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadC
       cases hrr : reduce1Run cfg with
       | tau cfg' =>
           rw [hrr] at h
-          obtain ⟨ε', hwf'⟩ := preservation_fix hpres hho hwf (Reduce.tau hrr) trivial
+          obtain ⟨ε', hwf'⟩ := preservation_fix hpres hwf (Reduce.tau hrr) trivial
           exact ih hwf' h
       | done o =>
           rw [hrr] at h
@@ -2304,10 +2292,10 @@ theorem soundnessR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadC
 never terminates in a *bad* crash (only the sanctioned `Unrepresentable`), modulo the
 isolated `fix` obligation. -/
 theorem soundness_evalR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hho : HandlerObligations m)
+   
     {prog : Tree.Node m} {τ ε : Ty} {r : Reason m} (fuel : Nat) (hty : HasType [] prog τ ε)
     (h : evalR fuel (Config.initial prog) = .done (.crash r)) : ¬ Reason.IsBad r :=
-  soundnessR_noBadCrash hpres hbad hho fuel (mStateWf_initial hty) h
+  soundnessR_noBadCrash hpres hbad fuel (mStateWf_initial hty) h
 
 /-- **Exact-row tau-preservation, isolated.** A silent step keeps the ambient row `ε`
 *exactly*. This holds for the **handler-discharge-free** fragment (pure/data/`Perform`/
@@ -2375,7 +2363,7 @@ well-typed program's `evalR` at any fuel is: a timeout; a value of type `τ`; a
 `op ∈ ε`. Modulo the isolated `fix` obligation, this is whole-program soundness for the
 general-builtin language over the transparent evaluator. -/
 theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hho : HandlerObligations m) (hkeep : TauKeepsRow m)
+    (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ ε : Ty} (fuel : Nat) (hty : HasType [] prog τ ε) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
@@ -2386,10 +2374,10 @@ theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m
   | timeout => exact Or.inl rfl
   | done o =>
       cases o with
-      | value v => exact Or.inr (Or.inl ⟨v, rfl, soundness_evalR_value hpres hho fuel hty h⟩)
+      | value v => exact Or.inr (Or.inl ⟨v, rfl, soundness_evalR_value hpres fuel hty h⟩)
       | crash r =>
           exact Or.inr (Or.inr (Or.inl
-            ⟨r, rfl, soundness_evalR_noBadCrash hpres hbad hho fuel hty h⟩))
+            ⟨r, rfl, soundness_evalR_noBadCrash hpres hbad fuel hty h⟩))
   | effect op lift resume =>
       exact Or.inr (Or.inr (Or.inr ⟨op, lift, resume, rfl,
         soundnessR_effect hkeep hbad fuel (mStateWf_initial hty) h⟩))
@@ -2409,12 +2397,12 @@ row has only three `evalR` outcomes — timeout, a typed value, or a sanctioned
 `Unrepresentable` crash — *never* an emitted effect. The pure specialization of
 `soundness_evalR`. -/
 theorem soundness_evalR_pure [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hho : HandlerObligations m) (hkeep : TauKeepsRow m)
+    (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ : Ty} (fuel : Nat) (hty : HasType [] prog τ .empty) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
     (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) := by
-  rcases soundness_evalR hpres hbad hho hkeep fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
+  rcases soundness_evalR hpres hbad hkeep fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
   · exact Or.inl h
   · exact Or.inr (Or.inl h)
   · exact Or.inr (Or.inr h)
@@ -2431,25 +2419,25 @@ open-system T7 remainder, needing the `ReplyContract` across `reply` steps.) -/
 /-- **No bad crash in `BehaviorsR`.** A well-typed program never has a silent
 terminating behaviour that crashes badly. -/
 theorem soundness_behaviorsR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hho : HandlerObligations m)
+   
     {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {r : Reason m}
     (hty : HasType [] prog τ ε) (hsilent : ∀ μ ∈ trace, μ = Label.tau)
     (hmem : Behavior.terminates trace (.crash r) ∈ BehaviorsR (Config.initial prog)) :
     ¬ Reason.IsBad r := by
   obtain ⟨s', hmtr, hterm⟩ := hmem
   obtain ⟨fuel, hf⟩ := evalR_complete hmtr hsilent hterm _ rfl
-  exact soundness_evalR_noBadCrash hpres hbad hho fuel hty hf
+  exact soundness_evalR_noBadCrash hpres hbad fuel hty hf
 
 /-- **Typed value in `BehaviorsR`.** A well-typed program's silent terminating value
 behaviour yields a value of the program's type. -/
-theorem soundness_behaviorsR_value [BEq m] (hpres : FixPreserves m) (hho : HandlerObligations m)
+theorem soundness_behaviorsR_value [BEq m] (hpres : FixPreserves m)
     {prog : Tree.Node m} {τ ε : Ty} {trace : List (Label m)} {v : Value m}
     (hty : HasType [] prog τ ε) (hsilent : ∀ μ ∈ trace, μ = Label.tau)
     (hmem : Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog)) :
     HasTypeV v τ := by
   obtain ⟨s', hmtr, hterm⟩ := hmem
   obtain ⟨fuel, hf⟩ := evalR_complete hmtr hsilent hterm _ rfl
-  exact soundness_evalR_value hpres hho fuel hty hf
+  exact soundness_evalR_value hpres fuel hty hf
 
 /-- **Effect safety in `BehaviorsR` (open-boundary suspension).** A well-typed program
 that *suspends* at the boundary performing `op` does so on an operation **in its declared
@@ -2655,7 +2643,7 @@ open reply-containing terminating traces by `soundness_behaviorsR_terminates_val
 `_noBadCrash` (via `TraceRepliesOk`). All `BehaviorsR` shapes are now covered modulo the
 isolated `fix`. -/
 theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hho : HandlerObligations m) (hkeep : TauKeepsRow m)
+    (hkeep : TauKeepsRow m)
     {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
     (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →
         Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog) →
@@ -2666,8 +2654,8 @@ theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
     (∀ {trace : List (Label m)} {op : String} {lift : Value m},
         Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog) →
         ∃ a b, Ty.EffContains ε op a b) :=
-  ⟨fun hs hm => soundness_behaviorsR_value hpres hho hty hs hm,
-   fun hs hm => soundness_behaviorsR_noBadCrash hpres hbad hho hty hs hm,
+  ⟨fun hs hm => soundness_behaviorsR_value hpres hty hs hm,
+   fun hs hm => soundness_behaviorsR_noBadCrash hpres hbad hty hs hm,
    fun hm => soundness_behaviorsR_suspended hkeep hbad hty hm⟩
 
 end Eyg.Types
