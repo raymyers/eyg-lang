@@ -3414,6 +3414,43 @@ theorem soundnessR_effect [BEq m] (hkeep : TauKeepsRow m) (hbad : FixNoBadCrash 
             obtain ⟨rfl, _, _, _⟩ := by simpa only [ReduceStep.perform.injEq] using hc
             exact ha
 
+/-- **Effect safety over `evalR`, the honest row-evolution form (no `TauKeepsRow`).** If a
+well-typed config (tracked by `MStateWfB` at base row `εbot`) escapes by emitting `op`, then
+`op ∈ εbot` (the program's *declared* row). The fuel induction threads the **base** row with
+`preservation_tau_B` (the top row may grow/shrink across `Delimit`s, but `εbot` is invariant),
+and at the boundary `mStateWfB_perform_escape` reflects the escaped `op` down to `εbot` via
+`stackWfB_escape`. This discharges the row-dependent effect safety *unconditionally* in the
+sense that drops `TauKeepsRow` — modulo only the dischargeable `BuiltinAppPreservesB`. -/
+theorem soundnessR_effect_B [BEq m] (hsatB : BuiltinAppPreservesB m) :
+    ∀ (fuel : Nat) {cfg : Config m} {τ εbot : Ty} {op : String} {lift : Value m}
+      {resume : Value m → Config m},
+      MStateWfB (.run cfg) τ εbot → evalR fuel cfg = .effect op lift resume →
+      ∃ a b, Ty.EffContains εbot op a b := by
+  intro fuel
+  induction fuel with
+  | zero => intro cfg τ εbot op lift resume _ h; simp [evalR] at h
+  | succ n ih =>
+      intro cfg τ εbot op lift resume hwf h
+      rw [evalR_succ] at h
+      cases hrr : reduce1Run cfg with
+      | tau cfg' => rw [hrr] at h; exact ih (preservation_tau_B hsatB hwf hrr) h
+      | done o => rw [hrr] at h; simp [evalR] at h
+      | perform op' lift' envP kP =>
+          rw [hrr] at h
+          obtain ⟨rfl, rfl, _⟩ := by simpa only [Result.effect.injEq] using h
+          exact mStateWfB_perform_escape hwf hrr
+
+/-- **Whole-program effect safety (no `TauKeepsRow`).** A closed well-typed program whose
+`evalR` escapes emitting `op` does so on a declared effect `op ∈ ε`. The `mStateWfB_initial`
+entry (base row = the program's `ε`) plus `soundnessR_effect_B`. Modulo `BuiltinAppPreservesB`
+only — the false `TauKeepsRow` is gone. -/
+theorem soundness_evalR_effect_B [BEq m] (hsatB : BuiltinAppPreservesB m)
+    {prog : Tree.Node m} {τ ε : Ty} {op : String} {lift : Value m}
+    {resume : Value m → Config m} (fuel : Nat) (hty : HasType [] prog τ ε)
+    (h : evalR fuel (Config.initial prog) = .effect op lift resume) :
+    ∃ a b, Ty.EffContains ε op a b :=
+  soundnessR_effect_B hsatB fuel (mStateWfB_initial hty) h
+
 /-- **Whole-program soundness over `evalR` (the trichotomy + effect escape).** A closed
 well-typed program's `evalR` at any fuel is: a timeout; a value of type `τ`; a
 *sanctioned* `Unrepresentable` crash (never a type-error crash); or an emitted effect
