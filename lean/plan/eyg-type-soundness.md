@@ -482,12 +482,18 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > `pure_*`) to `MStateWfB`+`hsatB`. Axioms clean (`propext`/`Classical.choice`/`Quot.sound`), no
 > new `axiom`s, `lake build` 1771 + `lake exe spec` 104/104.
 >
-> **➡ NEXT — discharge `BuiltinAppPreservesB`** (the one isolated hypothesis this milestone
-> added). A ~160-line **mechanical mirror** of the T6b machinery (template in the progress note):
-> `builtinApp_arity1_B`/`_arity2_B` (copy + `StackWf`→`StackWfB`, drop the `.done value` clause —
-> the builtin successor lands on the same `rest`, so the input `StackWfB` is reused),
-> `builtinAppPreservesB : FixPreservesB → BuiltinAppPreservesB` (the `scheme_cases` dispatch), then
-> `_B_fix` wrappers so `soundness` ends up gated only on `Fix*` (matching the ε-free results).
+> **✅ `BuiltinAppPreservesB` DISCHARGED (same day).** `builtinApp_arity1_B`/`_arity2_B` +
+> `builtinAppPreservesB : FixPreservesB → BuiltinAppPreservesB` (the 16-arm `scheme_cases`
+> dispatch), `FixPreservesB` isolated like `FixPreserves`. The headline `soundness`/`soundness_evalR`/
+> `soundness_evalR_pure` re-pointed to take `FixPreserves`/`FixNoBadCrash`/`FixPreservesB` only —
+> **the same `Fix*` family as the ε-free results**. So the row-dependent soundness (effect escape /
+> divergence / suspension / reply traces) is now gated on `Fix*` alone, with **no `TauKeepsRow` and
+> no standalone saturation hypothesis**. Axioms clean, `lake build` 1771 + `lake exe spec` 104/104.
+>
+> **➡ NEXT — the `Fix*` family is the last isolated hypothesis** (Open Question 3 / 4 territory):
+> `FixPreserves`/`FixNoBadCrash`/`FixPreservesB` are the `fix`-*creation* obligations, satisfiable
+> for the **pure-builder** fragment; the effectful-builder discharge (`q1 ≠ ∅`) awaits the general
+> effect-row subsumption foundation (Open Question 3).
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
@@ -834,9 +840,14 @@ checker / compiler.
       `BehaviorsR` ✅; **`diverges` ω-effect-safety** (`soundness_behaviorsR_diverges`) ✅;
       `pure_no_perform` ✅; executable transfer documented ✅; axioms clean ✅; zero `sorry`
       ✅; `lake build` + `lake exe spec` green ✅; **reply-containing terminating traces**
-      (`soundness_behaviorsR_terminates_value`/`_noBadCrash`, via `TraceRepliesOk`) ✅.
-      **Remaining:** discharging the `fix` hypotheses (and the central `Handle`/`Delimit`
-      slice).
+      (`soundness_behaviorsR_terminates_value`/`_noBadCrash`, via `TraceRepliesOk`) ✅;
+      **`TauKeepsRow` ELIMINATED + `BuiltinAppPreservesB` discharged** ✅ (2026-06-18, the T7
+      RowEvolves base-row engine — `StackWfB`/`preservation_*_B`/`stackWfB_escape`/
+      `soundnessR_effect_B`; row-dependent soundness now gated on the `Fix*` family only;
+      `progress/2026-06-18-T7-rowevolves-Bpreservation-delivered.md`).
+      **Remaining:** discharging the `fix` hypotheses (`FixPreserves`/`FixNoBadCrash`/
+      `FixPreservesB`) — the only isolated hypotheses left, pending Open Question 3 for
+      effectful builders.
 
 ## Decisions made (baked into the milestones)
 

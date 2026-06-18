@@ -1,7 +1,7 @@
 ---
 date: 2026-06-18
-milestone: T7 — `TauKeepsRow` ELIMINATED (base-row preservation engine + full consumer re-thread)
-status: DONE — `TauKeepsRow` removed; row-dependent soundness unconditional (modulo `BuiltinAppPreservesB`/`Fix*`)
+milestone: T7 — `TauKeepsRow` ELIMINATED + `BuiltinAppPreservesB` DISCHARGED (headline gated on `Fix*` only)
+status: DONE — row-dependent soundness now depends only on the `Fix*` family (same as the ε-free results)
 ---
 
 # T7 RowEvolves — `TauKeepsRow` eliminated
@@ -53,26 +53,23 @@ the old `soundnessR_effect` deleted. Key new pieces:
 - **`mStateWfB_toMStateWf`** (forget `εbot`) lets the `MStateWf`-stated terminal lemmas
   (`reduce1Run_done_value_typed`, `progress_fix`) consume the base-row-tracked terminal state.
 
-## Remaining: discharge `BuiltinAppPreservesB`
+## `BuiltinAppPreservesB` — DISCHARGED (commit "discharge BuiltinAppPreservesB")
 
-The single isolated hypothesis introduced this milestone (besides the pre-existing `Fix*`). The
-`.tau` builtin-saturation base-row obligation. The non-`B` `BuiltinAppPreserves` is *proven*
-(`builtinAppPreserves : FixPreserves → BuiltinAppPreserves`); the B-form re-runs the same T6b
-per-arity machinery threading `εbot`, **and is a ~160-line mechanical mirror** with a clear
-template:
-- **`builtinApp_arity1_B`/`_arity2_B`** — copy `builtinApp_arity1/2` with `StackWf`→`StackWfB`,
-  result `MStateWf`→`MStateWfB`, **drop the `.done value` clause** (only the `.tau` half is in
-  `BuiltinAppPreservesB`). The successor is always `(.V value/partial, env, rest)` — same `rest` —
-  so the input `hstB : StackWfB rest …` is reused verbatim; the value typing (`hrunTy`/
-  `partialBuiltin`) is identical to the non-`B` driver.
-- **`builtinAppPreservesB : FixPreservesB → BuiltinAppPreservesB`** — copy `builtinAppPreserves`'s
-  `scheme_cases` dispatch (16 arms), calling `_arity{1,2}_B`; `partialFixed`→`fixed_reapply_preserves_B`;
-  `fix`→`hfixB`. Define `FixPreservesB` like `FixPreserves` (the `fix`-creation `.tau`, `MStateWfB`).
-- **Wire it like the non-`B` chain:** add `_B_fix` wrappers that take `FixPreserves`/`FixNoBadCrash`/
-  `FixPreservesB` and discharge `BuiltinAppPreservesB` internally via `builtinAppPreservesB`, so the
-  headline `soundness` ends up gated only on `Fix*` (matching the ε-free results). `FixPreservesB`
-  is satisfiable for the pure-builder fragment exactly like `FixPreserves` (Open Question 3 fork
-  for effectful builders).
+Done exactly per the template: `builtinApp_arity1_B`/`_arity2_B` (copy of the T6b drivers,
+`StackWf`→`StackWfB`, `.tau` half only — the successor lands on the same `rest`, so the input
+`StackWfB` is reused) + `builtinAppPreservesB : FixPreservesB → BuiltinAppPreservesB` (the 16-arm
+`scheme_cases` dispatch; `partialFixed`→`fixed_reapply_preserves_B`; `fix`→`hfixB`). `FixPreservesB`
+is isolated like `FixPreserves`. The headline `soundness`/`soundness_evalR`/`soundness_evalR_pure`
+were re-pointed to take `FixPreserves`/`FixNoBadCrash`/`FixPreservesB` (discharging
+`BuiltinAppPreservesB` internally via `builtinAppPreservesB`), so they are now gated on the **same
+`Fix*` family as the ε-free results** — no `TauKeepsRow`, no standalone saturation hypothesis.
+
+## Net result
+
+The **only** isolated hypotheses across the whole soundness development are now the `Fix*` family
+(`FixPreserves`/`FixNoBadCrash`/`FixPreservesB`) — the `fix`-*creation* obligations, satisfiable for
+the pure-builder fragment and awaiting Open Question 3 (effect-row subsumption) for effectful
+builders. `TauKeepsRow` and `BuiltinAppPreservesB` are gone from the headline theorems.
 
 ## Verified this pass
 - All 6 commits: `lake build` 1771 green, `lake exe spec` 104/104, axioms clean, no new `axiom`s.
