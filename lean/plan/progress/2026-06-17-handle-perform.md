@@ -111,3 +111,57 @@ metatheory slice, the genuine remaining obstacle. The successor-typing half (han
 to `arg`/`resume`, lift/reply via `EffContains` determinism) is still ready. Membership-
 `delimit` is banked and green regardless; `perform` stays the lone isolated
 `HandlerObligations` field. ε-free value/no-bad-crash soundness unconditional throughout.
+
+## ⚠ Update (6th pass): the mutual recursor is NOT needed — generalized `nil` is the lighter route
+
+Fix (2) was scoped as "`StackSegWf.conv` via `@StackSegWf.rec` with `True` motives" — awkward
+(the recursor has 30+ minor premises across all four mutual members). **Tracing it concretely
+found a lighter, recursor-free route**, and pinned the *one* genuinely-new standard lemma it
+rests on.
+
+**The route: generalize `StackSegWf.nil` to carry endpoint `TyEquiv`s.**
+```
+| nil {σ σ' ε ε'} : Ty.TyEquiv σ σ' → Ty.TyEquiv ε ε' → StackSegWf [] σ ε σ' ε'
+```
+(the old `nil` is the `refl`/`refl` instance — a conservative, sound generalization; it only
+adds an identity-up-to-`TyEquiv` empty segment). This makes the segment **input**-conversion
+```
+stackSeg_conv_input : StackSegWf seg σin εin σout εout →
+  TyEquiv σin' σin → TyEquiv εin' εin → StackSegWf seg σin' εin' σout εout
+```
+provable by **ordinary `induction seg generalizing … + cases h`** — NO recursor — because the
+`nil` case now closes by `trans` (the old `nil`, pinning input=output, was exactly what blocked
+a conv *lemma* and forced the conv *constructor* + recursor). Verified the obstacle is only the
+helper below, not the recursor.
+
+**Composition-lemma ripple (small):**
+- `stackSeg_toStackWf`'s `nil` case → `StackWf.conv hk hσ.symm hε.symm` (StackWf *has* a `conv`
+  constructor — trivial).
+- `stackSeg_append`'s `nil` case → `stackSeg_conv_input hk …` (input-convert the second segment).
+
+**The frame cases of `stackSeg_conv_input` — all standard, API mostly present:**
+- `trace`: pass the conv to the tail (`ih`).
+- `arg`/`applyf`/`callwith`: the input is an arrow; invert with `tyEquiv_fun_inv'` (EXISTS,
+  gives `ha he hr` components), convert the stored value's domain with `HasTypeV.conv`/`HasType.conv`
+  (EXIST), thread `he`/`hε` through the `EffWeaken` premise (`effWeaken_tyEquiv_right` EXISTS),
+  recurse on the tail with the new codomain/row.
+- `delimit`: input is the membership row `εin`; compose the input `TyEquiv` into the carried
+  `TyEquiv εin (.effectExtend …)` (membership is `TyEquiv`-stable) — no recursion into the
+  discharge.
+- **`assign`: needs ONE new standard lemma** — `hasType_ctxHead_conv : HasType ((x,.mono σ)::Γ)
+  e τ ε → TyEquiv σ' σ → HasType ((x,.mono σ')::Γ) e τ ε` (convert the head binding's type).
+  This is a routine **context-conversion** lemma (induction on the `HasType` derivation: the
+  head-`var` case reconstructs via `var` + `HasType.conv`; `lam`/`let_` recurse shadowing-aware;
+  all other cases are structural). It does **not** exist yet and is the single genuinely-new
+  prerequisite. (Standard PL metatheory — far more tractable than the mutual recursor.)
+
+**Revised remaining-work estimate for `perform`:** (1) generalized `nil` + the two
+composition-lemma `nil`-case fixes [tiny]; (2) `hasType_ctxHead_conv` [one standard lemma];
+(3) `stackSeg_conv_input` [mechanical given 1–2]; (4) the `doPerformR` walk induction building
+`acc'.reverse` as a `StackSegWf` (using `stackSeg_conv_input`/`stackSeg_append` to absorb the
+inversion `TyEquiv` slack, the membership-`delimit` for the row slack) + the already-validated
+successor-typing. Steps 1–3 are the unblock; step 4 is the remaining bulk but now has no
+missing infrastructure. **The mutual-recursor `StackSegWf.conv` is abandoned** in favour of
+this. (No code committed this pass — the generalized-`nil` edit was drafted and reverted to keep
+the tree green once `hasType_ctxHead_conv` was confirmed missing; it is a clean 1-line inductive
+change for the next pass.)
