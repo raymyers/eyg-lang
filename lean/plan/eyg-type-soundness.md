@@ -453,20 +453,23 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > handler-discharge-free fragment; gates only the row-dependent effect-escape/divergence/reply
 > results). Delivered via resumable-WIP grinding (45→14→6→0 errors over four passes).
 >
-> **Discharge progress (2026-06-17):** `HandlerObligations` driven `{perform, install, resume}`
-> → **`{perform}`** (all green on `main`): `install` via the generalized `StackWf.delimit`
-> (row subsumption `tail ⊑ ε`), `resume` via the generalized `StackSegWf.delimit` + quantified
-> `partialResume`. **`perform` is now 2 compiler errors from green** — an execution pass
-> landed the full discharge route (the "generalized `nil`" approach, NO mutual recursor:
-> generalized `StackSegWf.nil` + `hasType_ctxConv` + `stackSeg_conv_input`/`_output` by
-> ordinary induction, then the `doPerformR` walk) and stalled on 2 local tactic errors
-> (`Soundness.lean:729`/`787`) when a transient API rate-limit killed it. **➡ NEXT AGENT
-> START HERE: `progress/2026-06-18-T5-perform-handoff.md`** — `git apply
-> progress/2026-06-17-perform-wip.patch` (git-apply-clean to this HEAD), fix the 2 errors,
-> remove `perform` from `HandlerObligations`. After that: **`TauKeepsRow → RowEvolves`**
-> (the parallel T7 follow-up — thread a row-only-shrinks relation, downward `EffContains`
-> across discharges, to make effect-escape/divergence unconditional). The `ε`-free
-> value/no-bad-crash soundness is unconditional throughout.
+> **✅ HANDLER DISPATCHES FULLY DISCHARGED (2026-06-18, commit "remove the discharged
+> HandlerObligations hypothesis").** All three (`install`, `resume`, `perform`) are now
+> *proved* and the `HandlerObligations` hypothesis is **removed** — `preservation`/`progress`/
+> `soundness*` no longer assume any handler-dispatch obligation. Route: `install` via the
+> generalized `StackWf.delimit` (row subsumption `tail ⊑ ε`); `resume` via the generalized
+> `StackSegWf.delimit` + the discharge-row-quantified `partialResume` (`resume_preserves`);
+> `perform` (the genuine continuation-typing crux — design §5, no precedent) via the
+> generalized `StackSegWf.nil` + `hasType_ctxConv` + `stackSeg_conv_input`/`_output` (ordinary
+> induction, NO mutual recursor) + the `doPerformR` walk (`perform_walk`/`perform_preserves`).
+> `lake build` 1771 jobs, `lake exe spec` 104/104, headline axioms clean, no `sorry`/no new
+> `axiom`s. **Remaining isolated hypotheses are now only `Fix*` (effectful-builder fix) and
+> `TauKeepsRow`** (the T7 row-evolution gate for the row-dependent effect-escape/divergence
+> results — **➡ NEXT: replace it with `RowEvolves`**, threading a row-only-shrinks relation
+> with downward `EffContains` across discharges). The `ε`-free value + no-bad-crash soundness
+> is **unconditional for the full language including `Handle`** (modulo `Fix*`).
+> (The `2026-06-18-T5-perform-handoff.md` note + `2026-06-17-perform-wip.patch` are now
+> obsolete — that work is merged.)
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
