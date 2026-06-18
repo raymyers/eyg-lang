@@ -452,6 +452,18 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > install, `Resume` feed) and **`TauKeepsRow`** (the T7 row-evolution gate; true for the
 > handler-discharge-free fragment; gates only the row-dependent effect-escape/divergence/reply
 > results). Delivered via resumable-WIP grinding (45→14→6→0 errors over four passes).
+>
+> **Discharge progress (2026-06-17):** `HandlerObligations` driven `{perform, install, resume}`
+> → **`{perform}`** (all green on `main`): `install` via the generalized `StackWf.delimit`
+> (row subsumption `tail ⊑ ε`), `resume` via the generalized `StackSegWf.delimit` + quantified
+> `partialResume`. **`perform` groundwork in** (obstacle 1 = `EffWeaken` on the `StackSegWf`
+> frames; fix 1 = membership-based `StackSegWf.delimit`; the successor-typing half validated on
+> paper). **`perform` remaining = one genuine slice:** `StackSegWf.conv` via `@StackSegWf.rec`
+> with `True` motives (the segment endpoint type-conv the `callwith`/`assign` walk junctions
+> need — `StackSegWf` is in the `HasTypeV` mutual block, so plain `induction` is unavailable)
+> + the `doPerformR` walk induction. Full compiler-pinned recipe in
+> `progress/2026-06-17-handle-perform.md`. `TauKeepsRow → RowEvolves` is the parallel T7
+> follow-up. The `ε`-free value/no-bad-crash soundness is unconditional throughout.
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
