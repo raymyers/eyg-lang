@@ -629,6 +629,167 @@ theorem install_preserves [BEq m] {l : String} {handler v : Value m}
           (StackWf.delimit hhandler (hw.imp (fun h => heff.trans h) (fun h => heff.trans h))
             (StackWf.conv hrest hr'.symm (.refl _)))⟩
 
+/-- No operation is a member of the empty effect row. -/
+theorem effContains_empty {l : String} {a b : Ty} (h : Ty.EffContains .empty l a b) : False := by
+  cases h
+
+/-- **`perform` dispatch — the stack walk (design §5).** `doPerformR` walks `rest`,
+accumulating the traversed frames into `acc` (the deep re-push), to the nearest matching
+`Delimit label`; on `.ok` the handled successor (`handler` applied to `arg : lift` then
+`resume : kontTy`) is well-typed. Proved by induction on `rest`: the invariant threads
+`StackWf rest σcur εcur τ`, the current operation binding `EffContains εcur label lift
+reply` (with `v : lift`), and the captured prefix as a segment `StackSegWf acc.reverse
+reply εtop σcur εcur`. Non-`Delimit` frames extend the segment (`stackSeg_append`, bridging
+the inversion `TyEquiv` slack via `stackSeg_conv_input/output`); a non-matching `Delimit l'`
+discharges `l'` and keeps `label` in the shrunk row; the matching `Delimit` builds the
+resume via the quantified `partialResume` and types the handler application. -/
+theorem perform_walk [BEq m] {label : String} {v : Value m} {iEnv : Env m} (rest : Stack m) :
+    ∀ {acc : Stack m} {σcur εcur εtop τ lift reply : Ty} {cfg' : Config m},
+      HasTypeV v lift →
+      StackWf rest σcur εcur τ →
+      Ty.EffContains εcur label lift reply →
+      StackSegWf acc.reverse reply εtop σcur εcur →
+      doPerformR label v iEnv rest acc = .ok cfg' →
+      ∃ ε', MStateWf (.run cfg') τ ε' := by
+  induction rest with
+  | nil => intro acc σcur εcur εtop τ lift reply cfg' _ _ _ _ hdp; simp [doPerformR] at hdp
+  | cons hd rest' ih =>
+      intro acc σcur εcur εtop τ lift reply cfg' hv hrest hmem hacc hdp
+      obtain ⟨kont, mt⟩ := hd
+      cases kont with
+      | Trace w =>
+          simp only [doPerformR] at hdp
+          have hacc' : StackSegWf ((Kontinue.Trace w, mt) :: acc).reverse reply εtop σcur εcur := by
+            rw [List.reverse_cons]; exact stackSeg_append hacc (.trace (.nil (.refl _) (.refl _)))
+          exact ih hv (stackWf_trace_inv hrest) hmem hacc' hdp
+      | Assign x body fenv =>
+          simp only [doPerformR] at hdp
+          obtain ⟨Γ, defnTy, bodyTy, ε0, hσ', hε', henv, hbody, hrest'⟩ := stackWf_assign_inv hrest
+          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
+          have hacc' : StackSegWf ((Kontinue.Assign x body fenv, mt) :: acc).reverse b' εtop
+              bodyTy ε0 := by
+            rw [List.reverse_cons]
+            exact stackSeg_append
+              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
+              (.assign henv hbody (.nil (.refl _) (.refl _)))
+          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
+      | Arg arg fenv =>
+          simp only [doPerformR] at hdp
+          obtain ⟨Γ, argTy, εfa, retTya, ε0, hσ', hε', henv, harg, hweff, hrest'⟩ :=
+            stackWf_arg_inv hrest
+          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
+          have hacc' : StackSegWf ((Kontinue.Arg arg fenv, mt) :: acc).reverse b' εtop
+              retTya ε0 := by
+            rw [List.reverse_cons]
+            exact stackSeg_append
+              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
+              (.arg henv harg hweff (.nil (.refl _) (.refl _)))
+          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
+      | Apply f fenv =>
+          simp only [doPerformR] at hdp
+          obtain ⟨argTy, εfa, retTya, ε0, hσ', hε', hf, hweff, hrest'⟩ := stackWf_applyf_inv hrest
+          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
+          have hacc' : StackSegWf ((Kontinue.Apply f fenv, mt) :: acc).reverse b' εtop
+              retTya ε0 := by
+            rw [List.reverse_cons]
+            exact stackSeg_append
+              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
+              (.applyf hf hweff (.nil (.refl _) (.refl _)))
+          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
+      | CallWith arg fenv =>
+          simp only [doPerformR] at hdp
+          obtain ⟨argTy, εfa, retTya, ε0, hσ', hε', harg, hweff, hrest'⟩ := stackWf_callwith_inv hrest
+          obtain ⟨a', b', hmem', hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
+          have hacc' : StackSegWf ((Kontinue.CallWith arg fenv, mt) :: acc).reverse b' εtop
+              retTya ε0 := by
+            rw [List.reverse_cons]
+            exact stackSeg_append
+              (stackSeg_conv_input (stackSeg_conv_output hacc hσ' hε') hrb.symm (.refl _))
+              (.callwith harg hweff (.nil (.refl _) (.refl _)))
+          exact ih (hv.conv hla) hrest' hmem' hacc' hdp
+      | Delimit l h e_ shallow =>
+          obtain ⟨lift_d, reply_d, tail_d, ret_d, εInner, rfl, hσ', hε', hweff, hh, hrest'⟩ :=
+            stackWf_delimit_inv hrest
+          by_cases hll : (l == label) = true
+          · -- matching Delimit: handled, build the resume
+            obtain rfl := eq_of_beq hll
+            simp only [doPerformR, hll, if_true] at hdp
+            -- εcur ≈ ⟨l:(lift_d,reply_d)|tail_d⟩, and label = l carries (lift,reply): so they match
+            obtain ⟨a', b', hmemH, hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
+            cases hmemH with
+            | head =>
+                -- a' = lift_d, b' = reply_d
+                cases hdp
+                refine ⟨εInner, _, hh, ?_⟩
+                -- stack: CallWith v :: CallWith resume :: rest', control = handler h
+                refine StackWf.callwith (hv.conv hla) (Ty.effWeaken_empty _) ?_
+                refine StackWf.callwith ?_ hweff hrest'
+                -- resume : kontTy reply_d tail_d ret_d
+                refine HasTypeV.partialResume (εtop := εtop) (fun εBelow hwB => ?_) (.refl _)
+                simp only [Bool.false_eq_true, if_false]
+                rw [List.reverse_cons]
+                exact stackSeg_append
+                  (stackSeg_conv_input (stackSeg_conv_output hacc hσ' (.refl _)) hrb.symm (.refl _))
+                  (.delimit hh hε' hwB (.nil (.refl _) (.refl _)))
+            | tail hne _ => exact absurd rfl hne
+          · -- non-matching Delimit l' ≠ label: walk past, discharge l'
+            simp only [doPerformR, hll, Bool.false_eq_true, if_false] at hdp
+            obtain ⟨a', b', hmemT, hla, hrb⟩ := Ty.tyEquiv_effContains_mp hε' hmem
+            -- label is in ⟨l:…|tail_d⟩ and l ≠ label, so it is in tail_d, hence in εInner
+            have hlne : l ≠ label := fun h => by subst h; simp at hll
+            have hmemTail : Ty.EffContains tail_d label a' b' := by
+              cases hmemT with
+              | head => exact absurd rfl hlne
+              | tail _ hc => exact hc
+            obtain ⟨a'', b'', hc, ha'', hb''⟩ :
+                ∃ a'' b'', Ty.EffContains εInner label a'' b'' ∧ Ty.TyEquiv a' a'' ∧
+                  Ty.TyEquiv b' b'' := by
+              rcases hweff with he | he
+              · exact Ty.tyEquiv_effContains_mp he hmemTail
+              · exact absurd (Ty.tyEquiv_effContains_mp he hmemTail)
+                  (fun ⟨_, _, hcc, _, _⟩ => effContains_empty hcc)
+            have hacc' : StackSegWf ((Kontinue.Delimit l h e_ false, mt) :: acc).reverse b'' εtop
+                ret_d εInner := by
+              rw [List.reverse_cons]
+              exact stackSeg_append
+                (stackSeg_conv_input (stackSeg_conv_output hacc hσ' (.refl _))
+                  (hrb.trans hb'').symm (.refl _))
+                (.delimit hh hε' hweff (.nil (.refl _) (.refl _)))
+            exact ih (hv.conv (hla.trans ha'')) hrest' hc hacc' hdp
+
+/-- **`perform` dispatch DISCHARGED.** The handled-`perform` successor is well-typed —
+the last `HandlerObligations` field, proved via `perform_walk`. -/
+theorem perform_preserves [BEq m] {label : String} {v : Value m} {ann : m} {fenv : Env m}
+    {rest : Stack m} {argTy εf retTy ε τ : Ty} {cfg' : Config m}
+    (hperf : HasTypeV (.Partial (.Perform label) [] : Value m) (.fun argTy εf retTy))
+    (hv : HasTypeV v argTy) (hw : Ty.EffWeaken εf ε) (hrest : StackWf rest retTy ε τ)
+    (hr : reduceCall (.Partial (.Perform label) []) v ann fenv rest = .tau cfg') :
+    ∃ ε', MStateWf (.run cfg') τ ε' := by
+  cases hperf with
+  | @partialPerformNil _ argTy' replyTy' μ _ he =>
+      obtain ⟨ha, heff, hr'⟩ := Ty.tyEquiv_fun_components he
+      -- εf ≈ ⟨label:(argTy',replyTy')|μ⟩, so the exact disjunct of EffWeaken holds and label ∈ ε
+      obtain ⟨a1, b1, hc1, e1a, e1b⟩ := Ty.tyEquiv_effContains_mp heff Ty.EffContains.head
+      obtain ⟨a2, b2, hmemE, e2a, e2b⟩ :
+          ∃ a2 b2, Ty.EffContains ε label a2 b2 ∧ Ty.TyEquiv argTy' a2 ∧ Ty.TyEquiv replyTy' b2 := by
+        rcases hw with hwe | hwe
+        · obtain ⟨a2, b2, hc2, e2a, e2b⟩ := Ty.tyEquiv_effContains_mp hwe hc1
+          exact ⟨a2, b2, hc2, e1a.trans e2a, e1b.trans e2b⟩
+        · exact absurd (Ty.tyEquiv_effContains_mp hwe hc1)
+            (fun ⟨_, _, hcc, _, _⟩ => effContains_empty hcc)
+      -- extract `doPerformR … = .ok cfg'` from the `.tau` step
+      rw [show reduceCall (.Partial (.Perform label) []) v ann fenv rest
+          = reducePerform label v fenv rest from rfl, reducePerform] at hr
+      split at hr
+      · next p hdp =>
+          cases hr
+          -- v : a2 (= argTy' ≈ argTy); segment input b2 (≈ replyTy' ≈ retTy)
+          refine perform_walk rest (hv.conv (ha.symm.trans e2a)) hrest hmemE (acc := [])
+            (.nil ?_ (.refl _)) hdp
+          exact e2b.symm.trans hr'
+      · next hdp => exact absurd hr (by simp)
+      · next hdp => exact absurd hr (by simp)
+
 /-- Preservation across a `.V`-control (`reduceApply` frame) step. The closure
 application case is the crux; the builtin-application case defers to `hsat`; the three
 effect-partial dispatches defer to `hho`. The successor row is an *output* `∃ε'` —
@@ -818,7 +979,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObli
             exact resume_preserves (.partialResume hseg he) hv hw hrest hr
         | partialPerformNil he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact hho.perform (.partialPerformNil he) hv hw hrest hr
+            exact perform_preserves (.partialPerformNil he) hv hw hrest hr
   | CallWith arg fenv =>
       obtain ⟨argTy, εf, retTy, ε0, hσ, hε, harg, hw, hrest⟩ := stackWf_callwith_inv hst
       replace hv := hv.conv hσ
@@ -975,7 +1136,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m) (hho : HandlerObli
             exact resume_preserves (.partialResume hseg he) harg hw hrest hr
         | partialPerformNil he =>
             simp only [reduce1Run, reduceApply] at hr
-            exact hho.perform (.partialPerformNil he) harg hw hrest hr
+            exact perform_preserves (.partialPerformNil he) harg hw hrest hr
 
 /-! ## Effect safety: a well-typed `.perform` escapes only operations in `ε`
 

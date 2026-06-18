@@ -115,7 +115,7 @@ theorem stackSeg_toStackWf {m : Type} {seg k : Stack m} {σin εin σmid εmid �
     (hseg : StackSegWf seg σin εin σmid εmid) (hk : StackWf k σmid εmid τ) :
     StackWf (seg ++ k) σin εin τ := by
   induction seg generalizing σin εin with
-  | nil => cases hseg; exact hk
+  | nil => cases hseg with | nil h1 h2 => exact StackWf.conv hk h1.symm h2.symm
   | cons hd rest ih =>
       obtain ⟨kont, ann⟩ := hd
       cases hseg with

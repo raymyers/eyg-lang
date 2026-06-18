@@ -155,6 +155,73 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
       HasType Γ e τ ε → Ty.TyEquiv τ τ' → Ty.TyEquiv ε ε' →
       HasType Γ e τ' ε'
 
+/-- **Context-binding conversion** (depth-general). Replacing one binding's
+monomorphic type by a `TyEquiv`-equal one preserves typing. The `var` case at the
+converted binding bridges via the leaf `conv` rule (`instantiate (.mono σ) = σ`); the
+`lam`/`let_` cases extend the prefix `Δ` shadowing-aware. Needed by `stackSeg_conv_input`
+(the `Assign` segment frame). -/
+theorem hasType_ctxConv {m : Type} {Γ₀ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    (h : HasType Γ₀ e τ ε) :
+    ∀ (Δ Γ : Ctx) (x : String) (σ σ' : Ty),
+      Γ₀ = Δ ++ (x, .mono σ) :: Γ → Ty.TyEquiv σ' σ →
+      HasType (Δ ++ (x, .mono σ') :: Γ) e τ ε := by
+  induction h with
+  | @var Γ₁ y s args ε' a hl =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      rw [List.lookup_append] at hl
+      cases hΔ : Δ.lookup y with
+      | some v =>
+          rw [hΔ, Option.some_or] at hl; cases hl
+          exact HasType.var (by rw [List.lookup_append, hΔ, Option.some_or])
+      | none =>
+          rw [hΔ, Option.none_or] at hl
+          by_cases hyx : (y == x) = true
+          · simp only [List.lookup_cons, hyx] at hl; cases hl
+            -- s = .mono σ; target lookup gives .mono σ', bridge via conv
+            refine HasType.conv
+              (HasType.var (s := .mono σ') (args := args)
+                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx]))
+              ?_ (.refl _)
+            simp only [Scheme.instantiate_mono]; exact hc
+          · simp only [List.lookup_cons, hyx, Bool.false_eq_true] at hl ⊢
+            exact HasType.var (s := s) (args := args)
+              (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx,
+                Bool.false_eq_true]; exact hl)
+  | @lam Γ₁ z body argTy εb retTy ε' a hbody ih =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      exact HasType.lam (ih ((z, .mono argTy) :: Δ) Γ x σ σ' rfl hc)
+  | @app Γ₁ f arg argTy εf retTy ε' a hf hw harg ihf iharg =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      exact HasType.app (ihf Δ Γ x σ σ' rfl hc) hw (iharg Δ Γ x σ σ' rfl hc)
+  | @let_ Γ₁ z defn body defnTy bodyTy ε' a hdefn hbody ihdefn ihbody =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      exact HasType.let_ (ihdefn Δ Γ x σ σ' rfl hc)
+        (ihbody ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc)
+  | int => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.int
+  | str => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.str
+  | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.bin
+  | builtin hs => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.builtin hs
+  | tail => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.tail
+  | cons => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.cons
+  | tag => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.tag
+  | nocases => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.nocases
+  | case_ => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.case_
+  | select => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.select
+  | extend => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.extend
+  | overwrite => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.overwrite
+  | empty => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.empty
+  | perform => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.perform
+  | handle => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.handle
+  | @conv Γ₁ e' τ' τ'' ε₁ ε₂ hbody hτ hε ih =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      exact HasType.conv (ih Δ Γ x σ σ' rfl hc) hτ hε
+
+/-- The head-binding specialization (`Δ = []`), the form `stackSeg_conv_input` uses. -/
+theorem hasType_ctxHead_conv {m : Type} {Γ : Ctx} {e : Tree.Node m} {x : String}
+    {σ σ' τ ε : Ty} (h : HasType ((x, .mono σ) :: Γ) e τ ε) (hc : Ty.TyEquiv σ' σ) :
+    HasType ((x, .mono σ') :: Γ) e τ ε :=
+  hasType_ctxConv h [] Γ x σ σ' rfl hc
+
 /-! ## Sanity checks: typing real fixtures
 
 Each `example` is a derivation exercising the rules end-to-end (the closed terms
