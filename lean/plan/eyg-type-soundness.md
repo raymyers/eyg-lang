@@ -456,14 +456,17 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > **Discharge progress (2026-06-17):** `HandlerObligations` driven `{perform, install, resume}`
 > → **`{perform}`** (all green on `main`): `install` via the generalized `StackWf.delimit`
 > (row subsumption `tail ⊑ ε`), `resume` via the generalized `StackSegWf.delimit` + quantified
-> `partialResume`. **`perform` groundwork in** (obstacle 1 = `EffWeaken` on the `StackSegWf`
-> frames; fix 1 = membership-based `StackSegWf.delimit`; the successor-typing half validated on
-> paper). **`perform` remaining = one genuine slice:** `StackSegWf.conv` via `@StackSegWf.rec`
-> with `True` motives (the segment endpoint type-conv the `callwith`/`assign` walk junctions
-> need — `StackSegWf` is in the `HasTypeV` mutual block, so plain `induction` is unavailable)
-> + the `doPerformR` walk induction. Full compiler-pinned recipe in
-> `progress/2026-06-17-handle-perform.md`. `TauKeepsRow → RowEvolves` is the parallel T7
-> follow-up. The `ε`-free value/no-bad-crash soundness is unconditional throughout.
+> `partialResume`. **`perform` is now 2 compiler errors from green** — an execution pass
+> landed the full discharge route (the "generalized `nil`" approach, NO mutual recursor:
+> generalized `StackSegWf.nil` + `hasType_ctxConv` + `stackSeg_conv_input`/`_output` by
+> ordinary induction, then the `doPerformR` walk) and stalled on 2 local tactic errors
+> (`Soundness.lean:729`/`787`) when a transient API rate-limit killed it. **➡ NEXT AGENT
+> START HERE: `progress/2026-06-18-T5-perform-handoff.md`** — `git apply
+> progress/2026-06-17-perform-wip.patch` (git-apply-clean to this HEAD), fix the 2 errors,
+> remove `perform` from `HandlerObligations`. After that: **`TauKeepsRow → RowEvolves`**
+> (the parallel T7 follow-up — thread a row-only-shrinks relation, downward `EffContains`
+> across discharges, to make effect-escape/divergence unconditional). The `ε`-free
+> value/no-bad-crash soundness is unconditional throughout.
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
