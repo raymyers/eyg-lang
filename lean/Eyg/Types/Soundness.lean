@@ -2106,6 +2106,25 @@ theorem builtinNoBad_arity2 [BEq m] {key : String} {D1 D2 R : Ty}
                 reduceCallBuiltin_sat h1 h2 h3 h4 harity rfl hrun] at hcrash; simp at hcrash
       | cons _ hrest2 => cases hrest2 <;> exact absurd rfl (hRna _ _ _)
 
+/-- The `fix` builtin's `reduceCallBuiltin` **never crashes**: a singleton `[builder]` takes
+the special arm (`.tau` creating the `fixed` partial), and any other arg count falls to the
+catch-all where `builtinArity "fix" = 1 ≠ length` forces the accumulate `.tau` (so `Builtin.run
+"fix"` — which does not exist — is never reached). -/
+theorem reduceCallBuiltin_fix_ne_crash [BEq m] {l : List (Value m)} {ann : m}
+    {env : Env m} {k : Stack m} {r : Reason m} :
+    reduceCallBuiltin "fix" l ann env k ≠ .done (.crash r) := by
+  rcases l with _ | ⟨x, _ | ⟨y, rest⟩⟩ <;>
+    simp [reduceCallBuiltin, Builtin.builtinArity]
+
+/-- **`FixNoBadCrash` discharged.** The `fix`-*creation* `reduceCall` only ever `.tau`-steps
+(it produces the `fixed` partial or accumulates), so it never crashes — the hypothesis is
+vacuous. Unlike `FixPreserves` (which needs the *typed successor*, hence a pure builder), the
+no-bad-crash side is unconditional. -/
+theorem fixNoBadCrash [BEq m] : FixNoBadCrash m := by
+  intro applied arg ann fenv rest argTy retTy ε r _ _ hcrash
+  rw [reduceCall_builtin_eq] at hcrash
+  exact (reduceCallBuiltin_fix_ne_crash hcrash).elim
+
 /-- **`BuiltinAppNoBadCrash` discharged** for the general builtins (all schemed
 builtins except `fix`). A typed builtin application never crashes badly: the only
 crash is a sanctioned `Unrepresentable` trap. -/
@@ -3600,7 +3619,7 @@ well-typed program's `evalR` at any fuel is: a timeout; a value of type `τ`; a
 *sanctioned* `Unrepresentable` crash (never a type-error crash); or an emitted effect
 `op ∈ ε`. Modulo the isolated `fix` obligation, this is whole-program soundness for the
 general-builtin language over the transparent evaluator. -/
-theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+theorem soundness_evalR [BEq m] (hpres : FixPreserves m)
     (hfixB : FixPreservesB m)
     {prog : Tree.Node m} {τ ε : Ty} (fuel : Nat) (hty : HasType [] prog τ ε) :
     evalR fuel (Config.initial prog) = .timeout ∨
@@ -3615,7 +3634,7 @@ theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m
       | value v => exact Or.inr (Or.inl ⟨v, rfl, soundness_evalR_value hpres fuel hty h⟩)
       | crash r =>
           exact Or.inr (Or.inr (Or.inl
-            ⟨r, rfl, soundness_evalR_noBadCrash hpres hbad fuel hty h⟩))
+            ⟨r, rfl, soundness_evalR_noBadCrash hpres fixNoBadCrash fuel hty h⟩))
   | effect op lift resume =>
       exact Or.inr (Or.inr (Or.inr ⟨op, lift, resume, rfl,
         soundness_evalR_effect_B (builtinAppPreservesB hfixB) fuel hty h⟩))
@@ -3634,13 +3653,13 @@ theorem pure_no_perform_evalR [BEq m] (hsatB : BuiltinAppPreservesB m)
 row has only three `evalR` outcomes — timeout, a typed value, or a sanctioned
 `Unrepresentable` crash — *never* an emitted effect. The pure specialization of
 `soundness_evalR`. -/
-theorem soundness_evalR_pure [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+theorem soundness_evalR_pure [BEq m] (hpres : FixPreserves m)
     (hfixB : FixPreservesB m)
     {prog : Tree.Node m} {τ : Ty} (fuel : Nat) (hty : HasType [] prog τ .empty) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
     (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) := by
-  rcases soundness_evalR hpres hbad hfixB fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
+  rcases soundness_evalR hpres hfixB fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
   · exact Or.inl h
   · exact Or.inr (Or.inl h)
   · exact Or.inr (Or.inr h)
@@ -3882,7 +3901,7 @@ Divergent behaviours are covered by `soundness_behaviorsR_diverges` (ω-effect-s
 open reply-containing terminating traces by `soundness_behaviorsR_terminates_value`/
 `_noBadCrash` (via `TraceRepliesOk`). All `BehaviorsR` shapes are now covered modulo the
 isolated `fix`. -/
-theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
+theorem soundness [BEq m] (hpres : FixPreserves m)
     (hfixB : FixPreservesB m)
     {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
     (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →
@@ -3895,7 +3914,7 @@ theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
         Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog) →
         ∃ a b, Ty.EffContains ε op a b) :=
   ⟨fun hs hm => soundness_behaviorsR_value hpres hty hs hm,
-   fun hs hm => soundness_behaviorsR_noBadCrash hpres hbad hty hs hm,
+   fun hs hm => soundness_behaviorsR_noBadCrash hpres fixNoBadCrash hty hs hm,
    fun hm => soundness_behaviorsR_suspended (builtinAppPreservesB hfixB) hty hm⟩
 
 end Eyg.Types
