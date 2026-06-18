@@ -2297,6 +2297,77 @@ theorem soundness_evalR_noBadCrash [BEq m] (hpres : FixPreserves m) (hbad : FixN
     (h : evalR fuel (Config.initial prog) = .done (.crash r)) : ¬ Reason.IsBad r :=
   soundnessR_noBadCrash hpres hbad fuel (mStateWf_initial hty) h
 
+/-! ## T7 row-evolution groundwork: bottom-row tracking (`StackWfB`) + escape membership
+
+`StackWf` augmented with the **base row** `εbot` (the row at the bottom of the stack, reached
+by walking down through the row-discharging `Delimit` frames). The escape lemma below proves
+that an *unhandled* operation in the top row is a member of the base row — the membership
+transfer down the stack that the genuine effect-escape soundness needs (replacing the
+`TauKeepsRow` gate, once the base-row preservation re-thread lands; see
+`progress/2026-06-18-T7-rowevolves.md`). Self-contained (no preservation needed). -/
+inductive StackWfB {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop where
+  | nil {τ ε} : StackWfB [] τ ε ε τ
+  | trace {a w rest τin ε εbot τout} :
+      StackWfB rest τin ε εbot τout →
+      StackWfB ((Kontinue.Trace w, a) :: rest) τin ε εbot τout
+  | assign {a x body fenv Γ defnTy bodyTy ε εbot τout rest} :
+      EnvWf fenv Γ → HasType ((x, .mono defnTy) :: Γ) body bodyTy ε →
+      StackWfB rest bodyTy ε εbot τout →
+      StackWfB ((Kontinue.Assign x body fenv, a) :: rest) defnTy ε εbot τout
+  | arg {a arg fenv Γ argTy εf retTy ε εbot τout rest} :
+      EnvWf fenv Γ → HasType Γ arg argTy ε → Ty.EffWeaken εf ε →
+      StackWfB rest retTy ε εbot τout →
+      StackWfB ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy εf retTy) ε εbot τout
+  | applyf {a f fenv argTy εf retTy ε εbot τout rest} :
+      HasTypeV f (.fun argTy εf retTy) → Ty.EffWeaken εf ε →
+      StackWfB rest retTy ε εbot τout →
+      StackWfB ((Kontinue.Apply f fenv, a) :: rest) argTy ε εbot τout
+  | callwith {a arg fenv argTy εf retTy ε εbot τout rest} :
+      HasTypeV arg argTy → Ty.EffWeaken εf ε →
+      StackWfB rest retTy ε εbot τout →
+      StackWfB ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy εf retTy) ε εbot τout
+  | delimit {a l handler henv lift reply tail ret εInner εbot τout rest} :
+      HasTypeV handler (handlerTy lift reply tail ret) → Ty.EffWeaken tail εInner →
+      StackWfB rest ret εInner εbot τout →
+      StackWfB ((Kontinue.Delimit l handler henv false, a) :: rest)
+        ret (.effectExtend l lift reply tail) εbot τout
+
+/-- The stack has no `Delimit` frame handling `op` (so a `perform op` walks past every
+`Delimit` and escapes to the base). -/
+def noHandlerFor {m : Type} (op : String) : Stack m → Prop
+  | [] => True
+  | (k, _) :: rest =>
+      (match k with | Kontinue.Delimit l _ _ _ => l ≠ op | _ => True) ∧ noHandlerFor op rest
+
+/-- **Escape membership transfer.** An operation present in the *top* row that no `Delimit`
+in the stack handles is present (up to `TyEquiv` of its payload types) in the *base* row.
+Each `Delimit l` (with `l ≠ op`) transfers membership from `⟨l|tail⟩` down to `tail`
+(`effContains_extend_inv`) and then across `EffWeaken tail εInner` to the row below; the
+`tail ≈ ∅` weakening branch is impossible (`op ∈ ∅`). -/
+theorem stackWfB_escape {m : Type} {k : Stack m} {σ εtop εbot τ : Ty} {op : String} :
+    StackWfB k σ εtop εbot τ → ∀ {a b : Ty}, noHandlerFor op k →
+    Ty.EffContains εtop op a b → ∃ a' b', Ty.EffContains εbot op a' b' := by
+  intro h
+  induction h with
+  | nil => intro a b _ hc; exact ⟨a, b, hc⟩
+  | trace _ ih => intro a b hnh hc; exact ih (by simp only [noHandlerFor] at hnh; exact hnh.2) hc
+  | assign _ _ _ ih => intro a b hnh hc; exact ih (by simp only [noHandlerFor] at hnh; exact hnh.2) hc
+  | arg _ _ _ _ ih => intro a b hnh hc; exact ih (by simp only [noHandlerFor] at hnh; exact hnh.2) hc
+  | applyf _ _ _ ih => intro a b hnh hc; exact ih (by simp only [noHandlerFor] at hnh; exact hnh.2) hc
+  | callwith _ _ _ ih => intro a b hnh hc; exact ih (by simp only [noHandlerFor] at hnh; exact hnh.2) hc
+  | @delimit _ l _ _ lift reply tail ret εInner εbot τout rest _ hwk _ ih =>
+      intro a b hnh hc
+      simp only [noHandlerFor] at hnh
+      obtain ⟨hne, hnh'⟩ := hnh
+      cases hc with
+      | head => exact (hne rfl).elim
+      | tail _ hct =>
+          rcases hwk with htyeq | htyeq
+          · obtain ⟨a', b', hcI, _, _⟩ := Ty.tyEquiv_effContains_mp htyeq hct
+            exact ih hnh' hcI
+          · obtain ⟨a', b', hcE, _, _⟩ := Ty.tyEquiv_effContains_mp htyeq hct
+            exact (effContains_empty hcE).elim
+
 /-- **Exact-row tau-preservation, isolated.** A silent step keeps the ambient row `ε`
 *exactly*. This holds for the **handler-discharge-free** fragment (pure/data/`Perform`/
 `Resume`-reply): there every `tau` move keeps `ε`. It is **false in general once
