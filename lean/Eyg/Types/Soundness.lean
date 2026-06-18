@@ -2379,6 +2379,45 @@ theorem stackWfB_escape {m : Type} {k : Stack m} {σ εtop εbot τ : Ty} {op : 
       obtain ⟨a', b', hc', _, _⟩ := Ty.tyEquiv_effContains_mp hε.symm hc
       exact ih hnh hc'
 
+/-- An *unhandled* `doPerformR` walk leaves no `Delimit` for `label` in the walked stack
+(`noHandlerFor label k`) — the structural fact that an escaped `perform`'s stack has no
+matching handler. Mirror of `doPerformR_error_form`. -/
+theorem doPerformR_unhandled_noHandler {m : Type} [BEq m] {label : String} {arg : Value m}
+    {env : Env m} {e : Reason m} :
+    ∀ (k : Stack m) (acc : List (Kontinue m × m)),
+      doPerformR label arg env k acc = .error e → noHandlerFor label k := by
+  intro k
+  induction k with
+  | nil => intro acc _; simp [noHandlerFor]
+  | cons hd rest ih =>
+      intro acc h
+      obtain ⟨kont, mt⟩ := hd
+      cases kont with
+      | Delimit l hh ee shallow =>
+          simp only [doPerformR] at h
+          split at h
+          · exact absurd h (by simp)
+          · next hne =>
+              refine ⟨fun heq => ?_, ih _ h⟩
+              subst heq; simp at hne
+      | Trace _ => simp only [doPerformR] at h; exact ⟨trivial, ih _ h⟩
+      | Assign _ _ _ => simp only [doPerformR] at h; exact ⟨trivial, ih _ h⟩
+      | Arg _ _ => simp only [doPerformR] at h; exact ⟨trivial, ih _ h⟩
+      | Apply _ _ => simp only [doPerformR] at h; exact ⟨trivial, ih _ h⟩
+      | CallWith _ _ => simp only [doPerformR] at h; exact ⟨trivial, ih _ h⟩
+
+/-- A `reducePerform` that escapes leaves no matching `Delimit` in its stack. -/
+theorem reducePerform_perform_noHandler [BEq m] {label : String} {arg : Value m}
+    {env : Env m} {k : Stack m} {op : String} {lift : Value m} {envP : Env m} {kP : Stack m}
+    (h : reducePerform label arg env k = .perform op lift envP kP) : noHandlerFor op kP := by
+  obtain ⟨hop, _, _, hkP⟩ := reducePerform_perform_inv h
+  subst hop; rw [hkP]
+  unfold reducePerform at h
+  split at h
+  · exact absurd h (by simp)
+  · next o l hde => exact doPerformR_unhandled_noHandler k [] hde
+  · exact absurd h (by simp)
+
 /-- **Forget the base row.** A `StackWfB` is in particular a `StackWf` at its *top* row
 (drop `εbot`; each constructor maps to the matching `StackWf` one). -/
 theorem stackWfB_toStackWf {m : Type} {k : Stack m} {σ εtop εbot τ : Ty}
@@ -2841,14 +2880,15 @@ theorem perform_preserves_B [BEq m] {label : String} {v : Value m} {ann : m} {fe
       · next hdp => exact absurd hr (by simp)
       · next hdp => exact absurd hr (by simp)
 
-/-- Base-row mirror of `reduceCall_perform_wait`. -/
+/-- Base-row mirror of `reduceCall_perform_wait`, additionally reporting that the escaped
+perform left no matching handler in `kP` (needed to reflect membership down to `εbot`). -/
 theorem reduceCall_perform_wait_B [BEq m] {f arg : Value m} {ann : m} {fenv : Env m}
     {rest : Stack m} {argTy εf retTy ε εbot τ : Ty} {op : String} {lift : Value m}
     {envP : Env m} {kP : Stack m}
     (hf : HasTypeV f (.fun argTy εf retTy)) (hw : Ty.EffWeaken εf ε)
     (hrest : StackWfB rest retTy ε εbot τ)
     (h : reduceCall f arg ann fenv rest = .perform op lift envP kP) :
-    MStateWfB (.wait op envP kP) τ εbot := by
+    MStateWfB (.wait op envP kP) τ εbot ∧ noHandlerFor op kP := by
   rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
   · exact absurd h (by simp [reduceCall])
   · cases hf with
@@ -2887,16 +2927,17 @@ theorem reduceCall_perform_wait_B [BEq m] {f arg : Value m} {ann : m} {fenv : En
     | @partialPerformNil label argTy' replyTy' μ _ he =>
         obtain ⟨_, hE, hR⟩ := Ty.tyEquiv_fun_components he
         simp only [reduceCall] at h
+        have hnh := reducePerform_perform_noHandler h
         obtain ⟨rfl, rfl, rfl, rfl⟩ := reducePerform_perform_inv h
         obtain ⟨a'', b'', hEff, _, hRb⟩ := perform_op_mem_ambient hE hw
-        exact ⟨a'', b'', retTy, _, hEff, hRb.symm.trans hR, hrest⟩
+        exact ⟨⟨a'', b'', retTy, _, hEff, hRb.symm.trans hR, hrest⟩, hnh⟩
 
-/-- Base-row mirror of `preservation_perform`. -/
+/-- Base-row mirror of `preservation_perform`, additionally reporting `noHandlerFor op kP`. -/
 theorem preservation_perform_B [BEq m] {cfg : Config m} {τ εbot : Ty}
     {op : String} {lift : Value m} {envP : Env m} {kP : Stack m}
     (hwf : MStateWfB (.run cfg) τ εbot)
     (h : reduce1Run cfg = .perform op lift envP kP) :
-    MStateWfB (.wait op envP kP) τ εbot := by
+    MStateWfB (.wait op envP kP) τ εbot ∧ noHandlerFor op kP := by
   obtain ⟨c, env, k⟩ := cfg
   cases c with
   | E e =>
@@ -2923,6 +2964,395 @@ theorem preservation_perform_B [BEq m] {cfg : Config m} {τ εbot : Ty}
               obtain ⟨argTy, εf, retTy, ε0, hσ, hε, harg, hw, hrest⟩ := stackWfB_callwith_inv hst
               simp only [reduce1Run, reduceApply] at h
               exact reduceCall_perform_wait_B (hv.conv hσ) hw hrest h
+
+/-- **Base-row builtin-saturation obligation.** The `StackWfB` analogue of
+`BuiltinAppPreserves` (the `.tau` half only — the value half is handled by the non-`B`
+soundness): a saturating builtin application keeps the base row `εbot`. The successor
+always lands on the same base `rest` (or pushes the `fixed` frames onto it), so this is
+*true and dischargeable* exactly as `BuiltinAppPreserves` was (the per-arity drivers
+construct successors on `rest`). Isolated here pending that discharge — note it **replaces
+the false `TauKeepsRow`** for the builtin tau-step, a strict improvement. -/
+def BuiltinAppPreservesB (m : Type) [BEq m] : Prop :=
+  ∀ {id : String} {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m}
+    {rest : Stack m} {argTy εf retTy ε εbot τ : Ty},
+    HasTypeV (.Partial (.Builtin id) applied) (.fun argTy εf retTy) →
+    HasTypeV arg argTy →
+    Ty.EffWeaken εf ε →
+    StackWfB rest retTy ε εbot τ →
+    ∀ cfg', reduceCall (.Partial (.Builtin id) applied) arg ann fenv rest = .tau cfg' →
+        MStateWfB (.run cfg') τ εbot
+
+/-- **Base-row preservation across a `.V` (frame) `tau` step** — the `StackWfB` analogue of
+`preservation_V`. A direct mirror of `preservation_V`: `stackWfB_*_inv` replaces the
+`StackWf` inversions, the dispatch sub-lemmas use their `_B` variants, the result is an
+`MStateWfB … εbot`, and the builtin saturation defers to `hsatB`. -/
+theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
+    {v : Value m} {env : Env m} {kont : Kontinue m} {ann : m} {rest : Stack m}
+    {cfg' : Config m} {τ εbot : Ty}
+    (hwf : MStateWfB (.run (.V v, env, (kont, ann) :: rest)) τ εbot)
+    (hr : reduce1Run (.V v, env, (kont, ann) :: rest) = .tau cfg') :
+    MStateWfB (.run cfg') τ εbot := by
+  obtain ⟨τin, εtop, hv, hst⟩ := mStateWfB_V hwf
+  cases kont with
+  | Trace w =>
+      have hrest := stackWfB_trace_inv hst
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      exact ⟨τin, εtop, hv, hrest⟩
+  | Assign x body fenv =>
+      obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henvc, hbody, hrest⟩ := stackWfB_assign_inv hst
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      refine ⟨_, _, ε0, EnvWf.cons (fun args => ?_) henvc, hbody, hrest⟩
+      simpa using hv.conv hσ
+  | Arg arg fenv =>
+      obtain ⟨Γ, argTy, εf, retTy, ε0, hσ, hε, henvc, harg, hw, hrest⟩ := stackWfB_arg_inv hst
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      exact ⟨_, _, ε0, henvc, harg, StackWfB.applyf (hv.conv hσ) hw hrest⟩
+  | Delimit l handler henv sh =>
+      obtain ⟨lift, reply, tail, ret, εInner, rfl, hσ, hε, hweff, hh, hrest⟩ :=
+        stackWfB_delimit_inv hst
+      simp only [reduce1Run, reduceApply] at hr; cases hr
+      exact ⟨ret, εInner, hv.conv hσ, hrest⟩
+  | Apply f fenv =>
+      obtain ⟨argTy, εf, retTy, ε0, hσ, hε, hf, hw, hrest⟩ := stackWfB_applyf_inv hst
+      replace hv := hv.conv hσ
+      rcases canonical_arrow hf with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
+      · cases hf with
+        | closure henvc hbody heqc =>
+            obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            refine ⟨_, _, ε0, EnvWf.cons (fun args => ?_) henvc,
+              weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
+              StackWfB.trace hrest⟩
+            simpa using hv.conv hA.symm
+      · cases hf with
+        | partialBuiltin hs hp he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hsatB (.partialBuiltin hs hp he) hv hw hrest _ hr
+        | partialFixed hbuilder he =>
+            simp only [reduce1Run, reduceApply, reduceCall_fixed] at hr; cases hr
+            exact fixed_reapply_preserves_B hbuilder he hv hw hrest
+        | partialConsNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialConsOne (hv.conv hA.symm) hR, hrest⟩
+        | partialConsOne hh he =>
+            obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
+            have hvl := hv.conv hD.symm
+            obtain ⟨es, rfl⟩ := canonical_list hvl
+            simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.listCons hh hvl hR, hrest⟩
+        | partialTag he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.tagged (hv.conv hA.symm) hR, hrest⟩
+        | partialNoCases he =>
+            obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
+            exact absurd (hv.conv hA.symm) canonical_union_empty
+        | partialMatchNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialMatchOne (hv.conv hA.symm) hR, hrest⟩
+        | partialMatchOne hbranch he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialMatchTwo hbranch (hv.conv hA.symm) hR, hrest⟩
+        | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
+            obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvu := hv.conv hD.symm
+            obtain ⟨vl, vp, rfl⟩ := canonical_union hvu
+            cases hvu with
+            | tagged hvp hetag =>
+                obtain ⟨f', hcontains, hf'⟩ :=
+                  Ty.tyEquiv_rowContains_mp (Ty.tyEquiv_unionRow hetag) Ty.RowContains.head
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asTagged] at hr
+                split at hr
+                · rename_i hcond; cases hr
+                  obtain rfl := eq_of_beq hcond
+                  cases hcontains with
+                  | head =>
+                      exact ⟨_, ε0, hvp.conv hf',
+                        StackWfB.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
+                  | tail hne _ => exact absurd rfl hne
+                · rename_i hcond; cases hr
+                  have hvlne : vl ≠ lbl := fun h => by subst h; simp at hcond
+                  cases hcontains with
+                  | head => exact absurd rfl hvlne
+                  | tail _ hc'' =>
+                      obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
+                      exact ⟨_, ε0, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
+                        StackWfB.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
+        | @partialSelect lbl fieldTy tail _ he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := hv.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hpres hmatch hetag =>
+                obtain ⟨f', hcont, hf'⟩ :=
+                  (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
+                exact ⟨_, ε0, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+        | partialExtendNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialExtendOne (hv.conv hA.symm) hR, hrest⟩
+        | @partialExtendOne lbl _ fieldTy row _ hvf he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := hv.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hpres hmatch hetag =>
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
+                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                · intro l' f' hc
+                  cases hc with
+                  | head => rw [recordInsert_get_eq]; simp
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])]
+                      obtain ⟨f'', hc'', _⟩ :=
+                        (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ hc'
+                      exact hpres l' f'' hc''
+                · intro l' f' v' hc hg
+                  cases hc with
+                  | head =>
+                      rw [recordInsert_get_eq] at hg
+                      simp only [Option.some.injEq] at hg; subst hg; exact hvf
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])] at hg
+                      obtain ⟨f'', hc'', heqf⟩ :=
+                        (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ hc'
+                      exact (hmatch l' f'' v' hc'' hg).conv heqf.symm
+        | partialOverwriteNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialOverwriteOne (hv.conv hA.symm) hR, hrest⟩
+        | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := hv.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hpres hmatch hetag =>
+                obtain ⟨_, hcontH, _⟩ := (Ty.tyEquiv_rowContains
+                  (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
+                cases hr
+                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                · intro l' f' hc
+                  cases hc with
+                  | head => rw [recordInsert_get_eq]; simp
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])]
+                      obtain ⟨f'', hc'', _⟩ := (Ty.tyEquiv_rowContains
+                        (Ty.tyEquiv_recordRow hetag)).2 _ _ (Ty.RowContains.tail hne hc')
+                      exact hpres l' f'' hc''
+                · intro l' f' v' hc hg
+                  cases hc with
+                  | head =>
+                      rw [recordInsert_get_eq] at hg
+                      simp only [Option.some.injEq] at hg; subst hg; exact hvf
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])] at hg
+                      obtain ⟨f'', hc'', heqf⟩ := (Ty.tyEquiv_rowContains
+                        (Ty.tyEquiv_recordRow hetag)).2 _ _ (Ty.RowContains.tail hne hc')
+                      exact (hmatch l' f'' v' hc'' hg).conv heqf.symm
+        | partialHandleNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialHandleOne (hv.conv hA.symm) hR, hrest⟩
+        | partialHandleOne hh he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact install_preserves_B (.partialHandleOne hh he) hv hw hrest hr
+        | partialResume hseg he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact resume_preserves_B (.partialResume hseg he) hv hw hrest hr
+        | partialPerformNil he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact perform_preserves_B (.partialPerformNil he) hv hw hrest hr
+  | CallWith arg fenv =>
+      obtain ⟨argTy, εf, retTy, ε0, hσ, hε, harg, hw, hrest⟩ := stackWfB_callwith_inv hst
+      replace hv := hv.conv hσ
+      rcases canonical_arrow hv with ⟨x, body, cenv, rfl⟩ | ⟨sw, applied, rfl⟩
+      · cases hv with
+        | closure henvc hbody heqc =>
+            obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            refine ⟨_, _, ε0, EnvWf.cons (fun args => ?_) henvc,
+              weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
+              StackWfB.trace hrest⟩
+            simpa using harg.conv hA.symm
+      · cases hv with
+        | partialBuiltin hs hp he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact hsatB (.partialBuiltin hs hp he) harg hw hrest _ hr
+        | partialFixed hbuilder he =>
+            simp only [reduce1Run, reduceApply, reduceCall_fixed] at hr; cases hr
+            exact fixed_reapply_preserves_B hbuilder he harg hw hrest
+        | partialConsNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialConsOne (harg.conv hA.symm) hR, hrest⟩
+        | partialConsOne hh he =>
+            obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
+            have hvl := harg.conv hD.symm
+            obtain ⟨es, rfl⟩ := canonical_list hvl
+            simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.listCons hh hvl hR, hrest⟩
+        | partialTag he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.tagged (harg.conv hA.symm) hR, hrest⟩
+        | partialNoCases he =>
+            obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
+            exact absurd (harg.conv hA.symm) canonical_union_empty
+        | partialMatchNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialMatchOne (harg.conv hA.symm) hR, hrest⟩
+        | partialMatchOne hbranch he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialMatchTwo hbranch (harg.conv hA.symm) hR, hrest⟩
+        | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
+            obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvu := harg.conv hD.symm
+            obtain ⟨vl, vp, rfl⟩ := canonical_union hvu
+            cases hvu with
+            | tagged hvp hetag =>
+                obtain ⟨f', hcontains, hf'⟩ :=
+                  Ty.tyEquiv_rowContains_mp (Ty.tyEquiv_unionRow hetag) Ty.RowContains.head
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asTagged] at hr
+                split at hr
+                · rename_i hcond; cases hr
+                  obtain rfl := eq_of_beq hcond
+                  cases hcontains with
+                  | head =>
+                      exact ⟨_, ε0, hvp.conv hf',
+                        StackWfB.applyf (hbranch.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
+                  | tail hne _ => exact absurd rfl hne
+                · rename_i hcond; cases hr
+                  have hvlne : vl ≠ lbl := fun h => by subst h; simp at hcond
+                  cases hcontains with
+                  | head => exact absurd rfl hvlne
+                  | tail _ hc'' =>
+                      obtain ⟨rest', htail⟩ := Ty.rowContains_tyEquiv hc''
+                      exact ⟨_, ε0, HasTypeV.tagged (hvp.conv hf') (Ty.TyEquiv.congrUnion htail),
+                        StackWfB.applyf (hotherwise.conv (.congrFun (.refl _) hEff hRet)) hw hrest⟩
+        | @partialSelect lbl fieldTy tail _ he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := harg.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hpres hmatch hetag =>
+                obtain ⟨f', hcont, hf'⟩ :=
+                  (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
+                exact ⟨_, ε0, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+        | partialExtendNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialExtendOne (harg.conv hA.symm) hR, hrest⟩
+        | @partialExtendOne lbl _ fieldTy row _ hvf he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := harg.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hpres hmatch hetag =>
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
+                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                · intro l' f' hc
+                  cases hc with
+                  | head => rw [recordInsert_get_eq]; simp
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])]
+                      obtain ⟨f'', hc'', _⟩ :=
+                        (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ hc'
+                      exact hpres l' f'' hc''
+                · intro l' f' v' hc hg
+                  cases hc with
+                  | head =>
+                      rw [recordInsert_get_eq] at hg
+                      simp only [Option.some.injEq] at hg; subst hg; exact hvf
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])] at hg
+                      obtain ⟨f'', hc'', heqf⟩ :=
+                        (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ hc'
+                      exact (hmatch l' f'' v' hc'' hg).conv heqf.symm
+        | partialOverwriteNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialOverwriteOne (harg.conv hA.symm) hR, hrest⟩
+        | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
+            obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
+            have hvr := harg.conv hD.symm
+            obtain ⟨fields, rfl⟩ := canonical_record hvr
+            cases hvr with
+            | record hpres hmatch hetag =>
+                obtain ⟨_, hcontH, _⟩ := (Ty.tyEquiv_rowContains
+                  (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
+                obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
+                simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
+                cases hr
+                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                · intro l' f' hc
+                  cases hc with
+                  | head => rw [recordInsert_get_eq]; simp
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])]
+                      obtain ⟨f'', hc'', _⟩ := (Ty.tyEquiv_rowContains
+                        (Ty.tyEquiv_recordRow hetag)).2 _ _ (Ty.RowContains.tail hne hc')
+                      exact hpres l' f'' hc''
+                · intro l' f' v' hc hg
+                  cases hc with
+                  | head =>
+                      rw [recordInsert_get_eq] at hg
+                      simp only [Option.some.injEq] at hg; subst hg; exact hvf
+                  | tail hne hc' =>
+                      rw [recordInsert_get_ne _ _ (by simp [hne])] at hg
+                      obtain ⟨f'', hc'', heqf⟩ := (Ty.tyEquiv_rowContains
+                        (Ty.tyEquiv_recordRow hetag)).2 _ _ (Ty.RowContains.tail hne hc')
+                      exact (hmatch l' f'' v' hc'' hg).conv heqf.symm
+        | partialHandleNil he =>
+            obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
+            simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
+            exact ⟨_, ε0, HasTypeV.partialHandleOne (harg.conv hA.symm) hR, hrest⟩
+        | partialHandleOne hh he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact install_preserves_B (.partialHandleOne hh he) harg hw hrest hr
+        | partialResume hseg he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact resume_preserves_B (.partialResume hseg he) harg hw hrest hr
+        | partialPerformNil he =>
+            simp only [reduce1Run, reduceApply] at hr
+            exact perform_preserves_B (.partialPerformNil he) harg hw hrest hr
+
+/-- **Base-row tau-preservation** — combines `preservation_E_B`/`preservation_V_B`. -/
+theorem preservation_tau_B [BEq m] (hsatB : BuiltinAppPreservesB m)
+    {cfg cfg' : Config m} {τ εbot : Ty}
+    (hwf : MStateWfB (.run cfg) τ εbot) (h : reduce1Run cfg = .tau cfg') :
+    MStateWfB (.run cfg') τ εbot := by
+  obtain ⟨c, env, k⟩ := cfg
+  cases c with
+  | E e => exact preservation_E_B hwf h
+  | V v =>
+      cases k with
+      | nil => simp only [reduce1Run] at h; exact absurd h (by simp)
+      | cons kontann rest => obtain ⟨kont, ann⟩ := kontann; exact preservation_V_B hsatB hwf h
+
+/-- **Base-row effect escape.** A well-typed state that escapes performing `op` does so on
+an operation in its *base* row `εbot` (= the program's declared `ε`): `preservation_perform_B`
+gives `op ∈ εtop` with the stack `StackWfB kP … εtop εbot` **and** `noHandlerFor op kP`
+(the escaped perform walked past every handler), and `stackWfB_escape` reflects membership
+down to `εbot`. This is the honest replacement for `TauKeepsRow` in the effect-escape
+soundness. -/
+theorem mStateWfB_perform_escape [BEq m] {cfg : Config m} {τ εbot : Ty}
+    {op : String} {lift : Value m} {envP : Env m} {kP : Stack m}
+    (hwf : MStateWfB (.run cfg) τ εbot)
+    (h : reduce1Run cfg = .perform op lift envP kP) :
+    ∃ a b, Ty.EffContains εbot op a b := by
+  obtain ⟨⟨a, b, replyTy, εtop, hEff, _, hstk⟩, hnh⟩ := preservation_perform_B hwf h
+  exact stackWfB_escape hstk hnh hEff
 
 /-- **Exact-row tau-preservation, isolated.** A silent step keeps the ambient row `ε`
 *exactly*. This holds for the **handler-discharge-free** fragment (pure/data/`Perform`/
