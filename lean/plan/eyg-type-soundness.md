@@ -465,11 +465,19 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > `lake build` 1771 jobs, `lake exe spec` 104/104, headline axioms clean, no `sorry`/no new
 > `axiom`s. **Remaining isolated hypotheses are now only `Fix*` (effectful-builder fix) and
 > `TauKeepsRow`** (the T7 row-evolution gate for the row-dependent effect-escape/divergence
-> results — **➡ NEXT: replace it with `RowEvolves`**, threading a row-only-shrinks relation
-> with downward `EffContains` across discharges). The `ε`-free value + no-bad-crash soundness
-> is **unconditional for the full language including `Handle`** (modulo `Fix*`).
-> (The `2026-06-18-T5-perform-handoff.md` note + `2026-06-17-perform-wip.patch` are now
-> obsolete — that work is merged.)
+> results). The `ε`-free value + no-bad-crash soundness is **unconditional for the full
+> language including `Handle`** (modulo `Fix*`).
+>
+> **➡ NEXT — discharge `TauKeepsRow` (T7 RowEvolves; core banked 2026-06-18).** The
+> self-contained inductive core is on `main`: `StackWfB k σ εtop εbot τ` (`StackWf` + the
+> bottom-of-stack/base row) and **`stackWfB_escape`** (an *unhandled* op in the top row is a
+> member of the base row). Remaining (scoped in `progress/2026-06-18-T7-rowevolves.md`):
+> `MStateWfB` + base-row preservation (`εbot` is invariant across `.tau` — the top row grows
+> at `reduceDeep`/shrinks at a `Delimit`-pop, but the base stays `ε_init`), then re-thread the
+> ~15 `hkeep`-gated theorems (`soundnessR_effect`/`ωTr_*`/`mTr_*`/`soundness_behaviorsR_diverges`/
+> `_suspended`/`pure_*`/`soundness`) to read `op ∈ ε_init` off `stackWfB_escape`, and remove
+> `TauKeepsRow`/`hkeep` (same as `HandlerObligations` was removed). This makes the effect-escape/
+> divergence/suspended results unconditional too.
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
