@@ -490,10 +490,21 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > divergence / suspension / reply traces) is now gated on `Fix*` alone, with **no `TauKeepsRow` and
 > no standalone saturation hypothesis**. Axioms clean, `lake build` 1771 + `lake exe spec` 104/104.
 >
-> **➡ NEXT — the `Fix*` family is the last isolated hypothesis** (Open Question 3 / 4 territory):
-> `FixPreserves`/`FixNoBadCrash`/`FixPreservesB` are the `fix`-*creation* obligations, satisfiable
-> for the **pure-builder** fragment; the effectful-builder discharge (`q1 ≠ ∅`) awaits the general
-> effect-row subsumption foundation (Open Question 3).
+> **✅ `FixNoBadCrash` DISCHARGED (2026-06-18).** The `fix`-*creation* `reduceCall` only ever
+> `.tau`-steps (special arm builds the `fixed` partial; otherwise the catch-all accumulates,
+> `builtinArity "fix" = 1` so `Builtin.run "fix"` is never reached), so it never crashes:
+> `reduceCallBuiltin_fix_ne_crash` + `fixNoBadCrash : FixNoBadCrash m` (unconditional — no pure
+> builder needed). Removed from the headline; `soundness`/`soundness_evalR`/`soundness_evalR_pure`
+> now take **only the two preservation hypotheses `FixPreserves` + `FixPreservesB`**.
+>
+> **➡ NEXT — `FixPreserves`/`FixPreservesB` are the last isolated hypotheses** (Open Question 3
+> territory). Unlike the no-bad-crash side, these need the *typed successor* of `fix` creation,
+> i.e. `partialFixed`, which requires the **builder pure** (`∅` latent) — but the `fix` scheme
+> leaves `q1` free (effectful recursion). So they are dischargeable only for the **pure-builder**
+> fragment; the general (`q1 ≠ ∅`) discharge is the documented fork: (i) narrow the `fix` scheme to
+> a `∅`-latent builder (sound but **analyzer-divergent** — would reject valid effectful recursion,
+> a judgment call) or (ii) the general substitution-stable effect-row subsumption foundation
+> (Open Question 3, a major slice). Not a mechanical task — the next genuine research milestone.
 
 - [x] **Effect-row metatheory** (`Eyg/Types/EffRow.lean`, T5a) — the effect analog
       of `Eyg/Types/Row.lean`: `EffContains eff l a b` (first-occurrence membership
@@ -845,9 +856,12 @@ checker / compiler.
       RowEvolves base-row engine — `StackWfB`/`preservation_*_B`/`stackWfB_escape`/
       `soundnessR_effect_B`; row-dependent soundness now gated on the `Fix*` family only;
       `progress/2026-06-18-T7-rowevolves-Bpreservation-delivered.md`).
-      **Remaining:** discharging the `fix` hypotheses (`FixPreserves`/`FixNoBadCrash`/
-      `FixPreservesB`) — the only isolated hypotheses left, pending Open Question 3 for
-      effectful builders.
+      **`FixNoBadCrash` discharged** ✅ (2026-06-18, `fixNoBadCrash` — fix creation never
+      crashes; headline now takes only `FixPreserves` + `FixPreservesB`).
+      **Remaining:** discharging the two *preservation* `fix` hypotheses
+      (`FixPreserves`/`FixPreservesB`) — the only isolated hypotheses left; they need a pure
+      builder, so the general (effectful) discharge is the Open Question 3 fork (scheme
+      narrowing vs. row subsumption).
 
 ## Decisions made (baked into the milestones)
 
