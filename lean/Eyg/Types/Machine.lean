@@ -121,9 +121,9 @@ theorem stackSeg_toStackWf {m : Type} {seg k : Stack m} {σin εin σmid εmid �
       cases hseg with
       | trace h => exact .trace (ih h)
       | assign henv hbody h => exact .assign henv hbody (ih h)
-      | arg henv harg h => exact .arg henv harg (Ty.effWeaken_refl _) (ih h)
-      | applyf hf h => exact .applyf hf (Ty.effWeaken_refl _) (ih h)
-      | callwith harg h => exact .callwith harg (Ty.effWeaken_refl _) (ih h)
+      | arg henv harg hw h => exact .arg henv harg hw (ih h)
+      | applyf hf hw h => exact .applyf hf hw (ih h)
+      | callwith harg hw h => exact .callwith harg hw (ih h)
       | delimit hh hweak h => exact .delimit hh hweak (ih h)
 
 /-- **Resume composition.** Feeding a reply into `move acc k` is well-typed: `acc.reverse`

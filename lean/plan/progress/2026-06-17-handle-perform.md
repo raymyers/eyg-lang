@@ -102,3 +102,49 @@ This is the genuine continuation-typing core (design §5); the effect-safety hal
 done (the unhandled escape in `progress`/`preservation_perform`). With `StackSegWf`
 generalized to mirror `StackWf`, the walk closes. Budget it as its own pass — it is a real
 metatheory slice (the `conv`-in-mutual-block re-architecture), not a mechanical grind.
+
+---
+
+## Update (pass 2): obstacle 1 DONE (green); obstacle 2's recursor is impractical — use a conv-free walk
+
+**Obstacle 1 — DELIVERED green** (commit `a3690d24` on `handle-perform2`): `EffWeaken εf εin`
+added to `StackSegWf.{arg,applyf,callwith}` (mirrors `StackWf`); `stackSeg_append`/
+`stackSeg_toStackWf` frame cases pass the carried weaken. `lake build` 1771 jobs. This is
+the segment analog of the earlier `StackWf` effect-weakening; reusable regardless of how
+obstacle 2 is solved.
+
+**Obstacle 2 — the `StackSegWf.conv` route is BLOCKED harder than the note said.** I added
+`StackSegWf.conv` (all four endpoints) and tried to re-prove the two composition lemmas by
+`induction hseg`. The compiler rejects it outright:
+```
+error: The `induction` tactic does not support the type `StackSegWf` because it is
+       mutually inductive
+```
+`StackSegWf` is genuinely mutual with `HasTypeV` (cycle: `HasTypeV.partialResume` →
+`StackSegWf` → `StackSegWf.delimit`'s handler → `HasTypeV`). The only derivation-recursion
+tool is `@StackSegWf.rec`, whose motives/minor-premises cover **all four** block members
+(`HasTypeV` alone has 25+ constructors) — impractical to discharge by hand. And `induction
+seg`/`cases hseg` cannot handle the `conv` case (it wraps the **same** list, so the
+list-IH/structural recursion does not apply). So **`StackSegWf.conv` as a constructor is a
+dead end** without re-architecting the mutual block.
+
+**The way forward — a conv-FREE walk (do this next):** do NOT add `StackSegWf.conv`. Build
+the captured segment during the `doPerformR` walk by converting the **frame values** with
+the already-available `HasTypeV.conv` instead of converting the segment:
+- The per-frame inversion (`stackWf_applyf_inv` etc.) yields `TyEquiv σ argTy` and the
+  `rest'` typed at the **exact** `(retTy, ε0)`. Continue the walk at exact types.
+- To append a frame to the running segment whose output is `σ_prev` while the frame's
+  natural input is `argTy` (with `TyEquiv σ_prev argTy`), `HasTypeV.conv` the frame's
+  stored value (`.congrFun` on the domain) so the `StackSegWf.{applyf,callwith}` frame's
+  input becomes `σ_prev` exactly — no segment-level conv needed.
+- **Rows need no conv across non-`Delimit` runs:** consecutive non-`Delimit` `StackWf`
+  frames share the *same* exact ambient `ε0` (each `applyf`/… keeps `rest` at the same
+  `ε`), so the segment row is constant between `Delimit`s; only `Delimit` changes it, and
+  `StackSegWf.delimit` already carries the `EffWeaken` for that.
+This keeps `StackSegWf` conv-free (composition lemmas stay as the working `induction seg +
+cases hseg`), and value-conv is leaf-level (always available). The remaining work is then
+the walk induction itself + the effect-safety threading (the perform label stays in the row
+across non-matching `Delimit l'`: `label ∈ ⟨l':(..)|t'⟩` with `l' ≠ label` ⇒ `label ∈ t'`,
+and `EffWeaken t' εInner` with `label ∈ t'` rules out the `t' ≈ ∅` disjunct ⇒ `label ∈
+εInner`). Budget the walk as the next pass; obstacle 1 is banked and the conv-free design
+removes the mutual-recursor blocker.

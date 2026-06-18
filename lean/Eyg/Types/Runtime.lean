@@ -231,19 +231,22 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
       HasType ((x, .mono defnTy) :: Γ) body bodyTy εin →
       StackSegWf rest bodyTy εin σout εout →
       StackSegWf ((Kontinue.Assign x body fenv, a) :: rest) defnTy εin σout εout
-  | arg {a arg fenv Γ argTy retTy εin σout εout rest} :
+  | arg {a arg fenv Γ argTy εf retTy εin σout εout rest} :
       EnvWf fenv Γ →
       HasType Γ arg argTy εin →
+      Ty.EffWeaken εf εin →
       StackSegWf rest retTy εin σout εout →
-      StackSegWf ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy εin retTy) εin σout εout
-  | applyf {a f fenv argTy retTy εin σout εout rest} :
-      HasTypeV f (.fun argTy εin retTy) →
+      StackSegWf ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy εf retTy) εin σout εout
+  | applyf {a f fenv argTy εf retTy εin σout εout rest} :
+      HasTypeV f (.fun argTy εf retTy) →
+      Ty.EffWeaken εf εin →
       StackSegWf rest retTy εin σout εout →
       StackSegWf ((Kontinue.Apply f fenv, a) :: rest) argTy εin σout εout
-  | callwith {a arg fenv argTy retTy εin σout εout rest} :
+  | callwith {a arg fenv argTy εf retTy εin σout εout rest} :
       HasTypeV arg argTy →
+      Ty.EffWeaken εf εin →
       StackSegWf rest retTy εin σout εout →
-      StackSegWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy εin retTy) εin σout εout
+      StackSegWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy εf retTy) εin σout εout
   /-- A deep `Delimit l handler henv` frame: discharges `l` from the input row
   `⟨l:(lift,reply)|tail⟩`; the rest continues under any `εBelow ⊇ tail`
   (`EffWeaken tail εBelow`), mirroring the generalized `StackWf.delimit`. This lets an
@@ -275,9 +278,9 @@ theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σou
       cases hseg with
       | trace h => exact .trace (ih h)
       | assign henv hbody h => exact .assign henv hbody (ih h)
-      | arg henv harg h => exact .arg henv harg (ih h)
-      | applyf hf h => exact .applyf hf (ih h)
-      | callwith harg h => exact .callwith harg (ih h)
+      | arg henv harg hw h => exact .arg henv harg hw (ih h)
+      | applyf hf hw h => exact .applyf hf hw (ih h)
+      | callwith harg hw h => exact .callwith harg hw (ih h)
       | delimit hh hweak h => exact .delimit hh hweak (ih h)
 
 /-! ## The lookup lemma (replaces the substitution lemma)
