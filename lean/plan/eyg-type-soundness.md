@@ -469,11 +469,13 @@ This is the milestone with no direct mechanization precedent — see the fork be
 > language including `Handle`** (modulo `Fix*`).
 >
 > **➡ NEXT — discharge `TauKeepsRow` (T7 RowEvolves; core banked 2026-06-18).** The
-> self-contained inductive core is on `main`: `StackWfB k σ εtop εbot τ` (`StackWf` + the
-> bottom-of-stack/base row) and **`stackWfB_escape`** (an *unhandled* op in the top row is a
-> member of the base row). Remaining (scoped in `progress/2026-06-18-T7-rowevolves.md`):
-> `MStateWfB` + base-row preservation (`εbot` is invariant across `.tau` — the top row grows
-> at `reduceDeep`/shrinks at a `Delimit`-pop, but the base stays `ε_init`), then re-thread the
+> core is on `main`: `StackWfB k σ εtop εbot τ` (`StackWf` + the bottom-of-stack/base row),
+> **`stackWfB_escape`** (an *unhandled* op in the top row is a member of the base row), **and
+> `MStateWfB` + `mStateWfB_initial`** (the base-row state typing; commit `c766d96d`). Remaining
+> (scoped in `progress/2026-06-18-T7-rowevolves.md`): **base-row preservation** `preservation_B`
+> (`εbot` invariant across `.tau` — the top row grows at `reduceDeep`/shrinks at a `Delimit`-pop,
+> but the base stays `ε_init`; mirror `preservation_V`/`preservation` threading `εbot` through
+> `StackWfB`), then re-thread the
 > ~15 `hkeep`-gated theorems (`soundnessR_effect`/`ωTr_*`/`mTr_*`/`soundness_behaviorsR_diverges`/
 > `_suspended`/`pure_*`/`soundness`) to read `op ∈ ε_init` off `stackWfB_escape`, and remove
 > `TauKeepsRow`/`hkeep` (same as `HandlerObligations` was removed). This makes the effect-escape/
