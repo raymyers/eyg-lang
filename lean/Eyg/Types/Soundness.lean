@@ -3395,6 +3395,169 @@ theorem preservation_keep_B [BEq m] (hsatB : BuiltinAppPreservesB m)
       simp only [ReplyContract] at hrep
       exact ⟨replyTy, εtop, (hrep a' b' hcbot).conv (hbb'.symm.trans hbr), hStack⟩
 
+/-! ### Discharging `BuiltinAppPreservesB`
+
+The base-row analogues of the arity drivers and `builtinAppPreserves` — a mechanical mirror
+threading `εbot`. The builtin successor always lands on the same base `rest` (saturate/accumulate)
+or, for `fixed`, pushes frames onto it, so the input `StackWfB rest …` is reused; only the `.tau`
+half is needed (`BuiltinAppPreservesB` has no `.done value` clause). The result is that the
+row-dependent soundness ends up gated on `Fix*` only — matching the ε-free results. -/
+
+/-- Base-row arity-1 driver (mirror of `builtinApp_arity1`, `.tau` half only). -/
+theorem builtinApp_arity1_B [BEq m] {key : String} {D R : Ty}
+    (h1 : key ≠ "fix") (h2 : key ≠ "fixed") (h3 : key ≠ "list_fold") (h4 : key ≠ "binary_fold")
+    (harity : Builtin.builtinArity key = some 1)
+    (hRna : ∀ a e r, R ≠ .fun a e r)
+    (hrunTy : ∀ {x v : Value m}, HasTypeV x D → Builtin.run key [x] = .ok v → HasTypeV v R)
+    {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m} {rest : Stack m}
+    {a' ε' r' retTy ε εbot τ : Ty}
+    (hpw : BuiltinPartialWf (.fun D .empty R) applied (.fun a' ε' r'))
+    (harg' : HasTypeV arg a') (hr : Ty.TyEquiv r' retTy) (hst : StackWfB rest retTy ε εbot τ) :
+    ∀ cfg', reduceCall (.Partial (.Builtin key) applied) arg ann fenv rest = .tau cfg' →
+        MStateWfB (.run cfg') τ εbot := by
+  cases hpw with
+  | nil =>
+      intro cfg' htau
+      rw [reduceCall_builtin_eq, List.nil_append] at htau
+      cases hrun : Builtin.run key [arg] with
+      | error e =>
+          rw [reduceCallBuiltin_sat_crash h1 h2 h3 h4 harity rfl hrun] at htau; simp at htau
+      | ok value =>
+          rw [reduceCallBuiltin_sat h1 h2 h3 h4 harity rfl hrun] at htau
+          injection htau with htau'; subst htau'
+          exact ⟨retTy, ε, (hrunTy harg' hrun).conv hr, hst⟩
+  | cons hv hrest =>
+      cases hrest with
+      | nil => exact absurd rfl (hRna _ _ _)
+      | cons => exact absurd rfl (hRna _ _ _)
+
+/-- Base-row arity-2 driver (mirror of `builtinApp_arity2`, `.tau` half only). -/
+theorem builtinApp_arity2_B [BEq m] {key : String} {s : Scheme} {sargs : List Ty} {D1 D2 R : Ty}
+    (h1 : key ≠ "fix") (h2 : key ≠ "fixed") (h3 : key ≠ "list_fold") (h4 : key ≠ "binary_fold")
+    (harity : Builtin.builtinArity key = some 2)
+    (hRna : ∀ a e r, R ≠ .fun a e r)
+    (hsch : Builtins.scheme key = some s)
+    (hbase : s.instantiate sargs = .fun D1 .empty (.fun D2 .empty R))
+    (hrunTy : ∀ {x y v : Value m}, HasTypeV x D1 → HasTypeV y D2 →
+      Builtin.run key [x, y] = .ok v → HasTypeV v R)
+    {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m} {rest : Stack m}
+    {a' ε' r' retTy ε εbot τ : Ty}
+    (hpw : BuiltinPartialWf (.fun D1 .empty (.fun D2 .empty R)) applied (.fun a' ε' r'))
+    (harg' : HasTypeV arg a') (hr : Ty.TyEquiv r' retTy) (hst : StackWfB rest retTy ε εbot τ) :
+    ∀ cfg', reduceCall (.Partial (.Builtin key) applied) arg ann fenv rest = .tau cfg' →
+        MStateWfB (.run cfg') τ εbot := by
+  cases hpw with
+  | nil =>
+      intro cfg' htau
+      rw [reduceCall_builtin_eq, List.nil_append,
+        reduceCallBuiltin_acc h1 h2 h3 h4 harity (by simp)] at htau
+      injection htau with htau'; subst htau'
+      refine ⟨retTy, ε, ?_, hst⟩
+      refine HasTypeV.partialBuiltin (args := sargs) hsch ?_ hr
+      rw [hbase]
+      exact BuiltinPartialWf.cons harg' BuiltinPartialWf.nil
+  | @cons _ _ _ vval _ _ hv hrest =>
+      cases hrest with
+      | nil =>
+          intro cfg' htau
+          rw [reduceCall_builtin_eq] at htau
+          cases hrun : Builtin.run key [vval, arg] with
+          | error e =>
+              rw [show [vval] ++ [arg] = [vval, arg] from rfl,
+                reduceCallBuiltin_sat_crash h1 h2 h3 h4 harity rfl hrun] at htau; simp at htau
+          | ok value =>
+              rw [show [vval] ++ [arg] = [vval, arg] from rfl,
+                reduceCallBuiltin_sat h1 h2 h3 h4 harity rfl hrun] at htau
+              injection htau with htau'; subst htau'
+              exact ⟨retTy, ε, (hrunTy hv harg' hrun).conv hr, hst⟩
+      | cons _ hrest2 => cases hrest2 <;> exact absurd rfl (hRna _ _ _)
+
+/-- The base-row `fix`-creation obligation, isolated like `FixPreserves` (`.tau` half). -/
+def FixPreservesB (m : Type) [BEq m] : Prop :=
+  ∀ {applied : List (Value m)} {arg : Value m} {ann : m} {fenv : Env m}
+    {rest : Stack m} {argTy εf retTy ε εbot τ : Ty},
+    HasTypeV (.Partial (.Builtin "fix") applied) (.fun argTy εf retTy) →
+    HasTypeV arg argTy →
+    Ty.EffWeaken εf ε →
+    StackWfB rest retTy ε εbot τ →
+    ∀ cfg', reduceCall (.Partial (.Builtin "fix") applied) arg ann fenv rest = .tau cfg' →
+        MStateWfB (.run cfg') τ εbot
+
+/-- **`BuiltinAppPreservesB` discharged** for the general builtins (every schemed builtin except
+`fix`, which defers to `hfixB`) — the base-row mirror of `builtinAppPreserves`. -/
+theorem builtinAppPreservesB [BEq m] (hfixB : FixPreservesB m) : BuiltinAppPreservesB m := by
+  intro id applied arg ann fenv rest argTy εf retTy ε εbot τ hp harg hw hst
+  cases hp with
+  | @partialFixed builder _D _γ _R _τ hbuilder he =>
+    intro cfg' hrr
+    rw [reduceCall_fixed] at hrr; cases hrr
+    exact fixed_reapply_preserves_B hbuilder he harg hw hst
+  | @partialBuiltin _id s args _applied a' ε' r' _τ hs hpw he =>
+    obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
+    have harg' : HasTypeV arg a' := harg.conv ha.symm
+    rcases scheme_cases hs with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact builtinApp_arity2_B (sargs := args) (D1 := args.getD 0 (Ty.var 0))
+        (D2 := args.getD 0 (Ty.var 0))
+        (R := Ty.boolean) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs
+        (by simp [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q, Ty.boolean, Ty.union', Ty.rows,
+          Ty.unit, Ty.record'])
+        (fun _ _ hh => run_equal hh)
+        (by simpa [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q] using hpw) harg' hr hst
+    · exact hfixB (HasTypeV.partialBuiltin hs hpw he) harg hw hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_int_compare hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_int_add hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_int_subtract hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_int_multiply hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_int_divide hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+    · exact builtinApp_arity1_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) (fun hx hh => run_int_absolute hx hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure1] using hpw) harg' hr hst
+    · exact builtinApp_arity1_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) (fun hx hh => run_int_parse hx hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure1] using hpw) harg' hr hst
+    · exact builtinApp_arity1_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) (fun hx hh => run_int_to_string hx hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure1] using hpw) harg' hr hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_string_append hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+    · exact builtinApp_arity1_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) (fun hx hh => run_string_length hx hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure1] using hpw) harg' hr hst
+    · exact builtinApp_arity1_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) (fun hx hh => run_string_uppercase hx hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure1] using hpw) harg' hr hst
+    · exact builtinApp_arity1_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) (fun hx hh => run_string_lowercase hx hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure1] using hpw) harg' hr hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_string_starts_with hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+    · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
+        (fun hx hy hh => run_string_ends_with hx hy hh)
+        (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hr hst
+
 /-- **Effect safety over `evalR`, the honest row-evolution form (no `TauKeepsRow`).** If a
 well-typed config (tracked by `MStateWfB` at base row `εbot`) escapes by emitting `op`, then
 `op ∈ εbot` (the program's *declared* row). The fuel induction threads the **base** row with
@@ -3438,7 +3601,7 @@ well-typed program's `evalR` at any fuel is: a timeout; a value of type `τ`; a
 `op ∈ ε`. Modulo the isolated `fix` obligation, this is whole-program soundness for the
 general-builtin language over the transparent evaluator. -/
 theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hsatB : BuiltinAppPreservesB m)
+    (hfixB : FixPreservesB m)
     {prog : Tree.Node m} {τ ε : Ty} (fuel : Nat) (hty : HasType [] prog τ ε) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
@@ -3455,7 +3618,7 @@ theorem soundness_evalR [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m
             ⟨r, rfl, soundness_evalR_noBadCrash hpres hbad fuel hty h⟩))
   | effect op lift resume =>
       exact Or.inr (Or.inr (Or.inr ⟨op, lift, resume, rfl,
-        soundness_evalR_effect_B hsatB fuel hty h⟩))
+        soundness_evalR_effect_B (builtinAppPreservesB hfixB) fuel hty h⟩))
 
 /-- **Purity certificate (`A ! ∅`).** A program typed at the **empty** effect row never
 emits an effect: its `evalR` is never `.effect _ _ _`. (Eff's `A!∅` purity certificate —
@@ -3472,16 +3635,16 @@ row has only three `evalR` outcomes — timeout, a typed value, or a sanctioned
 `Unrepresentable` crash — *never* an emitted effect. The pure specialization of
 `soundness_evalR`. -/
 theorem soundness_evalR_pure [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hsatB : BuiltinAppPreservesB m)
+    (hfixB : FixPreservesB m)
     {prog : Tree.Node m} {τ : Ty} (fuel : Nat) (hty : HasType [] prog τ .empty) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
     (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) := by
-  rcases soundness_evalR hpres hbad hsatB fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
+  rcases soundness_evalR hpres hbad hfixB fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
   · exact Or.inl h
   · exact Or.inr (Or.inl h)
   · exact Or.inr (Or.inr h)
-  · exact (pure_no_perform_evalR hsatB fuel hty h).elim
+  · exact (pure_no_perform_evalR (builtinAppPreservesB hfixB) fuel hty h).elim
 
 /-! ## Soundness at the `BehaviorsR` level (silent terminations)
 
@@ -3720,7 +3883,7 @@ open reply-containing terminating traces by `soundness_behaviorsR_terminates_val
 `_noBadCrash` (via `TraceRepliesOk`). All `BehaviorsR` shapes are now covered modulo the
 isolated `fix`. -/
 theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
-    (hsatB : BuiltinAppPreservesB m)
+    (hfixB : FixPreservesB m)
     {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
     (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →
         Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog) →
@@ -3733,6 +3896,6 @@ theorem soundness [BEq m] (hpres : FixPreserves m) (hbad : FixNoBadCrash m)
         ∃ a b, Ty.EffContains ε op a b) :=
   ⟨fun hs hm => soundness_behaviorsR_value hpres hty hs hm,
    fun hs hm => soundness_behaviorsR_noBadCrash hpres hbad hty hs hm,
-   fun hm => soundness_behaviorsR_suspended hsatB hty hm⟩
+   fun hm => soundness_behaviorsR_suspended (builtinAppPreservesB hfixB) hty hm⟩
 
 end Eyg.Types
