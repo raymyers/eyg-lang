@@ -77,19 +77,43 @@ inversion exposes an **existential** captured context `Γcap` (and `EnvWf` is no
 the keystone is **not** directly applicable from the value typing — this is the same
 existential-capture wall the `eyg-type-soundness.md` T6 "deepened finding" named.
 
-Resolution (the design the next session must implement, *not* a mechanical edit): the
-generalized/`assignGen` frame must **store the let-site facts** — `Γ`, `EnvWf fenv Γ`, the
+### Why the easy route is *provably* impossible (rigorous, this session)
+
+The tempting shortcut is to make the generalized `assign` frame carry poly-readiness as a
+**value-agnostic** stored premise, so the `Assign`-pop discharges `EnvWf.cons` directly from
+the arriving `HasTypeV v defnTy`:
+
+    (Pready)  ∀ v, HasTypeV v defnTy → ∀ args, HasTypeV v (s.instantiate args)
+
+This is **exactly the false value-substitution lemma** the module header of
+`Substitution.lean` records — `Pready` would give `HasTypeV v defnTy → HasTypeV v (subst σ
+defnTy)` for the instantiating `σ` — and it is false **even when `defnTy` is an arrow** (the
+value-restricted case): `v` may be a `Closure` that *captured* a variable typed at an open row
+`{r | β}`; the generalizing `σ` fixes only the variables generalized away from `Γ`, not the
+closure's captured `β`, so `subst σ` adds a field the captured value lacks and the re-typing
+fails. So `Pready` cannot be a frame premise — the `assign` frame **cannot** soundly carry
+poly-readiness without being coupled to *which* value arrives. This is not an incidental
+inconvenience; it is forced by the same open-row obstruction that defeats `hasTypeV_subst`.
+
+The corollary: the `Assign`-pop case genuinely only sees "*some* `v` with `HasTypeV v
+defnTy`" (it `cases` on the reduction, which is value-agnostic), so it *cannot* know `v` is the
+closure built from the let's `λ` without a **machine-level coupling invariant**.
+
+### The forced design (next session, milestone slice — not a mechanical edit)
+
+The generalized/`assignGen` frame must **store the let-site facts** — `Γ`, `EnvWf fenv Γ`, the
 lambda typing `HasType Γ ⟨Lambda x' b'⟩ defnTy ε`, the scheme `s`, `Generalizes s Γ defnTy`,
 and the body typing under `(x,s)::Γ` — and preservation must carry an **`MStateWf`-level
 invariant** linking the frame's stored lambda to the control between push and pop (the
 control *is* that lambda until it reduces, deterministically, to `Closure x' b' fenv`, which
 is exactly what the frame stores its `fenv`/lambda for). With those stored facts the
 existential `Γcap` from the value typing is **bypassed** — `generalizes_closure_ready` is fed
-the *stored* `Γ`-typing instead. This invariant (frame-remembers-its-value-shape) is the
-genuine remaining design work; the value restriction makes it tractable (the bound `defn` is
-syntactically a `λ`, reducing in one step), but it is a focused milestone slice, not a quick
-edit. The semantic keystone (`generalizes_closure_ready`) is what makes the payoff a one-liner
-once the stored `Γ`-typing is in hand.
+the *stored* `Γ`-typing instead. The value restriction makes the invariant tractable (the
+bound `defn` is syntactically a `λ`, so between push and pop the control is in one of exactly
+two states: the stored `λ`, or its closure value), but the invariant threads through every
+`MStateWf` consumer (the same surface `Handle`/`TauKeepsRow` touched), so it is a focused
+milestone slice. The semantic keystone (`generalizes_closure_ready`) makes the payoff a
+one-liner once the stored `Γ`-typing is in hand — that hardest *semantic* obligation is banked.
 
 ## Verified
 - `lake build` 1772 jobs green; `lake exe spec` 104/104; `#print axioms` on the three new

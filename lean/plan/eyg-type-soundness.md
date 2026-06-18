@@ -656,8 +656,18 @@ for the **whole** core language.
       constructor (value-restricted) + `inv_let_poly` + `hasType_expr_form` arm; (b) generalize
       the `StackWf`/`StackSegWf.assign` frame from `.mono defnTy` to an arbitrary scheme with a
       stored `Generalizes` witness; (c) re-green `preservation` (`Assign`-pop uses
-      `generalizes_closure_ready`) / `progress`; (d) a polymorphic-reuse `example`. The
-      `MStateWf` freshness invariant is **no longer needed** for the closure case.
+      `generalizes_closure_ready`) / `progress`; (d) a polymorphic-reuse `example`.
+      **⚠ Rigorous finding (2026-06-18):** the *easy* route — a value-agnostic readiness
+      premise on the `assign` frame (`∀ v, HasTypeV v defnTy → ∀ args, HasTypeV v
+      (s.instantiate args)`) — is **provably impossible**: it is exactly the false
+      value-substitution lemma (false even for arrow `defnTy`, via a closure capturing an
+      open-row-typed variable `σ` doesn't fix). Since `MStateWf`'s value case decouples the
+      value's type from the stack (`∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ`), the
+      `Assign`-pop sees only an arbitrary `v : defnTy` and **cannot** know it is the let's
+      closure without a **machine-level frame↔control coupling invariant** threaded through
+      `MStateWf` (the surface `Handle`/`TauKeepsRow` touched). So `let_poly` is a focused
+      milestone slice, not a mechanical edit; the keystone makes its hardest *semantic*
+      obligation a one-liner once the stored `Γ`-typing is in hand. See the progress note.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
