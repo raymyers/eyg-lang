@@ -124,7 +124,7 @@ theorem stackSeg_toStackWf {m : Type} {seg k : Stack m} {σin εin σmid εmid �
       | arg henv harg h => exact .arg henv harg (Ty.effWeaken_refl _) (ih h)
       | applyf hf h => exact .applyf hf (Ty.effWeaken_refl _) (ih h)
       | callwith harg h => exact .callwith harg (Ty.effWeaken_refl _) (ih h)
-      | delimit hh h => exact .delimit hh (Ty.effWeaken_refl _) (ih h)
+      | delimit hh hweak h => exact .delimit hh hweak (ih h)
 
 /-- **Resume composition.** Feeding a reply into `move acc k` is well-typed: `acc.reverse`
 (the captured delimited prefix, in original order) is a segment `(reply,εtop) ⇒

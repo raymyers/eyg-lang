@@ -183,9 +183,13 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   `Delimit` re-pushed for a deep handler) is a stack-**segment** transformer taking the
   reply value (`reply`, at the handled row `εtop`) to the handler's return (`ret`, at the
   discharged row `tail`). It rests at the resumption type `kontTy reply tail ret =
-  reply →⟨tail⟩ ret`. -/
+  reply →⟨tail⟩ ret`. The segment is stored **quantified over the discharge row**
+  `εBelow ⊇ tail`: the captured prefix runs at the fixed handled row `εtop`, and only the
+  re-pushed final `Delimit`'s discharge varies, so the construction is polymorphic in
+  `εBelow`. This is exactly what lets an escaping resume (pure tail, `tail ≈ ∅`) be invoked
+  at a larger ambient `ε` — the resume dispatch instantiates `εBelow := ε`. -/
   | partialResume {acc iEnv reply εtop ret tail τ} :
-      StackSegWf acc.reverse reply εtop ret tail →
+      (∀ εBelow, Ty.EffWeaken tail εBelow → StackSegWf acc.reverse reply εtop ret εBelow) →
       Ty.TyEquiv (kontTy reply tail ret) τ →
       HasTypeV (.Partial (.Resume acc iEnv) []) τ
 
@@ -240,13 +244,17 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
       HasTypeV arg argTy →
       StackSegWf rest retTy εin σout εout →
       StackSegWf ((Kontinue.CallWith arg fenv, a) :: rest) (.fun argTy εin retTy) εin σout εout
-  /-- A deep `Delimit l handler henv` frame: discharges `l`, so its input row is
-  `⟨l:(lift,reply)|tail⟩` and the rest continues under `tail`. **No `EnvWf` premise** —
-  the frame's stored env is never used for typing (the handler is a self-contained
-  value), and at `reduceDeep` the frame env is arbitrary, so requiring it is unprovable. -/
-  | delimit {a l handler henv lift reply tail ret σout εout rest} :
+  /-- A deep `Delimit l handler henv` frame: discharges `l` from the input row
+  `⟨l:(lift,reply)|tail⟩`; the rest continues under any `εBelow ⊇ tail`
+  (`EffWeaken tail εBelow`), mirroring the generalized `StackWf.delimit`. This lets an
+  escaping resumption's captured segment be re-composed onto a base stack at a *larger*
+  ambient (the row-bridge for a pure-tail continuation invoked in an effectful context).
+  **No `EnvWf` premise** — the frame's stored env is never used for typing (the handler is
+  a self-contained value), and at `reduceDeep` the frame env is arbitrary. -/
+  | delimit {a l handler henv lift reply tail ret εBelow σout εout rest} :
       HasTypeV handler (handlerTy lift reply tail ret) →
-      StackSegWf rest ret tail σout εout →
+      Ty.EffWeaken tail εBelow →
+      StackSegWf rest ret εBelow σout εout →
       StackSegWf ((Kontinue.Delimit l handler henv false, a) :: rest)
         ret (.effectExtend l lift reply tail) σout εout
 
@@ -270,7 +278,7 @@ theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σou
       | arg henv harg h => exact .arg henv harg (ih h)
       | applyf hf h => exact .applyf hf (ih h)
       | callwith harg h => exact .callwith harg (ih h)
-      | delimit hh h => exact .delimit hh (ih h)
+      | delimit hh hweak h => exact .delimit hh hweak (ih h)
 
 /-! ## The lookup lemma (replaces the substitution lemma)
 
