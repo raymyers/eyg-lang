@@ -27,3 +27,4 @@ import Eyg.Types.Generation
 import Eyg.Types.Runtime
 import Eyg.Types.Machine
 import Eyg.Types.Substitution
+import Eyg.Types.Generalization

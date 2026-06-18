@@ -639,9 +639,25 @@ for the **whole** core language.
       existential and `EnvWf` non-unique, so `FV(Γcap) ⊆ FV(Γ)` is not recoverable
       post-hoc — `gen` needs a **context-freshness invariant threaded through
       `MStateWf`** (the closure-runtime analogue of HM's "don't generalize env vars"),
-      an invasive change comparable to the `fix`/`Handle` invariants. **Remaining:**
-      (a) that `MStateWf` freshness invariant; (b) the additive `gen` + `let_poly`
-      rule + `inv_let_poly` + polymorphic `Assign`-frame preservation cascade.
+      an invasive change comparable to the `fix`/`Handle` invariants.
+      **⚙ DECLARATIVE KEYSTONE DELIVERED** (2026-06-18,
+      `progress/2026-06-18-T6-gen-declarative-keystone.md`, `Eyg/Types/Generalization.lean`):
+      the route that **sidesteps both** the de Bruijn `gen` computation *and* the
+      `MStateWf`-freshness blocker. Following the judgment's declarative style, `let_poly`
+      will quantify over *any* scheme satisfying the predicate `Generalizes s Γ defnTy`
+      (every instantiation is a `Γ`-fixing substitution instance of `defnTy`) — no principal
+      `gen` is computed (that is the T8 inference layer). The **value restriction** +
+      `closure_typed_of_lambda_subst` type the closure at the *known* let-site `Γ` (no
+      existential capture context), so `generalizes_closure_ready` discharges the exact
+      `EnvWf.cons` clause `∀ args, HasTypeV v (s.instantiate args)` **without** any
+      `MStateWf` freshness invariant. `generalizes_mono` shows monomorphic `let` is the
+      `arity = 0` degenerate case. Green, axioms `propext`/`Quot.sound`, no new `axiom`s.
+      **Remaining (the atomic build-breaking cascade):** (a) the `HasType.let_poly`
+      constructor (value-restricted) + `inv_let_poly` + `hasType_expr_form` arm; (b) generalize
+      the `StackWf`/`StackSegWf.assign` frame from `.mono defnTy` to an arbitrary scheme with a
+      stored `Generalizes` witness; (c) re-green `preservation` (`Assign`-pop uses
+      `generalizes_closure_ready`) / `progress`; (d) a polymorphic-reuse `example`. The
+      `MStateWf` freshness invariant is **no longer needed** for the closure case.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
@@ -844,8 +860,11 @@ checker / compiler.
       (`progress/2026-06-17-T6b-partialFixed-reapplication.md`), the fix *creation*
       (`FixPreserves`/`FixNoBadCrash`) still a hypothesis pending the (i)/(ii) discharge fork;
       **let-generalization `gen`** — substitution *foundation* ✅ (`Ty.shift`/`substScheme`/
-      `subst_instantiate'`/`hasType_subst`, `progress/2026-06-16-T6-gen-substitution-infra.md`),
-      value-restricted `hasTypeV_subst` + `let_poly` rule remaining.
+      `subst_instantiate'`/`hasType_subst`, `progress/2026-06-16-T6-gen-substitution-infra.md`)
+      + **declarative generalization keystone** ✅ (`Generalizes` predicate +
+      `generalizes_closure_ready`, `progress/2026-06-18-T6-gen-declarative-keystone.md` —
+      sidesteps the `MStateWf`-freshness blocker), `let_poly` constructor + `Assign`-frame
+      cascade remaining.
 - [~] **T7:** headline `soundness` over `BehaviorsR` — value/no-bad-crash/effect-escape
       (`soundness_evalR`), silent terminations + open-boundary suspension over
       `BehaviorsR` ✅; **`diverges` ω-effect-safety** (`soundness_behaviorsR_diverges`) ✅;
