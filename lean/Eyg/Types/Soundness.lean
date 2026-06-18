@@ -2368,6 +2368,25 @@ theorem stackWfB_escape {m : Type} {k : Stack m} {σ εtop εbot τ : Ty} {op : 
           · obtain ⟨a', b', hcE, _, _⟩ := Ty.tyEquiv_effContains_mp htyeq hct
             exact (effContains_empty hcE).elim
 
+/-- **`MStateWfB`** — the base-row-tracking analogue of `MStateWf`: the stack is typed by
+`StackWfB` carrying the bottom-of-stack row `εbot` (invariantly `ε_init` across a run), while
+the control runs at the current *top* row `εtop`. The discharge of `TauKeepsRow` uses it: an
+escaping `op ∈ εtop` with no handler reflects to `op ∈ εbot` via `stackWfB_escape`. -/
+def MStateWfB {m : Type} : MState m → Ty → Ty → Prop
+  | .run (.E e, env, k), τ, εbot =>
+      ∃ Γ τin εtop, EnvWf env Γ ∧ HasType Γ e τin εtop ∧ StackWfB k τin εtop εbot τ
+  | .run (.V v, _, k), τ, εbot =>
+      ∃ τin εtop, HasTypeV v τin ∧ StackWfB k τin εtop εbot τ
+  | .wait op _ k, τ, εbot =>
+      ∃ a b replyTy εtop, Ty.EffContains εtop op a b ∧ Ty.TyEquiv b replyTy ∧
+        StackWfB k replyTy εtop εbot τ
+
+/-- A well-typed program's initial state is `MStateWfB` at base row = its declared row
+(empty stack ⇒ `εtop = εbot = εinit`). -/
+theorem mStateWfB_initial {m : Type} {prog : Tree.Node m} {τ εinit : Ty}
+    (h : HasType [] prog τ εinit) : MStateWfB (.run (Config.initial prog)) τ εinit :=
+  ⟨[], τ, εinit, EnvWf.nil, h, StackWfB.nil⟩
+
 /-- **Exact-row tau-preservation, isolated.** A silent step keeps the ambient row `ε`
 *exactly*. This holds for the **handler-discharge-free** fragment (pure/data/`Perform`/
 `Resume`-reply): there every `tau` move keeps `ε`. It is **false in general once
