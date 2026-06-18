@@ -118,6 +118,13 @@ theorem builtin_instantiate_arrow {id : String} {s : Scheme} (args : List Ty)
       | (obtain rfl := Option.some.inj h; exact ⟨_, _, _, rfl⟩)
       | exact absurd h (by simp)
 
+/-- Every schemed builtin has arity ≥ 1, so a freshly-evaluated `Partial (Builtin id) []` is
+strictly under-applied — the `PartialBuiltinWf` witness for the `Builtin`-node eval. -/
+theorem scheme_arity_pos {id : String} {s : Scheme} (h : Builtins.scheme id = some s) :
+    ∃ n, Builtin.builtinArity id = some n ∧ 0 < n := by
+  unfold Builtins.scheme at h
+  split at h <;> first | exact ⟨_, rfl, by decide⟩ | exact absurd h (by simp)
+
 /-- **`doPerformR` only ever errors with `UnhandledEffect label arg`** (structural —
 the matching-`Delimit` arm returns `.ok`, the `[]` base is the only `.error`, every
 other frame recurses). This replaces the now-false `stackWf_doPerformR_unhandled` (a
@@ -205,7 +212,7 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       simp only [reduce1Run, reduceEval] at hr
       split at hr
       · cases hr
-        refine ⟨τin, HasTypeV.partialBuiltin (args := args) hs ?_ heq, hst⟩
+        refine ⟨τin, HasTypeV.partialBuiltin (args := args) ⟨hs, scheme_arity_pos hs⟩ ?_ heq, hst⟩
         rw [harrow]; exact BuiltinPartialWf.nil
       · exact absurd hr (by simp)
   | Tail =>
@@ -1870,7 +1877,7 @@ theorem builtinApp_arity2 [BEq m] {key : String} {s : Scheme} {sargs : List Ty} 
           reduceCallBuiltin_acc h1 h2 h3 h4 harity (by simp)] at htau
         injection htau with htau'; subst htau'
         refine ⟨retTy, ?_, hst⟩
-        refine HasTypeV.partialBuiltin (args := sargs) hsch ?_ hr
+        refine HasTypeV.partialBuiltin (args := sargs) ⟨hsch, 2, harity, by simp⟩ ?_ hr
         rw [hbase]
         exact BuiltinPartialWf.cons harg' BuiltinPartialWf.nil
       · intro v hval
@@ -1902,8 +1909,8 @@ open Ty in
 and its scheme. -/
 theorem scheme_cases {id : String} {s : Scheme} (h : Builtins.scheme id = some s) :
     (id = "equal" ∧ s = ⟨1, pure2 (q 0) (q 0) boolean⟩) ∨
-    (id = "fix" ∧ s = ⟨4, .fun (.fun (.fun (q 0) (q 2) (q 3)) (q 1) (.fun (q 0) (q 2) (q 3)))
-        (q 1) (.fun (q 0) (q 2) (q 3))⟩) ∨
+    (id = "fix" ∧ s = ⟨4, .fun (.fun (.fun (q 0) (q 2) (q 3)) .empty (.fun (q 0) (q 2) (q 3)))
+        .empty (.fun (q 0) (q 2) (q 3))⟩) ∨
     (id = "int_compare" ∧ s = .mono (pure2 integer integer Builtins.intCompareResult)) ∨
     (id = "int_add" ∧ s = .mono (pure2 integer integer integer)) ∨
     (id = "int_subtract" ∧ s = .mono (pure2 integer integer integer)) ∨
@@ -1936,6 +1943,64 @@ def FixPreserves (m : Type) [BEq m] : Prop :=
     (∀ v, reduceCall (.Partial (.Builtin "fix") applied) arg ann fenv rest = .done (.value v) →
         HasTypeV v τ)
 
+/-- `fix`'s `reduceCallBuiltin` never returns a value (it only `.tau`-steps). -/
+theorem reduceCallBuiltin_fix_ne_value [BEq m] {l : List (Value m)} {ann : m} {env : Env m}
+    {k : Stack m} {v : Value m} :
+    reduceCallBuiltin "fix" l ann env k ≠ .done (.value v) := by
+  rcases l with _ | ⟨x, _ | ⟨y, rest⟩⟩ <;> simp [reduceCallBuiltin, Builtin.builtinArity]
+
+/-- **`FixPreserves` discharged** — given the **pure-builder** narrowing of `Builtins.scheme
+"fix"` (`q1 = ∅`) and the **strict-under-application** invariant on `partialBuiltin`
+(`PartialBuiltinWf`). The invariant forces `applied = []` (a 1-arg `fix` partial never rests),
+so only the saturation/creation case remains: the partial's argument is the pure builder
+`(self →⟨∅⟩ self)`, and the successor `fixed[builder]` (under the pushed `Apply builder` frame)
+types via `partialFixed` + `StackWf.applyf` with `retTy = self`. The value clause is vacuous
+(`fix` only `.tau`-steps). -/
+theorem fixPreserves [BEq m] : FixPreserves m := by
+  intro applied arg ann fenv rest argTy εf retTy ε τ hp harg hw hst
+  generalize hvq : (Value.Partial (.Builtin "fix") applied : Value m) = v0 at hp
+  cases hp with
+  | @partialBuiltin _id s args _applied a' ε' r' _τ hwf hpw he =>
+      injection hvq with hsw hap; injection hsw with hid; subst hid; subst hap
+      obtain ⟨hs, n, harity, hlt⟩ := hwf
+      obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
+      have harg' : HasTypeV arg a' := harg.conv ha.symm
+      -- pin the narrowed fix scheme
+      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
+          (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ := by
+        rcases scheme_cases hs with ⟨h,_⟩|⟨_,h⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|
+          ⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩
+        all_goals first | exact h | exact absurd h (by decide)
+      subst hsfix
+      -- `applied = []` (fix arity 1, strict under-application)
+      have hn1 : n = 1 := by
+        rw [show Builtin.builtinArity "fix" = some 1 from rfl] at harity
+        exact (Option.some.inj harity).symm
+      subst hn1
+      have happ : applied = [] := by
+        rcases applied with _ | ⟨b, tl⟩
+        · rfl
+        · simp at hlt
+      subst happ
+      -- compute the (narrowed) instantiated base; `cons` peels nothing (`applied = []`)
+      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
+            (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ args
+          = .fun (.fun (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3)))
+              .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))))
+            .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))) := by
+        simp [Scheme.instantiate, Ty.subst]
+      rw [hB] at hpw
+      cases hpw
+      refine ⟨fun cfg' htau => ?_, fun v hval => ?_⟩
+      · rw [reduceCall_builtin_eq, List.nil_append] at htau
+        simp only [reduceCallBuiltin] at htau
+        injection htau with htau'; subst htau'
+        exact ⟨_, HasTypeV.partialFixed harg' (.refl _),
+          StackWf.applyf harg' (Ty.effWeaken_empty ε) (hst.conv hr.symm (.refl _))⟩
+      · rw [reduceCall_builtin_eq] at hval
+        exact absurd hval reduceCallBuiltin_fix_ne_value
+  | _ => exact absurd hvq (by simp [Value.Partial.injEq])
+
 /-- **`BuiltinAppPreserves` discharged** for the general builtins (every schemed
 builtin except `fix`, which defers to `hfix`). Per builtin: `scheme_cases` pins the
 name+scheme, the arity-1/2 driver peels the typed args and runs `Builtin.run`, and the
@@ -1954,6 +2019,7 @@ theorem builtinAppPreserves [BEq m] (hfix : FixPreserves m) : BuiltinAppPreserve
   | @partialBuiltin _id s args _applied a' ε' r' _τ hs hpw he =>
     obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
     have harg' : HasTypeV arg a' := harg.conv ha.symm
+    obtain ⟨hs, harn⟩ := hs
     rcases scheme_cases hs with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
@@ -1967,7 +2033,7 @@ theorem builtinAppPreserves [BEq m] (hfix : FixPreserves m) : BuiltinAppPreserve
         (fun _ _ hh => run_equal hh)
         (by simpa [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q] using hpw) harg' hr hst
     · -- fix (isolated)
-      exact hfix (HasTypeV.partialBuiltin hs hpw he) harg hw hst
+      exact hfix (HasTypeV.partialBuiltin ⟨hs, harn⟩ hpw he) harg hw hst
     · -- int_compare
       exact builtinApp_arity2 (by decide) (by decide) (by decide) (by decide) (by decide)
         (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
@@ -2137,6 +2203,7 @@ theorem builtinAppNoBadCrash [BEq m] (hfix : FixNoBadCrash m) : BuiltinAppNoBadC
   | @partialBuiltin _id s args _applied a' ε' r' _τ hs hpw he =>
     obtain ⟨ha, _, _⟩ := Ty.tyEquiv_fun_components he
     have harg' : HasTypeV arg a' := harg.conv ha.symm
+    obtain ⟨hs, harn⟩ := hs
     rcases scheme_cases hs with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
@@ -2146,7 +2213,7 @@ theorem builtinAppNoBadCrash [BEq m] (hfix : FixNoBadCrash m) : BuiltinAppNoBadC
         (by simpa [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q] using hpw) harg' hcrash
         (by intro a e r h; cases h) (fun _ _ herr => by simp [Builtin.run] at herr)
     · -- fix (isolated)
-      exact hfix (HasTypeV.partialBuiltin hs hpw he) harg hcrash
+      exact hfix (HasTypeV.partialBuiltin ⟨hs, harn⟩ hpw he) harg hcrash
     · -- int_compare (never errors)
       exact builtinNoBad_arity2 (by decide) (by decide) (by decide) (by decide) (by decide)
         (by simpa [Scheme.instantiate_mono, Ty.pure2] using hpw) harg' hcrash
@@ -2669,7 +2736,7 @@ theorem preservation_E_B [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       simp only [reduce1Run, reduceEval] at hr
       split at hr
       · cases hr
-        refine ⟨τin, εtop, HasTypeV.partialBuiltin (args := args) hs ?_ heq, hst⟩
+        refine ⟨τin, εtop, HasTypeV.partialBuiltin (args := args) ⟨hs, scheme_arity_pos hs⟩ ?_ heq, hst⟩
         rw [harrow]; exact BuiltinPartialWf.nil
       · exact absurd hr (by simp)
   | Tail =>
@@ -3472,7 +3539,7 @@ theorem builtinApp_arity2_B [BEq m] {key : String} {s : Scheme} {sargs : List Ty
         reduceCallBuiltin_acc h1 h2 h3 h4 harity (by simp)] at htau
       injection htau with htau'; subst htau'
       refine ⟨retTy, ε, ?_, hst⟩
-      refine HasTypeV.partialBuiltin (args := sargs) hsch ?_ hr
+      refine HasTypeV.partialBuiltin (args := sargs) ⟨hsch, 2, harity, by simp⟩ ?_ hr
       rw [hbase]
       exact BuiltinPartialWf.cons harg' BuiltinPartialWf.nil
   | @cons _ _ _ vval _ _ hv hrest =>
@@ -3502,6 +3569,49 @@ def FixPreservesB (m : Type) [BEq m] : Prop :=
     ∀ cfg', reduceCall (.Partial (.Builtin "fix") applied) arg ann fenv rest = .tau cfg' →
         MStateWfB (.run cfg') τ εbot
 
+/-- **`FixPreservesB` discharged** — the base-row mirror of `fixPreserves` (same narrowing +
+strict-under-application invariant force `applied = []`; the `fixed[builder]` successor types via
+`partialFixed` + `StackWfB.applyf`). -/
+theorem fixPreservesB [BEq m] : FixPreservesB m := by
+  intro applied arg ann fenv rest argTy εf retTy ε εbot τ hp harg hw hst
+  generalize hvq : (Value.Partial (.Builtin "fix") applied : Value m) = v0 at hp
+  cases hp with
+  | @partialBuiltin _id s args _applied a' ε' r' _τ hwf hpw he =>
+      injection hvq with hsw hap; injection hsw with hid; subst hid; subst hap
+      obtain ⟨hs, n, harity, hlt⟩ := hwf
+      obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
+      have harg' : HasTypeV arg a' := harg.conv ha.symm
+      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
+          (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ := by
+        rcases scheme_cases hs with ⟨h,_⟩|⟨_,h⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|
+          ⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩
+        all_goals first | exact h | exact absurd h (by decide)
+      subst hsfix
+      have hn1 : n = 1 := by
+        rw [show Builtin.builtinArity "fix" = some 1 from rfl] at harity
+        exact (Option.some.inj harity).symm
+      subst hn1
+      have happ : applied = [] := by
+        rcases applied with _ | ⟨b, tl⟩
+        · rfl
+        · simp at hlt
+      subst happ
+      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
+            (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ args
+          = .fun (.fun (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3)))
+              .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))))
+            .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))) := by
+        simp [Scheme.instantiate, Ty.subst]
+      rw [hB] at hpw
+      cases hpw
+      intro cfg' htau
+      rw [reduceCall_builtin_eq, List.nil_append] at htau
+      simp only [reduceCallBuiltin] at htau
+      injection htau with htau'; subst htau'
+      exact ⟨_, ε, HasTypeV.partialFixed harg' (.refl _),
+        StackWfB.applyf harg' (Ty.effWeaken_empty ε) (hst.conv hr.symm (.refl _))⟩
+  | _ => exact absurd hvq (by simp [Value.Partial.injEq])
+
 /-- **`BuiltinAppPreservesB` discharged** for the general builtins (every schemed builtin except
 `fix`, which defers to `hfixB`) — the base-row mirror of `builtinAppPreserves`. -/
 theorem builtinAppPreservesB [BEq m] (hfixB : FixPreservesB m) : BuiltinAppPreservesB m := by
@@ -3514,6 +3624,7 @@ theorem builtinAppPreservesB [BEq m] (hfixB : FixPreservesB m) : BuiltinAppPrese
   | @partialBuiltin _id s args _applied a' ε' r' _τ hs hpw he =>
     obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
     have harg' : HasTypeV arg a' := harg.conv ha.symm
+    obtain ⟨hs, harn⟩ := hs
     rcases scheme_cases hs with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
@@ -3525,7 +3636,7 @@ theorem builtinAppPreservesB [BEq m] (hfixB : FixPreservesB m) : BuiltinAppPrese
           Ty.unit, Ty.record'])
         (fun _ _ hh => run_equal hh)
         (by simpa [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q] using hpw) harg' hr hst
-    · exact hfixB (HasTypeV.partialBuiltin hs hpw he) harg hw hst
+    · exact hfixB (HasTypeV.partialBuiltin ⟨hs, harn⟩ hpw he) harg hw hst
     · exact builtinApp_arity2_B (by decide) (by decide) (by decide) (by decide) (by decide)
         (by intro a e r h; cases h) hs (sargs := args) (by simp [Scheme.instantiate_mono, Ty.pure2])
         (fun hx hy hh => run_int_compare hx hy hh)
@@ -3619,14 +3730,14 @@ well-typed program's `evalR` at any fuel is: a timeout; a value of type `τ`; a
 *sanctioned* `Unrepresentable` crash (never a type-error crash); or an emitted effect
 `op ∈ ε`. Modulo the isolated `fix` obligation, this is whole-program soundness for the
 general-builtin language over the transparent evaluator. -/
-theorem soundness_evalR [BEq m] (hpres : FixPreserves m)
-    (hfixB : FixPreservesB m)
+theorem soundness_evalR [BEq m]
     {prog : Tree.Node m} {τ ε : Ty} (fuel : Nat) (hty : HasType [] prog τ ε) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
     (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) ∨
     (∃ op lift resume, evalR fuel (Config.initial prog) = .effect op lift resume ∧
       ∃ a b, Ty.EffContains ε op a b) := by
+  have hpres : FixPreserves m := fixPreserves; have hfixB : FixPreservesB m := fixPreservesB
   cases h : evalR fuel (Config.initial prog) with
   | timeout => exact Or.inl rfl
   | done o =>
@@ -3653,17 +3764,16 @@ theorem pure_no_perform_evalR [BEq m] (hsatB : BuiltinAppPreservesB m)
 row has only three `evalR` outcomes — timeout, a typed value, or a sanctioned
 `Unrepresentable` crash — *never* an emitted effect. The pure specialization of
 `soundness_evalR`. -/
-theorem soundness_evalR_pure [BEq m] (hpres : FixPreserves m)
-    (hfixB : FixPreservesB m)
+theorem soundness_evalR_pure [BEq m]
     {prog : Tree.Node m} {τ : Ty} (fuel : Nat) (hty : HasType [] prog τ .empty) :
     evalR fuel (Config.initial prog) = .timeout ∨
     (∃ v, evalR fuel (Config.initial prog) = .done (.value v) ∧ HasTypeV v τ) ∨
     (∃ r, evalR fuel (Config.initial prog) = .done (.crash r) ∧ ¬ Reason.IsBad r) := by
-  rcases soundness_evalR hpres hfixB fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
+  rcases soundness_evalR fuel hty with h | h | h | ⟨op, lift, resume, h, _⟩
   · exact Or.inl h
   · exact Or.inr (Or.inl h)
   · exact Or.inr (Or.inr h)
-  · exact (pure_no_perform_evalR (builtinAppPreservesB hfixB) fuel hty h).elim
+  · exact (pure_no_perform_evalR (builtinAppPreservesB fixPreservesB) fuel hty h).elim
 
 /-! ## Soundness at the `BehaviorsR` level (silent terminations)
 
@@ -3901,8 +4011,7 @@ Divergent behaviours are covered by `soundness_behaviorsR_diverges` (ω-effect-s
 open reply-containing terminating traces by `soundness_behaviorsR_terminates_value`/
 `_noBadCrash` (via `TraceRepliesOk`). All `BehaviorsR` shapes are now covered modulo the
 isolated `fix`. -/
-theorem soundness [BEq m] (hpres : FixPreserves m)
-    (hfixB : FixPreservesB m)
+theorem soundness [BEq m]
     {prog : Tree.Node m} {τ ε : Ty} (hty : HasType [] prog τ ε) :
     (∀ {trace : List (Label m)} {v : Value m}, (∀ μ ∈ trace, μ = Label.tau) →
         Behavior.terminates trace (.value v) ∈ BehaviorsR (Config.initial prog) →
@@ -3913,8 +4022,8 @@ theorem soundness [BEq m] (hpres : FixPreserves m)
     (∀ {trace : List (Label m)} {op : String} {lift : Value m},
         Behavior.suspended trace op lift ∈ BehaviorsR (Config.initial prog) →
         ∃ a b, Ty.EffContains ε op a b) :=
-  ⟨fun hs hm => soundness_behaviorsR_value hpres hty hs hm,
-   fun hs hm => soundness_behaviorsR_noBadCrash hpres fixNoBadCrash hty hs hm,
-   fun hm => soundness_behaviorsR_suspended (builtinAppPreservesB hfixB) hty hm⟩
+  ⟨fun hs hm => soundness_behaviorsR_value fixPreserves hty hs hm,
+   fun hs hm => soundness_behaviorsR_noBadCrash fixPreserves fixNoBadCrash hty hs hm,
+   fun hm => soundness_behaviorsR_suspended (builtinAppPreservesB fixPreservesB) hty hm⟩
 
 end Eyg.Types

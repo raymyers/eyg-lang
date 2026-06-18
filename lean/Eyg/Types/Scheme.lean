@@ -327,12 +327,13 @@ def intCompareResult : Ty := union' [("Lt", unit), ("Eq", unit), ("Gt", unit)]
 `contextual.builtins()`. Returns `none` for builtins not yet transcribed. -/
 def scheme : String → Option Scheme
   | "equal" => some ⟨1, pure2 (q 0) (q 0) boolean⟩
-  -- `fix : ((self →⟨q1⟩ self) →⟨q1⟩ self)` with `self = (q0 →⟨q2⟩ q3)` — the fixpoint
-  -- is forced to be a **function** type (mirrors the hardened `contextual.gleam` scheme),
-  -- so the unsound base-type fixpoint `fix (\x. x+1) : Integer` no longer type-checks.
+  -- `fix : ((self →⟨∅⟩ self) →⟨∅⟩ self)` with `self = (q0 →⟨q2⟩ q3)` — fixpoint forced to a
+  -- **function** type AND the **builder pinned pure** (`q1 = ∅`, left unused in the arity-4
+  -- prefix): the analyzer-divergent narrowing that discharges `FixPreserves` via the pure-builder
+  -- `partialFixed` (rejects builder-side-effecting recursion the reference analyzer accepts).
   | "fix" => some ⟨4,
-      .fun (.fun (.fun (q 0) (q 2) (q 3)) (q 1) (.fun (q 0) (q 2) (q 3)))
-        (q 1) (.fun (q 0) (q 2) (q 3))⟩
+      .fun (.fun (.fun (q 0) (q 2) (q 3)) .empty (.fun (q 0) (q 2) (q 3)))
+        .empty (.fun (q 0) (q 2) (q 3))⟩
   | "int_compare" => some (.mono (pure2 integer integer intCompareResult))
   | "int_add" => some (.mono (pure2 integer integer integer))
   | "int_subtract" => some (.mono (pure2 integer integer integer))

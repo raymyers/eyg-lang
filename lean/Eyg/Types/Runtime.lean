@@ -35,6 +35,15 @@ namespace Eyg.Types
 open Eyg.Interpreter
 open Eyg.Ir
 
+/-- A builtin partial `Partial (Builtin id) applied` is well-formed for `partialBuiltin`
+typing only when it has a scheme **and** is **strictly under-applied** (`applied.length <
+arity`). A saturated/over-applied builtin partial never rests (it reduces), so this is a true
+runtime invariant; enforcing it rules out the fictional over-applied `fix` partials. Bundled
+(scheme + arity bound) so destructuring `partialBuiltin` keeps a single hypothesis. -/
+def PartialBuiltinWf {m : Type} (id : String) (s : Scheme) (applied : List (Interpreter.Value m)) :
+    Prop :=
+  Builtins.scheme id = some s ∧ ∃ n, Interpreter.Builtin.builtinArity id = some n ∧ applied.length < n
+
 /-! Runtime typing for values, environments, and builtin partials (mutually
 recursive: a `Closure` carries an `EnvWf`; an env binds `HasTypeV` values). Values
 are pure — no effect row (a value *is* a result). -/
@@ -57,9 +66,12 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
       Ty.TyEquiv (.fun argTy εb retTy) τ →
       HasTypeV (.Closure x body env) τ
   /-- A (strictly under-applied) builtin partial at (a type equivalent to) its
-  residual arrow. -/
+  residual arrow. The `PartialBuiltinWf` bundle enforces both the scheme lookup **and**
+  strict under-application (`applied.length < arity`) — the latter rules out the fictional
+  over-applied `fix` partials (whose arrow return type would otherwise let this rule type
+  them), which is what makes `fix` preservation provable. -/
   | partialBuiltin {id s args applied a ε r τ} :
-      Builtins.scheme id = some s →
+      PartialBuiltinWf id s applied →
       BuiltinPartialWf (s.instantiate args) applied (.fun a ε r) →
       Ty.TyEquiv (.fun a ε r) τ →
       HasTypeV (.Partial (.Builtin id) applied) τ
@@ -548,7 +560,8 @@ example : EnvWf ([] : Env Unit) [] := EnvWf.nil
 -- A partially-applied `int_add` rests at the arrow `integer → integer`.
 example : HasTypeV (.Partial (.Builtin "int_add") [.Integer 2] : Value Unit)
     (.fun .integer .empty .integer) :=
-  HasTypeV.partialBuiltin (s := .mono (Ty.pure2 .integer .integer .integer)) (args := []) rfl
+  HasTypeV.partialBuiltin (s := .mono (Ty.pure2 .integer .integer .integer)) (args := [])
+    ⟨rfl, 2, rfl, by decide⟩
     (BuiltinPartialWf.cons (HasTypeV.int (Ty.TyEquiv.refl _)) BuiltinPartialWf.nil)
     (Ty.TyEquiv.refl _)
 
