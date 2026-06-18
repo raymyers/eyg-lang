@@ -66,10 +66,38 @@ were re-pointed to take `FixPreserves`/`FixNoBadCrash`/`FixPreservesB` (discharg
 
 ## Net result
 
-The **only** isolated hypotheses across the whole soundness development are now the `Fix*` family
-(`FixPreserves`/`FixNoBadCrash`/`FixPreservesB`) — the `fix`-*creation* obligations, satisfiable for
-the pure-builder fragment and awaiting Open Question 3 (effect-row subsumption) for effectful
-builders. `TauKeepsRow` and `BuiltinAppPreservesB` are gone from the headline theorems.
+`TauKeepsRow`, `BuiltinAppPreservesB`, **and `FixNoBadCrash`** are all gone from the headline.
+`FixNoBadCrash` was discharged unconditionally (`fixNoBadCrash` — fix creation only `.tau`-steps,
+never crashes). The headline `soundness`/`soundness_evalR`/`soundness_evalR_pure` now take **only
+`FixPreserves` + `FixPreservesB`**.
+
+## Why `FixPreserves`/`FixPreservesB` are a hard stop (machine-checked, 2026-06-18)
+
+These are **not** mechanically dischargeable with the current type system — confirmed by a
+machine-checked type mismatch (probe run this session). The fix scheme types the builder at latent
+`q1` (the recursion effect; `Builtins.scheme "fix" = ((self →⟨q1⟩ self) →⟨q1⟩ self)`), and an
+effectful program instantiates `q1 ≠ ∅`. But the only rule that types the successor `Partial fixed
+[builder]` is `HasTypeV.partialFixed`, which **pins the builder pure**:
+
+    partialFixed : HasTypeV builder (.fun (.fun D γ R) .empty (.fun D γ R)) → …
+
+Converting `HasTypeV builder (.fun _ γ _)` to `HasTypeV builder (.fun _ .empty _)` is a **false
+conversion** — Lean rejects it (`Type mismatch … expected … .fun Ty.empty …`), and rightly so:
+no sound `HasTypeV` rule narrows a stored arrow's latent from `γ` to `∅` (that would claim an
+effectful function is pure). So for an effectful builder the successor is simply **not typeable**.
+
+Discharging the effectful case therefore requires one of (not a mechanical edit):
+- **(i)** a new sound `partialFixed`-effectful typing rule — which needs the recursion's two effect
+  rows (`q1` builder-construction vs. `q2` fixpoint-body, independent tyvars) related, i.e. the
+  general **substitution-stable, row-variable-aware effect subsumption** of Open Question 3 (whose
+  own machine-checked counterexample shows the naive `EffSub` is *not* substitution-stable — a real
+  open problem, "the next foundational session"); or
+- **(ii)** narrowing `Builtins.scheme "fix"` to pin `q1 = ∅` — sound but **analyzer-divergent**
+  (rejects valid effectful recursion the reference `gleam_analysis` accepts), a user/design call.
+
+This is the genuine research/decision boundary: every remaining mechanical avenue is exhausted, and
+the residual obligation is provably blocked on either a new metatheory foundation or a design
+decision that diverges from the reference analyzer.
 
 ## Verified this pass
 - All 6 commits: `lake build` 1771 green, `lake exe spec` 104/104, axioms clean, no new `axiom`s.
