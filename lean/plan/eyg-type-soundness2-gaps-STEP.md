@@ -1,6 +1,6 @@
 Perform these steps:
 
-PLAN is `lean/plan/eyg-type-soundness-gaps.md` (closing Caveats 4 & 5 of
+PLAN is `lean/plan/eyg-type-soundness2-gaps.md` (closing Caveats 4 & 5 of
 `lean/plan/report/type-soundness-report.md`).
 
 * Study PLAN and pick a next task.

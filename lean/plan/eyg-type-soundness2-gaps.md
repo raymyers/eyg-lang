@@ -1,5 +1,5 @@
 ---
-name: eyg-type-soundness-gaps-plan
+name: eyg-type-soundness2-gaps-plan
 description: Close the two soundness-coverage gaps (Caveats 4 & 5 of the type-soundness report) — effectful-builder `fix` and nested let-polymorphism — by either proving soundness for the full feature or producing a machine-checked counterexample.
 date: 2026-06-19
 ---

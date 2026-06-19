@@ -106,3 +106,22 @@ Does this address it? Confirm by running EYG tests with Nix. And then updating y
 /goal Execute `lean/plan/eyg-type-soundness-STEP.md` until PLAN complete or you cannot make more progress.
 
 ---
+
+Study plan `lean/plan/eyg-type-soundness.md`, investigate any caveates to the claim we have proven EYG type soundness and explain.
+
+Concisely explain your findings with examples in `lean/plan/report/type-soundness-report.md`. Commit.
+___
+
+Caveat 4 and 5 `lean/plan/report/type-soundness-report.md` seem like gaps in saying we have soundness. What are the odds this is just more proof engineering vs an issue with the languages.
+
+---
+
+Create plan `lean/plan/eyg-type-soundness-gaps.md` to resolve caveats 4 and 5 of `lean/plan/report/type-soundness-report.md`. Milestone sections and markdown task bullets. Finding a counter example shall count as done for now, otherwise prove soundness.
+
+Adapt `lean/plan/eyg-type-soundness2-STEP.md` to `lean/plan/eyg-type-soundness2-gaps-STEP.md` for this new plan. Commit.
+
+---
+
+/goal Execute `lean/plan/eyg-type-soundness2-gaps-STEP.md` until PLAN complete or you cannot make more progress.
+
+---
