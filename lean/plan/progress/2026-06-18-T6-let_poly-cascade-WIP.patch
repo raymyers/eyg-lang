@@ -156,7 +156,7 @@ index 5a3f8e08..c4dee740 100644
    | str => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))
    | bin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))))
 diff --git a/lean/Eyg/Types/Machine.lean b/lean/Eyg/Types/Machine.lean
-index ce1b3b70..5ba42e08 100644
+index ce1b3b70..e92a81eb 100644
 --- a/lean/Eyg/Types/Machine.lean
 +++ b/lean/Eyg/Types/Machine.lean
 @@ -44,9 +44,9 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
@@ -191,6 +191,59 @@ index ce1b3b70..5ba42e08 100644
    | _ => simp at hs
  
  theorem stackWf_arg_inv {m : Type} {arg : Tree.Node m} {fenv : Env m} {a : m}
+@@ -233,6 +233,41 @@ theorem stackWf_nil_inv {m : Type} {σ ε τ : Ty} (h : StackWf ([] : Stack m) 
+   | conv _ hσ hε ih => exact hσ.symm.trans (ih hs)
+   | _ => simp at hs
+ 
++/-! ## Value-aware stack typing for `let_poly` (T6)
++
++The polymorphic `let`'s Assign frame binds the value at a **scheme** `genAt n defnTy`, so the Assign-pop
++must know the incoming value is **ready** — `∀ args, HasTypeV v (sc.instantiate args)` — which is *not*
++derivable from the value's monotype (it is the false-for-generic-`v` value-substitution property). So the
++readiness is carried in a value-aware stack predicate. `StackWfV v k` (the value flowing in is `v`) is
++value-aware at the `Assign` head; `StackWfE e env k` (the control `e` will become a value) carries the
++*future* closure's readiness across the lambda→closure step. See
++`progress/2026-06-18-T6-let_poly-stackwfV-stackwfE-design.md`. -/
++
++/-- Value-aware stack typing: the value `v` flows into stack `k`. At an `Assign` head it carries the
++binding **readiness** about `v`; `Trace` passes `v` through; every other head consumes `v` (plain
++`StackWf`). -/
++def StackWfV {m : Type} (v : Value m) : Stack m → Ty → Ty → Ty → Prop
++  | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfV v rest σ ε τ
++  | (Kontinue.Assign x body fenv, _) :: rest, _σ, ε, τ =>
++      ∃ Γ sc bodyTy, (∀ args, HasTypeV v (sc.instantiate args)) ∧ EnvWf fenv Γ ∧
++        HasType ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ
++  | k, σ, ε, τ => StackWf k σ ε τ
++
++/-- Control-aware stack typing for an `.E` state: the control `e` (in env `env`) will become a value. At
++an `Assign` head it carries (1) the **future closure's readiness** when `e` is a lambda, and (2) the
++invariant that a **poly** Assign (non-`mono` scheme) only sits under a **lambda** control — ruling out an
++arrow-typed builtin `Partial` flowing into a poly binding (false readiness, but semantically impossible).
++`Trace` passes through; other heads are plain `StackWf`. -/
++def StackWfE {m : Type} (e : Tree.Node m) (env : Env m) : Stack m → Ty → Ty → Ty → Prop
++  | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfE e env rest σ ε τ
++  | (Kontinue.Assign x body fenv, _) :: rest, _σ, ε, τ =>
++      ∃ Γ sc bodyTy, EnvWf fenv Γ ∧ HasType ((x, sc) :: Γ) body bodyTy ε ∧
++        StackWf rest bodyTy ε τ ∧
++        (∀ lx lbody la, e = ⟨.Lambda lx lbody, la⟩ →
++          ∀ args, HasTypeV (Value.Closure lx lbody env) (sc.instantiate args)) ∧
++        ((∀ t, sc ≠ Scheme.mono t) → ∃ lx lbody la, e = ⟨.Lambda lx lbody, la⟩)
++  | k, σ, ε, τ => StackWf k σ ε τ
++
+ /-- A machine state is well-typed at answer type `τ` and effect row `ε`: the
+ control yields an intermediate `τin` that the stack carries to `τ`. A `wait op env
+ k` state (suspended performing `op`, awaiting a reply) is typed by **effect safety**
+@@ -242,8 +277,8 @@ expected input need only be equivalent to the declared reply type) to the answer
+ `τ`. The reply value itself is supplied by the world — typed by the reply contract,
+ discharged in `preservation`'s `reply` case. -/
+ def MStateWf {m : Type} : MState m → Ty → Ty → Prop
+-  | .run (.E e, env, k), τ, ε => ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWf k τin ε τ
+-  | .run (.V v, _, k), τ, ε => ∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ
++  | .run (.E e, env, k), τ, ε => ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWfE e env k τin ε τ
++  | .run (.V v, _, k), τ, ε => ∃ τin, HasTypeV v τin ∧ StackWfV v k τin ε τ
+   | .wait op _ k, τ, ε =>
+       ∃ a b replyTy, Ty.EffContains ε op a b ∧ Ty.TyEquiv b replyTy ∧ StackWf k replyTy ε τ
+ 
 diff --git a/lean/Eyg/Types/Scheme.lean b/lean/Eyg/Types/Scheme.lean
 index 5d5032bf..d134f1ab 100644
 --- a/lean/Eyg/Types/Scheme.lean
