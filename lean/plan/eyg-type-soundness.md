@@ -748,6 +748,24 @@ for the **whole** core language.
       instantiations through `subst_instantiate'`, so it likely needs a **constructive** `GeneralizesAt`
       (`s = gen_n d`, computed generalization) — a design fork recorded in the redesign note. Tree green:
       `lake build` 1772 + spec 104/104.
+      **⚙ CONSTRUCTIVE-GEN FORK DELIVERED — `generalizesAt_subst` GREEN** (2026-06-18,
+      `progress/2026-06-18-T6-let_poly-constructive-genAt-delivered.md`). The design fork is landed: a
+      *computed* generalization **`Scheme.genAt n d`** (= `⟨genArity n d, subst (reindexGen n ·) d⟩`, with
+      `Ty.genArity`/`Ty.reindexGen` + `genArity_spec`) makes the witness scheme body **structurally**
+      `subst (reindexGen …) d`, so substitution-stability becomes a `subst`/`shift` **commutation**, not an
+      existential chase. Delivered green, axioms `propext`/`Quot.sound` only: `genAt_generalizesAt`
+      (`GeneralizesAt n (genAt n d) d`); the level-map class **`Ty.LevelMap n σ`** (fixes `[n,∞)`, keeps
+      `[0,n)` within `[0,n)` — the ambient-into-ambient condition); arity stability **`genArity_subst`**
+      (`LevelMap n σ → (subst σ d).genArity n = d.genArity n`); the commutation **`genAt_substScheme`**
+      (`substScheme σ (genAt n d) = genAt n (subst σ d)`); and the headline **`generalizesAt_subst`**
+      (`LevelMap n σ → GeneralizesAt n (substScheme σ (genAt n d)) (subst σ d)`) — exactly what the
+      `hasType_subst` `let_poly` arm needs once the rule pins its scheme to `genAt`. Foundational reusable
+      lemmas `Ty.subst_congr_free`/`Ty.mem_freeVars_subst` added (`Scheme.lean`). `lake build` 1772 + spec
+      104/104. **Remaining for the slice (now unblocked; multi-step structural, no standalone-green
+      sub-increment through the two-engine `Soundness.lean`):** (1) pin the `let_poly` rule's scheme to
+      `genAt` + the minimal-blast-radius level carrier (`HasTypeAt n` vs. `CtxWf n`/`TyWf n`
+      side-invariant); (2) re-state `hasType_subst` with the `LevelMap n σ` premise (its `let_poly` arm
+      discharges via `generalizesAt_subst`); (3) the unchanged machine coupling (`StackWfV`, both engines).
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the

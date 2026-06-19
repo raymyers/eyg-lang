@@ -215,6 +215,77 @@ theorem freeVars_tyEquiv {s t : Ty} (h : TyEquiv s t) :
   | swapRow _ => intro i; simp only [freeVars, List.mem_append]; tauto
   | swapEff _ => intro i; simp only [freeVars, List.mem_append]; tauto
 
+/-- **Two substitutions agreeing on every free variable produce the same result.**
+The generalization of `subst_eq_of_fixes_free` (which is the `σ₂ = id` case). -/
+theorem subst_congr_free {σ₁ σ₂ : Nat → Ty} {t : Ty}
+    (h : ∀ i ∈ freeVars t, σ₁ i = σ₂ i) : subst σ₁ t = subst σ₂ t := by
+  induction t with
+  | var i => exact h i (by simp [freeVars])
+  | «fun» a e r iha ihe ihr =>
+      simp only [freeVars, List.mem_append] at h
+      simp only [subst, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihe (fun i hi => h i (Or.inl (Or.inr hi))), ihr (fun i hi => h i (Or.inr hi))]
+  | list a ih => simp only [subst, ih (fun i hi => h i hi)]
+  | record r ih => simp only [subst, ih (fun i hi => h i hi)]
+  | union r ih => simp only [subst, ih (fun i hi => h i hi)]
+  | promise a ih => simp only [subst, ih (fun i hi => h i hi)]
+  | rowExtend l f t ihf iht =>
+      simp only [freeVars, List.mem_append] at h
+      simp only [subst, ihf (fun i hi => h i (Or.inl hi)), iht (fun i hi => h i (Or.inr hi))]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [freeVars, List.mem_append] at h
+      simp only [subst, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihb (fun i hi => h i (Or.inl (Or.inr hi))), iht (fun i hi => h i (Or.inr hi))]
+  | _ => rfl
+
+/-- **Free variables of a substituted type.** A variable is free in `subst σ t` iff
+it is free in `σ v` for some `v` free in `t`. The standard characterization needed to
+track how a substitution moves the free-variable set (used for the generalization
+arity's stability under level-map substitution). -/
+theorem mem_freeVars_subst {σ : Nat → Ty} {t : Ty} {i : Nat} :
+    i ∈ freeVars (subst σ t) ↔ ∃ v ∈ freeVars t, i ∈ freeVars (σ v) := by
+  induction t with
+  | var j => simp only [subst, freeVars, List.mem_singleton]; constructor
+             · intro h; exact ⟨j, rfl, h⟩
+             · rintro ⟨v, rfl, h⟩; exact h
+  | «fun» a e r iha ihe ihr =>
+      simp only [subst, freeVars, List.mem_append, iha, ihe, ihr]; constructor
+      · rintro ((⟨v,hv,hi⟩|⟨v,hv,hi⟩)|⟨v,hv,hi⟩)
+        · exact ⟨v, Or.inl (Or.inl hv), hi⟩
+        · exact ⟨v, Or.inl (Or.inr hv), hi⟩
+        · exact ⟨v, Or.inr hv, hi⟩
+      · rintro ⟨v, (hv|hv)|hv, hi⟩
+        · exact Or.inl (Or.inl ⟨v, hv, hi⟩)
+        · exact Or.inl (Or.inr ⟨v, hv, hi⟩)
+        · exact Or.inr ⟨v, hv, hi⟩
+  | list a ih => simpa only [subst, freeVars] using ih
+  | record r ih => simpa only [subst, freeVars] using ih
+  | union r ih => simpa only [subst, freeVars] using ih
+  | promise a ih => simpa only [subst, freeVars] using ih
+  | rowExtend l f t ihf iht =>
+      simp only [subst, freeVars, List.mem_append, ihf, iht]; constructor
+      · rintro (⟨v,hv,hi⟩|⟨v,hv,hi⟩)
+        · exact ⟨v, Or.inl hv, hi⟩
+        · exact ⟨v, Or.inr hv, hi⟩
+      · rintro ⟨v, hv|hv, hi⟩
+        · exact Or.inl ⟨v, hv, hi⟩
+        · exact Or.inr ⟨v, hv, hi⟩
+  | effectExtend l a b t iha ihb iht =>
+      simp only [subst, freeVars, List.mem_append, iha, ihb, iht]; constructor
+      · rintro ((⟨v,hv,hi⟩|⟨v,hv,hi⟩)|⟨v,hv,hi⟩)
+        · exact ⟨v, Or.inl (Or.inl hv), hi⟩
+        · exact ⟨v, Or.inl (Or.inr hv), hi⟩
+        · exact ⟨v, Or.inr hv, hi⟩
+      · rintro ⟨v, (hv|hv)|hv, hi⟩
+        · exact Or.inl (Or.inl ⟨v, hv, hi⟩)
+        · exact Or.inl (Or.inr ⟨v, hv, hi⟩)
+        · exact Or.inr ⟨v, hv, hi⟩
+  | binary => simp [subst, freeVars]
+  | integer => simp [subst, freeVars]
+  | string => simp [subst, freeVars]
+  | empty => simp [subst, freeVars]
+  | never => simp [subst, freeVars]
+
 /-! ## Schemes & instantiation -/
 
 end Ty

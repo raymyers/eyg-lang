@@ -175,6 +175,179 @@ theorem generalizesAt_mono (n : Nat) (τ : Ty) : GeneralizesAt n (Scheme.mono τ
   intro args
   exact ⟨fun i => .var i, by rw [Scheme.instantiate_mono, Ty.subst_id], fun i _ => rfl⟩
 
+/-! ## Constructive generalization `genAt` — the substitution-stable witness (T6 gen, design fork)
+
+`generalizesAt_subst` (the substitution-stability of `GeneralizesAt`) **resisted a direct proof for
+an arbitrary scheme `s`**: the declarative `∃σ'` form gives no structural handle relating the
+substituted scheme's arbitrary instantiations back to `subst σ d` (see the level-redesign note). The
+fork's resolution: pin the `let_poly` rule's scheme to a **computed** generalization `genAt n d`, so
+the scheme body is *structurally* `subst (reindexGen …) d` and substitution-stability becomes a
+`subst`/`shift` **commutation** (`genAt_substScheme` below), not an existential chase.
+
+`genAt n d` re-indexes `d` into a scheme at level `n`: the generalized variables (`≥ n`) become the
+quantifier prefix `0 … arity-1` (via `v ↦ v - n`), and the ambient variables (`< n`) shift up past the
+prefix (`v ↦ v + arity`) so instantiation shifts them back down. -/
+
+namespace Ty
+
+/-- Generalization **arity** at level `n`: one quantifier slot per generalized variable (`≥ n`) of
+`d`, sized so every such variable fits (`v - n < genArity` for `v ≥ n` free in `d`). Closed-below-`n`
+types get arity `0` (monomorphic). -/
+def genArity (n : Nat) (d : Ty) : Nat := (d.freeVars.map (fun v => v + 1 - n)).foldr Nat.max 0
+
+/-- The re-indexing turning `d` into a level-`n` scheme body with `arity` quantifiers: ambient vars
+(`< n`) shift up past the prefix; generalized vars (`≥ n`) become quantifier `v - n`. -/
+def reindexGen (n arity : Nat) : Nat → Ty :=
+  fun v => if v < n then .var (v + arity) else .var (v - n)
+
+/-- An element of a `Nat` list is `≤` its `foldr max 0`. -/
+theorem mem_le_foldr_max {x : Nat} {l : List Nat} (h : x ∈ l) :
+    x ≤ l.foldr Nat.max 0 := by
+  induction l with
+  | nil => simp at h
+  | cons a t ih =>
+      simp only [List.foldr_cons]
+      rcases List.mem_cons.mp h with h | h
+      · subst h; exact Nat.le_max_left _ _
+      · exact Nat.le_trans (ih h) (Nat.le_max_right _ _)
+
+/-- `foldr max 0` is `≤ B` when every element is (`0 ≤ B` covers the empty list). -/
+theorem foldr_max_le {l : List Nat} {B : Nat} (h : ∀ x ∈ l, x ≤ B) :
+    l.foldr Nat.max 0 ≤ B := by
+  induction l with
+  | nil => exact Nat.zero_le _
+  | cons a t ih =>
+      simp only [List.foldr_cons]
+      exact Nat.max_le.mpr ⟨h a (List.mem_cons_self ..), ih (fun x hx => h x (List.mem_cons_of_mem _ hx))⟩
+
+/-- A **level map** at level `n`: the identity on the fresh region `[n,∞)`, and maps each ambient
+variable `< n` to a type whose free variables stay `< n`. This is exactly the class of substitutions
+`hasType_subst` threads (the ambient-into-ambient condition pinned in the level-redesign note) — it
+keeps the generalized region untouched, so generalization is stable under it. -/
+def LevelMap (n : Nat) (σ : Nat → Ty) : Prop :=
+  (∀ i, n ≤ i → σ i = .var i) ∧ (∀ i, i < n → ∀ w ∈ (σ i).freeVars, w < n)
+
+/-- On a type whose free variables all sit below `n`, the re-indexing `reindexGen n k` acts as a plain
+`shift` by `k` (every such var is in the ambient `< n` branch `w ↦ var (w + k)`). The hinge of the
+ambient case of `genAt_substScheme`. -/
+theorem shift_eq_reindexGen {n k : Nat} {t : Ty} (ht : ∀ w ∈ t.freeVars, w < n) :
+    Ty.shift k t = Ty.subst (Ty.reindexGen n k) t := by
+  rw [Ty.shift]
+  apply Ty.subst_congr_free
+  intro w hw
+  simp only [Ty.reindexGen, if_pos (ht w hw)]
+
+/-- **A generalized variable fits in the quantifier prefix.** Every `v ≥ n` free in `d` satisfies
+`v - n < genArity n d` — so `reindexGen` maps it to a quantifier that `instantiate` can fill. -/
+theorem genArity_spec {n v : Nat} {d : Ty} (hv : v ∈ d.freeVars) (hn : n ≤ v) :
+    v - n < d.genArity n := by
+  have : v + 1 - n ≤ d.genArity n :=
+    mem_le_foldr_max (List.mem_map.mpr ⟨v, hv, rfl⟩)
+  omega
+
+end Ty
+
+/-- The computed generalization of `d` at level `n`: quantify the generalized (`≥ n`) variables. -/
+def Scheme.genAt (n : Nat) (d : Ty) : Scheme :=
+  ⟨d.genArity n, Ty.subst (Ty.reindexGen n (d.genArity n)) d⟩
+
+@[simp] theorem Scheme.genAt_arity (n : Nat) (d : Ty) : (genAt n d).arity = d.genArity n := rfl
+
+/-- Componentwise scheme equality (the `body` field is non-dependent). -/
+theorem Scheme.ext' {s t : Scheme} (ha : s.arity = t.arity) (hb : s.body = t.body) : s = t := by
+  cases s; cases t; cases ha; cases hb; rfl
+
+/-- **`genAt` is a sound generalization** — every instantiation of `genAt n d` is a `subst`-instance
+of `d` whose witnessing substitution fixes the ambient region `[0,n)`. (The witness fixes `[0,n)`
+*regardless* of the arity: an ambient var `i < n` is reindexed to `i + arity ≥ arity`, which
+`instantiate` shifts straight back to `var i`.) -/
+theorem genAt_generalizesAt (n : Nat) (d : Ty) : GeneralizesAt n (Scheme.genAt n d) d := by
+  intro args
+  refine ⟨fun v => Ty.subst
+      (fun j => if j < d.genArity n then args.getD j (.var j) else .var (j - d.genArity n))
+      (Ty.reindexGen n (d.genArity n) v), ?_, ?_⟩
+  · -- instantiate = subst (compose) d, definitionally (subst_subst)
+    simp only [Scheme.instantiate, Scheme.genAt, Ty.subst_subst]
+  · -- the witness fixes [0,n): an ambient var i < n round-trips to var i
+    intro i hi
+    simp only [Ty.reindexGen, if_pos hi, Ty.subst]
+    rw [if_neg (by omega)]
+    congr 1; omega
+
+/-- **Generalization arity is stable under a level map.** A level map fixes the generalized region
+`[n,∞)` and keeps the ambient region within `[0,n)` (weight `0`), so the weighted max defining the
+arity is unchanged. The arity-equality half of the commutation `genAt_substScheme`. -/
+theorem genArity_subst {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ) (d : Ty) :
+    (Ty.subst σ d).genArity n = d.genArity n := by
+  obtain ⟨hfix, hamb⟩ := hσ
+  apply Nat.le_antisymm
+  · -- every weight of `subst σ d` is ≤ genArity d
+    apply Ty.foldr_max_le
+    intro x hx
+    rw [List.mem_map] at hx
+    obtain ⟨w, hw, rfl⟩ := hx
+    rw [Ty.mem_freeVars_subst] at hw
+    obtain ⟨v, hv, hwv⟩ := hw
+    by_cases hvn : n ≤ v
+    · -- v ≥ n: σ v = var v, so w = v
+      rw [hfix v hvn, Ty.freeVars, List.mem_singleton] at hwv; subst hwv
+      exact Ty.mem_le_foldr_max (List.mem_map.mpr ⟨w, hv, rfl⟩)
+    · -- v < n: w < n, so weight = 0
+      have := hamb v (Nat.lt_of_not_le hvn) w hwv
+      omega
+  · -- every weight of `d` is ≤ genArity (subst σ d)
+    apply Ty.foldr_max_le
+    intro x hx
+    rw [List.mem_map] at hx
+    obtain ⟨v, hv, rfl⟩ := hx
+    by_cases hvn : n ≤ v
+    · -- v ≥ n: σ v = var v, so v ∈ FV(subst σ d)
+      have hmem : v ∈ (Ty.subst σ d).freeVars :=
+        Ty.mem_freeVars_subst.mpr
+          ⟨v, hv, by rw [hfix v hvn, Ty.freeVars]; exact List.mem_singleton.mpr rfl⟩
+      exact Ty.mem_le_foldr_max (List.mem_map.mpr ⟨v, hmem, rfl⟩)
+    · -- v < n: weight = 0
+      omega
+
+/-- **`genAt` commutes with a level-map substitution** — the substitution-stability core. Pushing a
+level map `σ` through the computed generalization equals generalizing the substituted type. This is
+what makes `GeneralizesAt` substitution-stable once the `let_poly` rule pins its scheme to `genAt`
+(the route `generalizes_subst_false` forces): the arms of `hasType_subst` match structurally instead
+of chasing the unrecoverable existential witness. -/
+theorem genAt_substScheme {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ) (d : Ty) :
+    Scheme.substScheme σ (Scheme.genAt n d) = Scheme.genAt n (Ty.subst σ d) := by
+  have harity := genArity_subst hσ d
+  obtain ⟨hfix, hamb⟩ := hσ
+  -- both schemes have arity `d.genArity n`; equate componentwise
+  refine Scheme.ext' ?_ ?_
+  · simp only [Scheme.substScheme_arity, Scheme.genAt_arity]; exact harity.symm
+  -- body equality, via subst_subst on both sides + agreement on FV(d)
+  simp only [Scheme.substScheme, Scheme.genAt, harity, Ty.subst_subst]
+  apply Ty.subst_congr_free
+  intro v hv
+  by_cases hvn : n ≤ v
+  · -- generalized var: reindexed to quantifier v - n (< arity), σ fixes it (σ v = var v)
+    have hlt : v - n < d.genArity n := Ty.genArity_spec hv hvn
+    have hvn' : ¬ v < n := by omega
+    rw [hfix v hvn]
+    simp only [Ty.reindexGen, if_neg hvn', Ty.subst_var, if_pos hlt]
+  · -- ambient var: reindexed to v + arity (≥ arity); LHS shifts σ v, reindexGen acts as shift on it
+    push_neg at hvn
+    have hvk : ¬ v + d.genArity n < d.genArity n := by omega
+    rw [show Ty.reindexGen n (d.genArity n) v = Ty.var (v + d.genArity n) from by
+      rw [Ty.reindexGen, if_pos hvn]]
+    simp only [Ty.subst_var, if_neg hvk, Nat.add_sub_cancel]
+    exact Ty.shift_eq_reindexGen (fun w hw => hamb v hvn w hw)
+
+/-- **`GeneralizesAt` is substitution-stable for the computed witness** — substituting a level map
+through `genAt n d` still generalizes `subst σ d` at level `n`. The `hasType_subst` `let_poly` arm
+needs exactly this (with the rule's scheme pinned to `genAt`). Resolves the obstruction
+`generalizes_subst_false` machine-checks for the declarative predicate. -/
+theorem generalizesAt_subst {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ) (d : Ty) :
+    GeneralizesAt n (Scheme.substScheme σ (Scheme.genAt n d)) (Ty.subst σ d) := by
+  rw [genAt_substScheme hσ]
+  exact genAt_generalizesAt n (Ty.subst σ d)
+
 /-! ## `Generalizes` is NOT substitution-stable — the `hasType_subst` blocker, machine-checked
 
 The `let_poly` implementation attempt (2026-06-18) stalled because the term-level substitution
