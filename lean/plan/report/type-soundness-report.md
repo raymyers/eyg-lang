@@ -83,20 +83,27 @@ and `evalR`) + `progress/2026-06-19-G2-effectful-fix-unsoundness.md` (reference-
 real remedy is source-language-side (pin `q1=∅` in `contextual.gleam`, or make the recursive
 binding lazy); general row subsumption would *not* recover soundness here.
 
-## Caveat 5 — Let-polymorphism is restricted (value restriction + `noLet`)
+## Caveat 5 — Let-polymorphism is restricted (value restriction + `noLambdaLet`)
 
 `HasType.let_poly` (`Typing.lean:103`) generalizes only when the definition is a **lambda**
-whose body contains **no nested `let`** (`Node.noLet`, `Ir/Tree.lean:109`):
+whose body contains **no nested *generalizable* `let`** — i.e. no `let` binding a lambda
+(`Node.noLambdaLet`, `Ir/Tree.lean`; relaxed from `noLet` on 2026-06-19):
 
 ```
-let id   = \x. x          in  ...   -- ✓ generalized (combinator polymorphism)
-let f    = \x. \y. x      in  ...   -- ✓
-let g    = \x. (let z = x in z) in  -- ✗ NOT generalized: nested let in body
+let id   = \x. x                in ...   -- ✓ generalized (combinator polymorphism)
+let f    = \x. \y. x            in ...   -- ✓
+let g    = \x. (let z = x in z) in ...   -- ✓ now allowed: nested let binds a *non-lambda*
+let h    = \x. (let k = \y.y in k x) in  -- ✗ still excluded: nested let binds a *lambda*
 ```
 
-Covers all rank-1 / combinator polymorphism; **full nested let-generalization is not
-proven**. The plan even proves *why* the easy route fails: `generalizes_subst_false` is a
-machine-checked theorem that `Generalizes` is not substitution-stable.
+Covers all rank-1 / combinator polymorphism **plus** any internal mono (non-function) `let` inside
+a polymorphic function. **Full nested let-generalization** (a nested binding that itself
+generalizes) is still not proven: the plan proves *why* the easy route fails
+(`generalizes_subst_false`, a machine-checked theorem that `Generalizes` is not
+substitution-stable), and the readiness keystone would need re-typing the body under the
+instantiation — which is not a level map for that case
+(`progress/2026-06-19-G1-noLambdaLet-relaxation-path.md`,
+`…-instantiation-levelmap-gap.md`).
 
 ## Caveat 6 — "Never goes wrong" still permits `Unrepresentable` crashes
 

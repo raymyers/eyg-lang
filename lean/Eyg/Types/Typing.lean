@@ -103,7 +103,7 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
   | let_poly {Γ x lx lbody la body defnTy bodyTy ε n a} :
       HasType Γ ⟨.Lambda lx lbody, la⟩ defnTy ε →
       CtxWf n Γ →
-      Tree.Node.noLet lbody →
+      Tree.Node.noLambdaLet lbody →
       HasType ((x, Scheme.genAt n defnTy) :: Γ) body bodyTy ε →
       HasType Γ ⟨.Let x ⟨.Lambda lx lbody, la⟩ body, a⟩ bodyTy ε
   /-- Integer literal. -/

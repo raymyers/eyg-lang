@@ -112,6 +112,29 @@ def Node.noLet {m : Type} : Node m → Prop
   | ⟨.Let _ _ _, _⟩ => False
   | _ => True
 
+/-- **No generalizable internal `let`.** Like `noLet`, but permits a `let` whose bound
+definition is **not** a `Lambda` (a mono, non-generalizable binding) while still forbidding a
+`let` that binds a `Lambda` (the only shape `HasType.let_poly` can generalize). This is the
+load-bearing relaxation of the `let_poly` body restriction: a body satisfying `noLambdaLet` never
+reaches the `let_poly` arm of `hasType_subst` (so `generalizes_subst_false` is not re-triggered),
+yet its mono `let`s are typed by the ordinary `let_` arm — substitution-stable for an arbitrary
+`σ`. Strictly larger than `noLet` (covers `let x = f(y) in …`, `let n = a+b in …`, etc.). -/
+def Node.noLambdaLet {m : Type} : Node m → Prop
+  | ⟨.Lambda _ b, _⟩ => b.noLambdaLet
+  | ⟨.Apply f a, _⟩ => f.noLambdaLet ∧ a.noLambdaLet
+  | ⟨.Let _ ⟨.Lambda _ _, _⟩ _, _⟩ => False
+  | ⟨.Let _ v b, _⟩ => v.noLambdaLet ∧ b.noLambdaLet
+  | _ => True
+
+/-- A `noLambdaLet` `let` either binds a `Lambda` (impossible — `noLambdaLet` is then `False`) or
+splits into `noLambdaLet` of its definition and body. The inversion the `let_` arm of
+`hasType_subst` consumes. -/
+theorem Node.noLambdaLet_let {m : Type} {x : String} {defn body : Node m} {a : m}
+    (h : Node.noLambdaLet ⟨.Let x defn body, a⟩) :
+    Node.noLambdaLet defn ∧ Node.noLambdaLet body := by
+  obtain ⟨de, da⟩ := defn
+  cases de <;> simp only [Node.noLambdaLet] at h ⊢ <;> first | exact h | exact h.elim
+
 /-- `func(params, body)` — fold params right into nested lambdas. -/
 def func (params : List String) (body : Node Unit) : Node Unit :=
   params.foldr (fun param acc => lambda param acc) body

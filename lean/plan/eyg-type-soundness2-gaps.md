@@ -77,6 +77,17 @@ threading a level through the judgment and re-greening both preservation engines
 **Deliverable:** drop `Tree.Node.noLet` from `HasType.let_poly`; re-green
 `preservation`/`progress`/`soundness*`; a nested-polymorphism sanity `example` types.
 
+> **◐ G1 PARTIAL (2026-06-19).** The body restriction was **relaxed** `noLet → noLambdaLet`
+> (`progress/2026-06-19-G1-noLambdaLet-relaxation-path.md`): a generalized lambda's body may now
+> contain internal **mono** `let`s (bindings of non-lambdas) — e.g. `\x. (let y = x in y)` — which
+> the old `noLet` rejected. The mono `let_` arm of `hasType_subst` is discharged for an arbitrary
+> `σ`; the `let_poly` arm stays vacuous (a `let` binding a lambda makes `noLambdaLet` `False`, so
+> `generalizes_subst_false` is not re-triggered). Headline soundness covers this larger fragment;
+> `lake build` 1773 + spec 104/104, axioms clean; sanity `example` in `Generalization.lean`.
+> **Still open:** a nested *generalizable* `let` (one binding a lambda) — the genuine crux below,
+> needing the deferred "readiness without re-substituting the body" redesign. Caveat 5 is
+> **narrowed**, not closed; expect this to prove (value-restricted HM is sound), not refute.
+
 - [ ] **Decide the level carrier (item-1 fork, revisited).** Confirm or revise the
       `progress/2026-06-18-T6-let_poly-levelmap-mono-and-wfbelow-decision.md` decision: a light
       `WfLevel n` inductive over derivations supplying the gate `n ≤ n_node`, vs. a full

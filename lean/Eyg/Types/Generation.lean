@@ -87,7 +87,7 @@ theorem inv_let {Γ : Ctx} {x : String} {defn body : Tree.Node m} {a : m} {τ ε
     (h : HasType Γ (⟨.Let x defn body, a⟩ : Tree.Node m) τ ε) :
     (∃ defnTy, HasType Γ defn defnTy ε ∧ HasType ((x, .mono defnTy) :: Γ) body τ ε) ∨
     (∃ lx lbody la defnTy n, defn = ⟨.Lambda lx lbody, la⟩ ∧
-        HasType Γ defn defnTy ε ∧ CtxWf n Γ ∧ Tree.Node.noLet lbody ∧
+        HasType Γ defn defnTy ε ∧ CtxWf n Γ ∧ Tree.Node.noLambdaLet lbody ∧
         HasType ((x, Scheme.genAt n defnTy) :: Γ) body τ ε) := by
   generalize he : (⟨.Let x defn body, a⟩ : Tree.Node m) = e at h
   induction h with

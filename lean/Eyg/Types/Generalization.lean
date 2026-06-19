@@ -135,7 +135,7 @@ existential captured context. -/
 theorem generalizes_closure_ready {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
     {env : Env m} {defnTy ε : Ty} {s : Scheme}
     (hgen : Generalizes s Γ defnTy)
-    (hnl : Tree.Node.noLet body)
+    (hnl : Tree.Node.noLambdaLet body)
     (henv : EnvWf env Γ)
     (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
     ∀ args, HasTypeV (Value.Closure x body env) (s.instantiate args) := by
@@ -293,7 +293,7 @@ point, and carries across the lambda→closure step (the coupling design's `Stac
 theorem genAt_closure_ready {n : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
     {env : Env m} {defnTy ε : Ty}
     (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ)
-    (hnl : Tree.Node.noLet body)
+    (hnl : Tree.Node.noLambdaLet body)
     (henv : EnvWf env Γ)
     (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
     ∀ args, HasTypeV (Value.Closure x body env) ((Scheme.genAt n defnTy).instantiate args) :=
@@ -561,6 +561,25 @@ example : HasType (m := Unit) []
     .integer .empty := by
   refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0) .empty (.var 0)) ?_ ?_ ?_ ?_
   · exact HasType.lam (HasType.var (s := .mono (.var 0)) (args := []) rfl)
+  · intro b hb; cases hb
+  · trivial
+  · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
+    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0) .empty (.var 0)))
+      (args := [.integer]) rfl
+
+/-- **Nested-`let` polymorphism (the `noLambdaLet` relaxation).** The generalized lambda's body
+contains an **internal mono `let`** (`let y = x in y`) — a binding the old `noLet` premise rejected
+outright. With `noLambdaLet` it is accepted: `id' = \x. (let y = x in y)` generalizes to `∀α. α→α`
+and the body instantiates it at `Integer`. The body's `let` binds a *variable* (not a `Lambda`), so
+`noLambdaLet` holds and `hasType_subst`'s mono `let_` arm carries it. -/
+example : HasType (m := Unit) []
+    (let_ "id'" (lambda "x" (let_ "y" (variable_ "x") (variable_ "y")))
+      (apply (variable_ "id'") (integer 1)))
+    .integer .empty := by
+  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0) .empty (.var 0)) ?_ ?_ ?_ ?_
+  · exact HasType.lam (HasType.let_
+      (HasType.var (s := .mono (.var 0)) (args := []) rfl)
+      (HasType.var (s := .mono (.var 0)) (args := []) rfl))
   · intro b hb; cases hb
   · trivial
   · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
