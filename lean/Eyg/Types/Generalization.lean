@@ -472,6 +472,24 @@ side-invariant `hasType_subst`'s `let_poly` arm threads (`CtxWf n Γ`), kept off
 engines (see the WfBelow decision note). -/
 def CtxWf (n : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ i ∈ Scheme.freeVars b.2, i < n
 
+/-- **`CtxWf` is monotone in the level.** A context below `n` is below any `n' ≥ n`. Pairs with
+`Ty.LevelMap.mono` for `hasType_subst`'s bump-at-binders: descending into a `lam`/`let` body raises the
+level to cover the bound type's free variables, and both the context and the substitution lift. -/
+theorem CtxWf.mono {n n' : Nat} {Γ : Ctx} (hΓ : CtxWf n Γ) (hle : n ≤ n') : CtxWf n' Γ :=
+  fun b hb i hi => Nat.lt_of_lt_of_le (hΓ b hb i hi) hle
+
+/-- A `cons` is `CtxWf` iff both head scheme and tail are: the bookkeeping the binder arms of
+`hasType_subst` use to (re)assemble `CtxWf n ((x,s)::Γ)`. -/
+theorem ctxWf_cons {n : Nat} {x : String} {s : Scheme} {Γ : Ctx} :
+    CtxWf n ((x, s) :: Γ) ↔ (∀ i ∈ Scheme.freeVars s, i < n) ∧ CtxWf n Γ := by
+  constructor
+  · intro h
+    exact ⟨h (x, s) (List.mem_cons_self ..), fun b hb => h b (List.mem_cons_of_mem _ hb)⟩
+  · rintro ⟨hs, hΓ⟩ b hb
+    rcases List.mem_cons.mp hb with rfl | hb
+    · exact hs
+    · exact hΓ b hb
+
 /-- **`CtxWf` is stable under a level-map substitution.** Substituting a `LevelMap n σ` keeps every
 binding's ambient free vars below `n` (an ambient `p < n` maps to `σ p` with `FV(σ p) ⊆ [0,n)`). -/
 theorem ctxWf_substCtx {n : Nat} {σ : Nat → Ty} {Γ : Ctx}

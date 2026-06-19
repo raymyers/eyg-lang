@@ -779,6 +779,21 @@ for the **whole** core language.
       dissolved by **`Ty.LevelMap.mono`** (`LevelMap n σ → n ≤ n' → LevelMap n' σ`, green, axioms clean):
       the outer-scope `σ` is automatically a `LevelMap` at every deeper let's level, so `hasType_subst`'s
       `let_poly` arm discharges the inner `generalizesAt_subst` from the *same* `σ` — no re-levelling.
+      **⚙ `hasType_subst` ARM RESOLVED + `CtxWf` INFRA DELIVERED** (2026-06-18,
+      `progress/2026-06-18-T6-let_poly-hasType_subst-arm-design-resolved.md`). Landed green (gen branch,
+      off the Soundness path; axioms clean): the scheme/context free-var metatheory the arm needs —
+      `Ty.mem_freeVars_shift`, `Scheme.freeVars`/`mem_freeVars`/`substScheme_eq_of_fixes_free`/
+      `mem_freeVars_substScheme`, and **`CtxWf n Γ`** (+ `CtxWf.mono`, `ctxWf_cons`, `ctxWf_substCtx`,
+      `ctxWf_fixed`). The `let_poly` arm of `hasType_subst` is now fully worked out: it reconstructs via
+      `genAt_substScheme` + `ctxWf_substCtx`, whose **only** requirement beyond the let_poly node's
+      *stored* `CtxWf n_lp Γ` is `LevelMap n_lp σ` — obtained from `LevelMap n σ` + `n ≤ n_lp` via
+      `LevelMap.mono`. **No global `CtxWf`/`TyWf` is needed** (the non-`let_poly` arms never consume
+      `CtxWf`), killing the intermediate-type-escape worry. **⚠ Refined item-1 nuance:** the single
+      residual gate `n ≤ n_lp` (nested lets' levels ≥ enclosing) is a let-level-monotonicity of the
+      *static* program — threadable through preservation as **one light, unchanging global invariant** on
+      `MStateWf` (reduction creates no new let nodes), far lighter than full `HasTypeAt n` level-indexing.
+      So the engines carry exactly one constant side-hypothesis (supplying `n ≤ n_lp` to the readiness
+      keystone at the push), not per-rule level threading.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
