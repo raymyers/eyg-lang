@@ -109,6 +109,19 @@ threading a level through the judgment and re-greening both preservation engines
       interaction could surprise; the value restriction is what makes it sound, so probe a
       non-value generalized binding if any path admits one.)*
 
+> **✅ G2 DONE (2026-06-19) — the fork REFUTES.** Effectful-builder `fix` is **unsound**, not
+> a proof-engineering gap. Machine-checked counterexample
+> (`progress/2026-06-19-G2-effectful-fix-unsoundness.md`, `Eyg/Types/CexEffectfulFix.lean`): a
+> closed program the reference analyzer types as pure `Integer` (`#(Ok(Nil), "Integer", "")`)
+> performs an **unhandled / out-of-row `Log`** under both the reference interpreter and the Lean
+> `eval`/`evalR`. Root cause: the runtime re-runs the builder on every recursive self-application
+> (`do_fixed`), so a builder's *construction* effects re-fire at each call, outside any handler
+> installed at `fix`-creation. This **justifies the Lean pure-builder pin** (`q1 = ∅`) as
+> load-bearing — the same shape as the base-type-`fix` finding (Open Question 4). The `EffSub'` /
+> un-pinning bullets below are therefore **moot for soundness** (there is no sound effectful-`fix`
+> to track); kept only as a record of the original plan. A genuine fix is source-language-side
+> (pin `q1=∅` in `contextual.gleam`, or make the recursive binding lazy).
+
 ## Milestone G2 — Effectful-builder `fix` + general row subsumption (Caveat 4)
 
 **Hypothesis:** ~60% proof engineering / genuinely open. `fix` was already unsound once
@@ -159,9 +172,9 @@ a counterexample showing effectful-builder `fix` is unsound as the analyzer type
 - [ ] **G1 (Caveat 5):** either `HasType.let_poly` carries no `noLet` restriction and the headline
       soundness covers nested let-polymorphism (axioms clean, spec 104/104), **or** a machine-checked
       counterexample shows it unsound and the restriction is justified in-plan.
-- [ ] **G2 (Caveat 4):** either `Builtins.scheme "fix"` admits effectful builders and the headline
-      soundness covers them (axioms clean, spec 104/104), **or** a machine-checked + analyzer-confirmed
-      counterexample shows effectful-builder `fix` unsound.
+- [x] **G2 (Caveat 4):** DONE by counterexample — machine-checked + reference-analyzer-confirmed
+      that effectful-builder `fix` is unsound (`progress/2026-06-19-G2-effectful-fix-unsoundness.md`,
+      `Eyg/Types/CexEffectfulFix.lean`). The pure-builder pin is justified as load-bearing.
 - [ ] The type-soundness report (`lean/plan/report/type-soundness-report.md`) is updated: each
       resolved caveat is either struck (proven) or re-classified from "coverage gap" to "known
       source-language unsoundness" (counterexample), with the in-repo proof referenced.

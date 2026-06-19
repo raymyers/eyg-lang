@@ -58,12 +58,30 @@ originally specified is **not sound**. The remedy: `contextual.gleam:530` was ed
 the fixpoint to a *function* type (arrow-typed recursion still checks). So soundness holds
 for a **corrected** type system.
 
-## Caveat 4 — `fix` restricted to a *pure builder*
+## Caveat 4 — `fix` restricted to a *pure builder* — *and the reference was unsound here too*
 
 Beyond the arrow restriction, the Lean `fix` scheme is pinned to a `∅`-latent (pure) builder.
-This **under-approximates** the analyzer: it rejects recursion whose builder performs effects,
-which the analyzer accepts. Lifting it needs general row subsumption (Open Question 3,
-unbuilt) — only the empty-restricted `EffWeaken` (`εf = ε ∨ εf = ∅`) exists.
+This is **not merely an under-approximation**: effectful-builder `fix` (`q1 ≠ ∅`), which the
+reference analyzer accepts, is **genuinely unsound** under call-by-value (machine-checked,
+2026-06-19). The runtime re-runs the builder on every recursive self-application (`do_fixed`),
+so a builder's *construction* effects re-fire at each recursive call — outside any handler
+installed at `fix`-creation. A closed program the analyzer types as pure `Integer`
+(`#(Ok(Nil), "Integer", "")`) thus performs an **unhandled / out-of-row `Log`** under both the
+reference interpreter and the Lean `eval`/`evalR`:
+
+```
+let f = handle Log(...)((_) -> { !fix((self) -> {
+          let inner = (n) -> { !int_add(self(n), 1) }   -- recurses
+          let _ = perform Log("building")               -- construction effect, re-fired per call
+          inner }) })
+f(5)                                                    -- ⟶ UnhandledEffect("Log", "building")
+```
+
+So the pure-builder pin is **load-bearing**, like the arrow restriction (Caveat 3) — soundness
+holds for a *corrected* `fix`. Proof: `Eyg/Types/CexEffectfulFix.lean` (`#guard` over `eval`
+and `evalR`) + `progress/2026-06-19-G2-effectful-fix-unsoundness.md` (reference-tool repro). A
+real remedy is source-language-side (pin `q1=∅` in `contextual.gleam`, or make the recursive
+binding lazy); general row subsumption would *not* recover soundness here.
 
 ## Caveat 5 — Let-polymorphism is restricted (value restriction + `noLet`)
 
@@ -114,13 +132,14 @@ assumption rather than a theorem.
 
 "We have proven EYG type soundness" should be read as:
 
-> For a declarative judgment transcribed from (and in one case **correcting**) the gleam
+> For a declarative judgment transcribed from (and in **two** places **correcting**) the gleam
 > analyzer, a transparent reduction relation that **agrees with the interpreter on 104
-> fixtures** is type-sound — for the fragment excluding effectful-`fix`, nested
-> let-generalization, and references — where "sound" still allows `Unrepresentable` crashes,
-> and the open-system (divergence/reply) guarantees assume the environment returns well-typed
-> replies.
+> fixtures** is type-sound — for the fragment excluding effectful-`fix` (shown unsound, #4),
+> nested let-generalization, and references — where "sound" still allows `Unrepresentable`
+> crashes, and the open-system (divergence/reply) guarantees assume the environment returns
+> well-typed replies.
 
 Most consequential gaps: **#1** (executable-only bridge to the real interpreter) and **#2**
-(no proof the checker matches the judgment). Most surprising: **#3** (the spec had to be
-fixed) and **#5/#6** (the polymorphism and "crash" qualifiers).
+(no proof the checker matches the judgment). Most surprising: **#3 and #4** — the reference spec
+was unsound in *two* `fix` ways (base-type and effectful-builder), both machine-checked and
+corrected — and **#5/#6** (the polymorphism and "crash" qualifiers).
