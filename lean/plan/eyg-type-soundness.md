@@ -727,7 +727,11 @@ for the **whole** core language.
       mandatory** (recommended fix: index `Generalizes` by a level `n`, constrain σ below `n`). This is
       the real remaining T6 gen crux — a structural change threading a level through
       `HasType`/`hasType_subst`/the `StackWf.assign` frame. Reverted; `lake build` 1772 + spec 104/104
-      green.
+      green. **The blocker is MACHINE-CHECKED** (`Eyg/Types/Generalization.lean`): `cex_pos`/`cex_neg`
+      + **`generalizes_subst_false`** — a closed Lean proof that the `generalizes_subst` implication is
+      false — so the declarative-keystone route's insufficiency is a *theorem*, not a hand-argument.
+      (This sharpens the optimism of `progress/2026-06-18-T6-gen-declarative-keystone.md`: the keystone
+      does **not** sidestep the freshness blocker — the blocker re-emerges at `hasType_subst`.)
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the

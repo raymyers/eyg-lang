@@ -22,6 +22,14 @@ not proof engineering — at step 3 (`hasType_subst`). Reverted to green; WIP sa
   **green**.
 - **Substitution.lean / Generalization.lean** — deleted the moved defs (kept their other lemmas).
 
+## ✅ MACHINE-CHECKED (2026-06-18)
+
+The counterexample below is now **proven in Lean** (`Eyg/Types/Generalization.lean`, green):
+`cex_pos` (the generalization holds before substitution), `cex_neg` (it fails at the collided
+instance), and **`generalizes_subst_false`** — a closed proof that
+`∀ s Γ d σ, Generalizes s Γ d → Generalizes (substScheme σ s) (substCtx σ Γ) (subst σ d)` is **FALSE**.
+So the blocker is a theorem, not a hand-argument. `lake build` 1772 + spec 104/104.
+
 ## The wall: `hasType_subst` is FALSE for `let_poly`
 
 `hasType_subst (σ : Nat → Ty) : HasType Γ e τ ε → HasType (substCtx σ Γ) e (subst σ τ) (subst σ ε)`

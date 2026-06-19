@@ -143,4 +143,68 @@ theorem generalizes_closure_ready {Γ : Ctx} {x : String} {body : Tree.Node m} {
   rw [heq]
   exact closure_typed_of_lambda_subst σ hfix henv hlam
 
+/-! ## `Generalizes` is NOT substitution-stable — the `hasType_subst` blocker, machine-checked
+
+The `let_poly` implementation attempt (2026-06-18) stalled because the term-level substitution
+lemma `hasType_subst` (`HasType Γ e τ ε → HasType (substCtx σ Γ) e (subst σ τ) (subst σ ε)`, for an
+**arbitrary** `σ`) is **false** for `let_poly`: its arm needs
+`Generalizes (substScheme σ s) (substCtx σ Γ) (subst σ defnTy)` from `Generalizes s Γ defnTy`, and
+that implication ("`generalizes_subst`") does not hold — `σ` can collide a generalized variable into
+`FV(Γ)`, destroying the generalization. The three lemmas below **prove the counterexample in Lean**,
+so the blocker is rigorous, not hand-argued. Resolution (next session): a de-Bruijn-**level**
+discipline (index `Generalizes` by a level `n`, constrain `σ` below `n`) threaded through
+`HasType`/`hasType_subst`/the `StackWf.assign` frame. See
+`progress/2026-06-18-T6-let_poly-hasType_subst-blocker.md`. -/
+
+/-- The witness scheme/context: `∀α. α` generalized away from a context whose only free variable is
+`var 1`, at let-site type `var 0`. -/
+private def cexΓ : Ctx := [("y", Scheme.mono (.var 1))]
+
+/-- The generalization **holds** before substitution: every instance `t` of `⟨1, var 0⟩` is
+`subst [0↦t] (var 0)` with `[0↦t]` fixing `cexΓ` (it touches only `var 0`, and `FV(cexΓ) = {1}`). -/
+private theorem cex_pos : Generalizes ⟨1, .var 0⟩ cexΓ (.var 0) := by
+  intro args
+  refine ⟨fun i => if i = 0 then args.getD 0 (.var 0) else .var i, ?_, ?_⟩
+  · simp [Scheme.instantiate, Ty.subst]
+  · simp [cexΓ, substCtx, Scheme.substScheme_mono, Ty.subst]
+
+/-- The generalization **fails** at let-site type `var 1` (the same scheme, but the let-site type is
+now a context variable): instantiating to `var 0` would need a `σ'` with `σ' 1 = var 0` *and* (to fix
+`cexΓ`) `σ' 1 = var 1`. -/
+private theorem cex_neg : ¬ Generalizes ⟨1, .var 0⟩ cexΓ (.var 1) := by
+  intro H
+  obtain ⟨σ', heq, hfix⟩ := H [.var 0]
+  -- hfix : substCtx σ' cexΓ = cexΓ  ⟹  subst σ' (var 1) = var 1
+  have hsub : Ty.subst σ' (.var 1) = .var 1 := by
+    have e := hfix
+    unfold cexΓ substCtx at e
+    simp only [List.map_cons, List.map_nil, Scheme.substScheme_mono, List.cons.injEq,
+      Prod.mk.injEq, true_and, and_true] at e
+    exact congrArg Scheme.body e
+  have hinst : Scheme.instantiate ⟨1, .var 0⟩ [Ty.var 0] = Ty.var 0 := by
+    simp [Scheme.instantiate, Ty.subst, List.getD_cons_zero]
+  rw [hinst, hsub] at heq
+  exact absurd heq (by decide)
+
+/-- **`generalizes_subst` is FALSE** — the load-bearing blocker. Applying `σ = [0 ↦ var 1]` to the
+`cex_pos` witness lands on the `cex_neg` failing instance (`substScheme σ ⟨1,var0⟩ = ⟨1,var0⟩`,
+`substCtx σ cexΓ = cexΓ`, `subst σ (var 0) = var 1`). So no `hasType_subst` can be total over
+`let_poly` with the declarative `Generalizes`; the value-restriction keystone alone does not close
+the slice. -/
+theorem generalizes_subst_false :
+    ¬ ∀ (s : Scheme) (Γ : Ctx) (d : Ty) (σ : Nat → Ty),
+        Generalizes s Γ d →
+        Generalizes (Scheme.substScheme σ s) (substCtx σ Γ) (Ty.subst σ d) := by
+  intro H
+  have h := H ⟨1, .var 0⟩ cexΓ (.var 0) (fun i => if i = 0 then .var 1 else .var i) cex_pos
+  -- normalize the substituted witness back to the `cex_neg` shape, then contradict
+  have hs : Scheme.substScheme (fun i => if i = 0 then (.var 1 : Ty) else .var i) ⟨1, .var 0⟩
+      = ⟨1, .var 0⟩ := by
+    simp [Scheme.substScheme, Ty.subst]
+  have hc : substCtx (fun i => if i = 0 then (.var 1 : Ty) else .var i) cexΓ = cexΓ := by
+    simp [cexΓ, substCtx, Scheme.substScheme_mono, Ty.subst]
+  have hd : Ty.subst (fun i => if i = 0 then (.var 1 : Ty) else .var i) (.var 0) = .var 1 := rfl
+  rw [hs, hc, hd] at h
+  exact cex_neg h
+
 end Eyg.Types
