@@ -87,6 +87,17 @@ threading a level through the judgment and re-greening both preservation engines
 > **Still open:** a nested *generalizable* `let` (one binding a lambda) — the genuine crux below,
 > needing the deferred "readiness without re-substituting the body" redesign. Caveat 5 is
 > **narrowed**, not closed; expect this to prove (value-restricted HM is sound), not refute.
+>
+> **◇ G1 DETERMINATION (2026-06-19), re-confirmed from the datatype.** The wall is in `Ty`
+> itself: it is **binder-free** (`Scheme.lean:13–18`), one flat de-Bruijn-*level* scope, so a
+> quantified var and an instantiation-fresh var are indistinguishable by construction — exactly
+> why `σ_args` (a down-shift, not a `LevelMap`) cannot discharge the nested `let_poly` arm of
+> `hasType_subst` (`Substitution.lean:85`, today vacuous via `noLambdaLet`). The fix requires a
+> rigid/quantified marker on the `Ty` *datatype*, which ripples through `subst`/`TyEquiv`/
+> `instantiate`/every typing rule + interpreter port — **not additive** like `EffSub'` was, so
+> **no single-session tested slice exists**. Full keystone + re-green cascade + first-brick lemma
+> scoped in `progress/2026-06-19-G1-foundational-wall-confirmed-no-additive-slice.md`. Deferred to
+> a dedicated multi-session milestone; baseline this session: build 1773, spec 104/104, axioms clean.
 
 - [ ] **Decide the level carrier (item-1 fork, revisited).** Confirm or revise the
       `progress/2026-06-18-T6-let_poly-levelmap-mono-and-wfbelow-decision.md` decision: a light
