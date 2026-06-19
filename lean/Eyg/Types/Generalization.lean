@@ -81,6 +81,49 @@ theorem generalizes_mono (Γ : Ctx) (τ : Ty) : Generalizes (Scheme.mono τ) Γ 
   refine ⟨fun i => .var i, ?_, substCtx_id Γ⟩
   rw [Scheme.instantiate_mono, Ty.subst_id]
 
+/-- `substCtx σ` fixes a context iff it fixes every binding's scheme. -/
+theorem substCtx_eq_self_iff (σ : Nat → Ty) (Γ : Ctx) :
+    substCtx σ Γ = Γ ↔ ∀ b ∈ Γ, Scheme.substScheme σ b.2 = b.2 := by
+  induction Γ with
+  | nil => simp [substCtx]
+  | cons hd tl ih =>
+      obtain ⟨y, sy⟩ := hd
+      simp only [substCtx_cons, List.cons.injEq, Prod.mk.injEq, true_and,
+        List.mem_cons, forall_eq_or_imp, ih]
+
+/-- **`Generalizes` survives a `TyEquiv` context-binding rewrite.** Rewriting one
+binding's monomorphic type `.mono σ → .mono σ'` for `TyEquiv σ' σ` preserves
+`Generalizes`, because a context-fixing substitution fixes the binding's free
+variables (`Ty.fixes_free_of_subst_eq`), which `TyEquiv` preserves
+(`Ty.freeVars_tyEquiv`), so it still fixes the rewritten binding
+(`Ty.subst_eq_of_fixes_free`). This is the helper `hasType_ctxConv`'s `let_poly`
+arm needs (the converted binding lives inside the generalization context). -/
+theorem generalizes_ctxConv {s : Scheme} {Δ Γ : Ctx} {x : String} {σ σ' d : Ty}
+    (hc : Ty.TyEquiv σ' σ)
+    (hg : Generalizes s (Δ ++ (x, .mono σ) :: Γ) d) :
+    Generalizes s (Δ ++ (x, .mono σ') :: Γ) d := by
+  -- the per-binding bridge: `σg` fixing `.mono σ` ⇒ fixing `.mono σ'`
+  have key : ∀ (σg : Nat → Ty), Ty.subst σg σ = σ → Ty.subst σg σ' = σ' := by
+    intro σg ha
+    exact Ty.subst_eq_of_fixes_free (fun i hi =>
+      Ty.fixes_free_of_subst_eq ha i ((Ty.freeVars_tyEquiv hc i).mp hi))
+  intro args
+  obtain ⟨σg, heq, hfix⟩ := hg args
+  refine ⟨σg, heq, ?_⟩
+  rw [substCtx_eq_self_iff] at hfix ⊢
+  intro b hb
+  rcases List.mem_append.mp hb with hbΔ | hbcons
+  · exact hfix b (List.mem_append.mpr (Or.inl hbΔ))
+  · rcases List.mem_cons.mp hbcons with hbx | hbΓ
+    · subst hbx
+      have hb2 := hfix (x, Scheme.mono σ) (by simp)
+      simp only [Scheme.substScheme_mono] at hb2
+      have hσ : Ty.subst σg σ = σ := by
+        simp only [Scheme.mono, Scheme.mk.injEq] at hb2; exact hb2.2
+      simp only [Scheme.substScheme_mono]
+      exact congrArg Scheme.mono (key σg hσ)
+    · exact hfix b (List.mem_append.mpr (Or.inr (List.mem_cons_of_mem _ hbΓ)))
+
 /-- **The polymorphic-readiness keystone for a value-restricted `let`.** If `s`
 generalizes the lambda's type `defnTy` away from the evaluation context `Γ`, then
 the lambda's runtime closure inhabits **every** instantiation of `s` — exactly the
