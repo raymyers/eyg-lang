@@ -387,6 +387,111 @@ theorem generalizesAt_subst {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ)
   rw [genAt_substScheme hσ]
   exact genAt_generalizesAt n (Ty.subst σ d)
 
+/-! ## Scheme/context free-variable metatheory + `CtxWf` (the `hasType_subst` `let_poly` threading)
+
+The level-redesign's `WfBelow n` route threads a **context-below-level-`n`** side-invariant `CtxWf n Γ`
+through `hasType_subst` (NOT through the preservation engines — see
+`progress/2026-06-18-T6-let_poly-levelmap-mono-and-wfbelow-decision.md`). The `let_poly` arm of
+`hasType_subst` must (a) re-establish `CtxWf n (substCtx σ Γ)` from `CtxWf n Γ` + `LevelMap n σ`, and
+(b) bridge `CtxWf n Γ` to the keystone's context-fixing premise `∀σ' fixing [0,n), substCtx σ' Γ = Γ`.
+Both need a notion of a scheme's **ambient** free variables (those occurring above the quantifier
+prefix), developed here. -/
+
+namespace Ty
+
+/-- The free variables of a `shift k t` are exactly those of `t` shifted up by `k`. -/
+theorem mem_freeVars_shift {k i : Nat} {t : Ty} :
+    i ∈ (Ty.shift k t).freeVars ↔ ∃ w ∈ t.freeVars, i = w + k := by
+  rw [Ty.shift, Ty.mem_freeVars_subst]
+  constructor
+  · rintro ⟨v, hv, hi⟩
+    rw [Ty.freeVars, List.mem_singleton] at hi
+    exact ⟨v, hv, hi⟩
+  · rintro ⟨w, hw, rfl⟩
+    exact ⟨w, hw, by rw [Ty.freeVars]; exact List.mem_singleton.mpr rfl⟩
+
+end Ty
+
+/-- The **ambient** free variables of a scheme `⟨arity, body⟩`: the body variables sitting *above* the
+quantifier prefix (`≥ arity`), shifted down by `arity` (matching `instantiate`/`substScheme`, which map
+an ambient body-index `i ≥ arity` to the ambient variable `i - arity`). -/
+def Scheme.freeVars (s : Scheme) : List Nat :=
+  (s.body.freeVars.filter (fun j => decide (s.arity ≤ j))).map (· - s.arity)
+
+/-- Membership in a scheme's ambient free variables: `m` is ambient-free iff `m + arity` is a body
+free variable. -/
+theorem Scheme.mem_freeVars {s : Scheme} {m : Nat} :
+    m ∈ s.freeVars ↔ (m + s.arity) ∈ s.body.freeVars := by
+  simp only [Scheme.freeVars, List.mem_map, List.mem_filter, decide_eq_true_eq]
+  constructor
+  · rintro ⟨j, ⟨hj, hle⟩, rfl⟩
+    rwa [Nat.sub_add_cancel hle]
+  · intro h
+    exact ⟨m + s.arity, ⟨h, by omega⟩, by omega⟩
+
+/-- **A substitution fixing a scheme's ambient free vars fixes the scheme.** (The quantifier prefix is
+untouched by `substScheme`; each ambient occurrence `i ≥ arity` maps to `shift arity (σ (i-arity))`,
+which collapses to `var i` exactly when `σ` fixes `i - arity`.) -/
+theorem Scheme.substScheme_eq_of_fixes_free {σ : Nat → Ty} {s : Scheme}
+    (h : ∀ i ∈ s.freeVars, σ i = .var i) : Scheme.substScheme σ s = s := by
+  rw [Scheme.substScheme]
+  refine Scheme.ext' rfl ?_
+  apply Ty.subst_eq_of_fixes_free
+  intro j hj
+  by_cases hja : j < s.arity
+  · simp only [if_pos hja]
+  · have hle : s.arity ≤ j := Nat.le_of_not_lt hja
+    have hmem : (j - s.arity) ∈ s.freeVars :=
+      Scheme.mem_freeVars.mpr (by rwa [Nat.sub_add_cancel hle])
+    simp only [if_neg hja, h _ hmem, Ty.shift, Ty.subst_var, Nat.sub_add_cancel hle]
+
+/-- The ambient free vars of `substScheme σ s` come from substituting `σ` into the ambient free vars of
+`s`: `m` is ambient-free in `substScheme σ s` iff `m ∈ FV(σ p)` for some ambient-free `p` of `s`. -/
+theorem Scheme.mem_freeVars_substScheme {σ : Nat → Ty} {s : Scheme} {m : Nat} :
+    m ∈ (Scheme.substScheme σ s).freeVars ↔ ∃ p ∈ s.freeVars, m ∈ (σ p).freeVars := by
+  rw [Scheme.mem_freeVars]
+  simp only [Scheme.substScheme, Ty.mem_freeVars_subst]
+  constructor
+  · rintro ⟨j, hj, hmem⟩
+    by_cases hja : j < s.arity
+    · rw [if_pos hja, Ty.freeVars, List.mem_singleton] at hmem; omega
+    · have hle : s.arity ≤ j := Nat.le_of_not_lt hja
+      rw [if_neg hja, Ty.mem_freeVars_shift] at hmem
+      obtain ⟨w, hw, hmw⟩ := hmem
+      refine ⟨j - s.arity, Scheme.mem_freeVars.mpr (by rwa [Nat.sub_add_cancel hle]), ?_⟩
+      have : m = w := by omega
+      rwa [this]
+  · rintro ⟨p, hp, hmem⟩
+    have hbody : (p + s.arity) ∈ s.body.freeVars := Scheme.mem_freeVars.mp hp
+    refine ⟨p + s.arity, hbody, ?_⟩
+    rw [if_neg (by omega : ¬ p + s.arity < s.arity), Nat.add_sub_cancel, Ty.mem_freeVars_shift]
+    exact ⟨m, hmem, by omega⟩
+
+/-- **Context below level `n`**: every ambient free variable of every binding's scheme is `< n`. The
+side-invariant `hasType_subst`'s `let_poly` arm threads (`CtxWf n Γ`), kept off the preservation
+engines (see the WfBelow decision note). -/
+def CtxWf (n : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ i ∈ Scheme.freeVars b.2, i < n
+
+/-- **`CtxWf` is stable under a level-map substitution.** Substituting a `LevelMap n σ` keeps every
+binding's ambient free vars below `n` (an ambient `p < n` maps to `σ p` with `FV(σ p) ⊆ [0,n)`). -/
+theorem ctxWf_substCtx {n : Nat} {σ : Nat → Ty} {Γ : Ctx}
+    (hΓ : CtxWf n Γ) (hσ : Ty.LevelMap n σ) : CtxWf n (substCtx σ Γ) := by
+  obtain ⟨_, hamb⟩ := hσ
+  intro b hb i hi
+  simp only [substCtx, List.mem_map] at hb
+  obtain ⟨⟨y, s⟩, hmem, rfl⟩ := hb
+  obtain ⟨p, hp, hpi⟩ := Scheme.mem_freeVars_substScheme.mp hi
+  exact hamb p (hΓ (y, s) hmem p hp) i hpi
+
+/-- **`CtxWf n Γ` bridges to the keystone's context-fixing premise.** Any substitution fixing `[0,n)`
+fixes a context all of whose ambient free vars are `< n` (`substScheme_eq_of_fixes_free` per binding).
+This is the `hΓ` premise `genAt_generalizes`/`genAt_closure_ready` consume. -/
+theorem ctxWf_fixed {n : Nat} {Γ : Ctx} (hΓ : CtxWf n Γ)
+    {σ' : Nat → Ty} (hfix : ∀ i, i < n → σ' i = .var i) : substCtx σ' Γ = Γ := by
+  rw [substCtx_eq_self_iff]
+  intro b hb
+  exact Scheme.substScheme_eq_of_fixes_free (fun i hi => hfix i (hΓ b hb i hi))
+
 /-! ## `Generalizes` is NOT substitution-stable — the `hasType_subst` blocker, machine-checked
 
 The `let_poly` implementation attempt (2026-06-18) stalled because the term-level substitution
