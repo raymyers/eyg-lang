@@ -210,6 +210,57 @@ one-liner (the keystone at the push), but the *machine coupling* — carrying a 
 `val = w` equality across the lambda-step in a value-aware stack predicate — is the genuine work,
 ≈ comparable to the `Handle`/`StackSegWf` slice.
 
+## Settled encoding decision (deeper analysis, for the implementer)
+
+The carriage of readiness is now fully pinned:
+
+- **Readiness is computed at the Let-push and CARRIED — never re-derived downstream.** At the push,
+  `inv_let` (unified, see below) yields `s, defnTy, hdefn : HasType Γ defn defnTy ε, hgen :
+  Generalizes s Γ defnTy, hbody`. The keystone `generalizes_closure_ready hgen henv hdefn` gives the
+  **closed** fact `Rdy : ∀args, HasTypeV (Closure lx lbody env) (s.instantiate args)` (for a
+  value/lambda defn). This is the *only* context-coherent point (one `Γ`, no `Γc/Γf` split, `env =
+  fenv` by construction). Every later step just forwards `Rdy`.
+- **Both the E-state and the V-state in front of an `Assign` head must carry the poly data** —
+  re-deriving `Rdy` at the lambda→closure step is impossible (the `env ≠ fenv` / `Γc ≠ Γf` wall:
+  `generalizes_ctxConv` transports a fixing `σ` across a `TyEquiv` *binding rewrite*, NOT across two
+  different contexts the same env realizes). Confirmed by exhaustion.
+- **`inv_let` should be UNIFIED to a scheme form** so mono and poly share one machine path:
+  `∃ s defnTy, HasType Γ defn defnTy ε ∧ Generalizes s Γ defnTy ∧ HasType ((x,s)::Γ) body τ ε`. Mono
+  `let_` supplies `s = .mono defnTy` + `generalizes_mono`; `let_poly` supplies its `s`/`hgen`. Then
+  `StackWf.assign` stores an arbitrary `s` (mono = `.mono`), and the pop's `EnvWf.cons` obligation
+  `∀args, HasTypeV v (s.instantiate args)` is **trivial for mono** (`s.instantiate _ = defnTy`, from
+  the value's own typing) and **the carried `Rdy` for poly**.
+
+### Encoding: `StackWfV` inductive (chosen over MStateWf nested-pattern)
+
+Two ways to make the value position visible; **use the inductive**:
+
+- **`StackWfV v k σ ε τ`** (chosen) — mirrors `StackWf` but its `assign` constructor carries
+  `∀args, HasTypeV v (s.instantiate args)`; `trace` recurses (same `v`); `nil`/`arg`/`applyf`/
+  `callwith`/`delimit` drop to plain `StackWf rest` (the head consumes `v`); `conv` folds. A
+  forgetful `stackWfV_toStackWf` erases the readiness. `MStateWf` value case →
+  `∃ τin, HasTypeV v τin ∧ StackWfV v k τin ε τ`. **Cost:** every `.V`-producing preservation arm
+  wraps its `StackWf` as `StackWfV` — *trivial* for non-`assign` heads (direct wrapper) and for
+  `assign` heads in the **mono** path (readiness from the value typing); the only non-trivial
+  producer is the lambda→closure step (hand over the carried `Rdy`). The E-state carrier is the
+  analogous `StackWfE`/a control-aware `MStateWf` E-clause holding `Rdy` about `Closure lx lbody env`
+  (produced at the push, forwarded by the lambda step).
+- **MStateWf nested patterns** (rejected) — special-case `.run (.V v, _, (Assign…)::rest)` and
+  `.run (.E ⟨.Lambda…⟩, _, (Assign…)::rest)` directly in the `def`. Fewer *sites* touched, but the
+  overlapping patterns **break clean `simp [MStateWf]` unfolding** for generic states — worse for
+  every existing proof. Avoid.
+
+### Producers to update (the bounded site list)
+- `preservation_E` **Let case**: dispatch on `defn` is a `λ`; build the `StackWf.assign` storing `s`;
+  for the `λ` (poly/value) sub-case produce the special E-state with `Rdy` (keystone at the push).
+- `preservation_E` value arms (`Integer`/`String`/`Binary`/`Variable`/`Lambda`/builtin-partial/`Tail`/
+  `Empty`/`Cons`/…): when the head is `assign`, produce `StackWfV.assign` — *mono-trivial* readiness
+  (the frame's `s` is `.mono` for non-`λ` defns, so `∀args` collapses to the value typing).
+- `preservation_V` **Assign case**: read the carried `StackWfV.assign` readiness; feed `EnvWf.cons`.
+  Other `kont` cases: unchanged (non-`assign` heads use the trivial `StackWfV` wrapper).
+- **Both engines** (`StackWf*`/`StackWfB*`): mirror. `let_poly` is effect-orthogonal, so the B-side
+  `Rdy` is the same shape; the build won't compile until both are done.
+
 ## Standalone increments landed; remainder is the coupled cascade
 
 Everything that can be made green *without* the all-or-nothing constructor/`StackWfV` cascade is
