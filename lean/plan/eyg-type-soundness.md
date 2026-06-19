@@ -713,6 +713,21 @@ for the **whole** core language.
       (the `HasType.let_poly` constructor + value-aware `StackWfV` + generalized `StackWf.assign` +
       both preservation engines) has no committable sub-increment and is the dedicated implementation
       session.
+      **⚠ IMPLEMENTATION ATTEMPT — HARD WALL FOUND at `hasType_subst`** (2026-06-18,
+      `progress/2026-06-18-T6-let_poly-hasType_subst-blocker.md`, WIP in
+      `progress/2026-06-18-T6-let_poly-WIP.patch`). The typing-layer cascade went green up to
+      `Generation` (the `HasType.let_poly` constructor, `hasType_ctxConv` arm via `generalizes_ctxConv`,
+      unified `inv_let`, `hasType_expr_form` arm — all compile), then hit a **mathematical** wall, not
+      proof engineering: the term-level substitution lemma `hasType_subst` (arbitrary σ) is **FALSE**
+      for `let_poly` because **`Generalizes` is not substitution-stable** — a machine-checkable
+      counterexample (`sc=⟨1,var0⟩`, `Γ=[(y,.mono(var1))]`, `defnTy=var0`, `σ=[0↦var1]`) shows σ can
+      collide a generalized variable into `FV(Γ)`, and "σ fixes `FV(Γ)`" does not rescue it. Since
+      `hasType_subst` feeds the readiness keystone (`closure_typed_of_lambda_subst`) and must be total
+      over nested `let_poly`, the **freshness/de-Bruijn-LEVEL discipline the PLAN deferred is now
+      mandatory** (recommended fix: index `Generalizes` by a level `n`, constrain σ below `n`). This is
+      the real remaining T6 gen crux — a structural change threading a level through
+      `HasType`/`hasType_subst`/the `StackWf.assign` frame. Reverted; `lake build` 1772 + spec 104/104
+      green.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
