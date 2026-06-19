@@ -697,6 +697,15 @@ for the **whole** core language.
       concrete E-side carry options are in the note. No code this session (the cascade is
       all-or-nothing; no standalone green increment exists — confirmed); `lake build` 1772 + spec
       104/104 still green.
+      **⚙ FOUNDATIONAL FREE-VAR LEMMAS DELIVERED** (2026-06-18, `Eyg/Types/Scheme.lean`): a
+      constructor probe surfaced a *new* obstacle — `hasType_ctxConv`'s `let_poly` arm needs
+      `Generalizes` to survive a `TyEquiv` binding-rewrite, which the syntactic context-fixing does
+      not give directly. The two lemmas that unblock it (`generalizes_ctxConv`) are landed green and
+      standalone: **`Ty.fixes_free_of_subst_eq`** (converse of `subst_eq_of_fixes_free`:
+      `subst σ t = t → ∀ i ∈ freeVars t, σ i = .var i`) and **`Ty.freeVars_tyEquiv`** (`TyEquiv`
+      preserves the free-var set). `lake build` 1772 + spec 104/104. The constructor/cascade probe
+      itself was reverted (the full slice is all-or-nothing through the two-engine `Soundness.lean`);
+      these two lemmas are the kept increment.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the

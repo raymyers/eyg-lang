@@ -166,6 +166,41 @@ after the `Ctx` abbrev, before `HasType`); leave their *lemmas* (`substCtx_looku
 `Substitution.lean`/`Generalization.lean`. One `def` relocation, no lemma changes; everything
 downstream still resolves `substCtx`/`Generalizes` by the same name.
 
+## ⚠ NEW obstacle surfaced by an implementation probe — `Generalizes` × `hasType_ctxConv`
+
+Began the cascade (moved `substCtx`/`Generalizes` into `Typing.lean`, added the `let_poly`
+constructor) and hit a real obstacle in the *first* dependent lemma, `hasType_ctxConv`
+(`Typing.lean`). That lemma rewrites one context binding's type `.mono σ → .mono σ'` for
+`TyEquiv σ' σ` and re-runs every `HasType` rule. The `let_poly` arm needs
+
+```
+Generalizes s (Δ ++ (x,.mono σ )::Γ) defnTy   ⟹   Generalizes s (Δ ++ (x,.mono σ')::Γ) defnTy
+```
+
+but `Generalizes` fixes the context **syntactically** (`substCtx σg Γ₁ = Γ₁`), and `σ ≠ σ'`
+syntactically (only `TyEquiv`). So the arm does **not** go through as-is — a `generalizes_ctxConv`
+helper is required. It IS provable, resting on two lemmas — both now **DELIVERED green** in `Scheme.lean`:
+
+- **(A) `Ty.fixes_free_of_subst_eq`** (converse of `subst_eq_of_fixes_free`):
+  `Ty.subst σg t = t → ∀ i ∈ Ty.freeVars t, σg i = .var i`. (A free var at a leaf must map to
+  itself for the substituted term to match.) ✅
+- **(B) `Ty.freeVars_tyEquiv`**: `Ty.TyEquiv σ σ' → ∀ i, i ∈ Ty.freeVars σ ↔ i ∈ Ty.freeVars σ'`
+  (`TyEquiv` only swaps distinct row labels and is a congruence — neither adds nor drops type
+  variables). ✅
+
+Both compile (`lake build` 1772 + spec unaffected; pure structural inductions, axioms inherited).
+The remaining `generalizes_ctxConv` helper follows mechanically: from `substCtx σg Γ₁ = Γ₁`
+extract (via A) that `σg` fixes `freeVars σ` pointwise; by (B) it fixes `freeVars σ'`; by
+`subst_eq_of_fixes_free` (⟸) `subst σg σ' = σ'`, so `σg` fixes the rewritten context too. (It is
+*not* landed yet because its exact `(Δ,Γ,x,σ,σ')` shape will be fixed by the `hasType_ctxConv`
+`let_poly` arm during implementation.)
+
+**Scope impact:** confirms `let_poly` needs *new free-var metatheory* on top of the machine
+coupling — so even the typing-layer cascade (before any `Soundness.lean` work) is non-trivial. The
+constructor probe was reset (code reverted), but the two foundational lemmas (A)/(B) it surfaced
+are **kept and committed** (they are unambiguously needed and standalone-green). `lake build` 1772
++ spec 104/104 green.
+
 ## Why this is a milestone slice, not a mechanical edit (unchanged conclusion)
 The value-aware `StackWfV`/`MStateWf` change ripples through *every* `.V`-state construction in
 both preservation engines, and the new constructor forces B-world arms. The *semantic* core is a

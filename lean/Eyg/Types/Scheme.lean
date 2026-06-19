@@ -153,6 +153,68 @@ theorem subst_eq_of_fixes_free {σ : Nat → Ty} {t : Ty}
         ihb (fun i hi => h i (Or.inl (Or.inr hi))), iht (fun i hi => h i (Or.inr hi))]
   | _ => rfl
 
+/-- **Converse of `subst_eq_of_fixes_free`.** If a substitution fixes a type, it fixes
+each of its free variables pointwise: a free var sits at a leaf, so for the substituted
+type to match it must map to itself. The pair characterizes `subst σ t = t` exactly, and
+is what `let_poly`'s `generalizes_ctxConv` needs (rewriting a context binding up to
+`TyEquiv` preserves the free-var set, so a context-fixing `σ` keeps fixing it). -/
+theorem fixes_free_of_subst_eq {σ : Nat → Ty} {t : Ty}
+    (h : subst σ t = t) : ∀ i ∈ freeVars t, σ i = .var i := by
+  induction t with
+  | var j =>
+      intro i hi; simp only [freeVars, List.mem_singleton] at hi; subst hi
+      simpa only [subst] using h
+  | «fun» a e r iha ihe ihr =>
+      simp only [subst, Ty.fun.injEq] at h
+      intro i hi; simp only [freeVars, List.mem_append] at hi
+      rcases hi with (hi | hi) | hi
+      · exact iha h.1 i hi
+      · exact ihe h.2.1 i hi
+      · exact ihr h.2.2 i hi
+  | list a ih =>
+      simp only [subst, Ty.list.injEq] at h; intro i hi; exact ih h i hi
+  | record r ih =>
+      simp only [subst, Ty.record.injEq] at h; intro i hi; exact ih h i hi
+  | union r ih =>
+      simp only [subst, Ty.union.injEq] at h; intro i hi; exact ih h i hi
+  | promise a ih =>
+      simp only [subst, Ty.promise.injEq] at h; intro i hi; exact ih h i hi
+  | rowExtend l f t ihf iht =>
+      simp only [subst, Ty.rowExtend.injEq] at h
+      intro i hi; simp only [freeVars, List.mem_append] at hi
+      rcases hi with hi | hi
+      · exact ihf h.2.1 i hi
+      · exact iht h.2.2 i hi
+  | effectExtend l a b t iha ihb iht =>
+      simp only [subst, Ty.effectExtend.injEq] at h
+      intro i hi; simp only [freeVars, List.mem_append] at hi
+      rcases hi with (hi | hi) | hi
+      · exact iha h.2.1 i hi
+      · exact ihb h.2.2.1 i hi
+      · exact iht h.2.2.2 i hi
+  | _ => intro i hi; simp only [freeVars] at hi; nomatch hi
+
+/-- **`TyEquiv` preserves the free-variable set.** Row equality only swaps distinct
+labels and is a congruence, so it neither introduces nor removes type variables. -/
+theorem freeVars_tyEquiv {s t : Ty} (h : TyEquiv s t) :
+    ∀ i, i ∈ freeVars s ↔ i ∈ freeVars t := by
+  induction h with
+  | refl => intro i; exact Iff.rfl
+  | symm _ ih => intro i; exact (ih i).symm
+  | trans _ _ ih1 ih2 => intro i; exact (ih1 i).trans (ih2 i)
+  | congrFun _ _ _ iha ihe ihr =>
+      intro i; simp only [freeVars, List.mem_append]; rw [iha i, ihe i, ihr i]
+  | congrList _ ih => intro i; simp only [freeVars]; exact ih i
+  | congrRecord _ ih => intro i; simp only [freeVars]; exact ih i
+  | congrUnion _ ih => intro i; simp only [freeVars]; exact ih i
+  | congrPromise _ ih => intro i; simp only [freeVars]; exact ih i
+  | congrRow _ _ ihf iht =>
+      intro i; simp only [freeVars, List.mem_append]; rw [ihf i, iht i]
+  | congrEff _ _ _ iha ihb iht =>
+      intro i; simp only [freeVars, List.mem_append]; rw [iha i, ihb i, iht i]
+  | swapRow _ => intro i; simp only [freeVars, List.mem_append]; tauto
+  | swapEff _ => intro i; simp only [freeVars, List.mem_append]; tauto
+
 /-! ## Schemes & instantiation -/
 
 end Ty
