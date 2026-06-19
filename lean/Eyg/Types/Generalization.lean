@@ -227,6 +227,23 @@ keeps the generalized region untouched, so generalization is stable under it. -/
 def LevelMap (n : Nat) (σ : Nat → Ty) : Prop :=
   (∀ i, n ≤ i → σ i = .var i) ∧ (∀ i, i < n → ∀ w ∈ (σ i).freeVars, w < n)
 
+/-- **A level map is a level map at every higher level.** A `LevelMap n` fixes `[n,∞)` and keeps
+`[0,n)` within `[0,n)`; raising the level to `n' ≥ n` still fixes `[n',∞)` (⊆ `[n,∞)`) and keeps
+`[0,n')` within `[0,n')` — an ambient `i < n` lands in `[0,n) ⊆ [0,n')`, and a fixed `n ≤ i < n'`
+maps to `var i` whose only free var is `i < n'`. **The glue for `hasType_subst`'s descent into a
+nested `let_poly`:** the outer-scope `σ` (a `LevelMap n` for the outer level `n`) is automatically a
+`LevelMap n'` for every deeper let's level `n' ≥ n`, so a *single* substitution serves all nested
+generalizations without re-levelling. -/
+theorem LevelMap.mono {n n' : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ) (hle : n ≤ n') :
+    Ty.LevelMap n' σ := by
+  obtain ⟨hfix, hamb⟩ := hσ
+  refine ⟨fun i hi => hfix i (Nat.le_trans hle hi), fun i hi w hw => ?_⟩
+  by_cases hin : i < n
+  · exact Nat.lt_of_lt_of_le (hamb i hin w hw) hle
+  · rw [hfix i (Nat.le_of_not_lt hin)] at hw
+    simp only [Ty.freeVars, List.mem_singleton] at hw
+    omega
+
 /-- On a type whose free variables all sit below `n`, the re-indexing `reindexGen n k` acts as a plain
 `shift` by `k` (every such var is in the ambient `< n` branch `w ↦ var (w + k)`). The hinge of the
 ambient case of `genAt_substScheme`. -/

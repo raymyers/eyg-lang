@@ -766,6 +766,19 @@ for the **whole** core language.
       `genAt` + the minimal-blast-radius level carrier (`HasTypeAt n` vs. `CtxWf n`/`TyWf n`
       side-invariant); (2) re-state `hasType_subst` with the `LevelMap n σ` premise (its `let_poly` arm
       discharges via `generalizesAt_subst`); (3) the unchanged machine coupling (`StackWfV`, both engines).
+      **⚙ ITEM-1 DECISION + DESCENT GLUE DELIVERED** (2026-06-18,
+      `progress/2026-06-18-T6-let_poly-levelmap-mono-and-wfbelow-decision.md`). Item 1 is **resolved in
+      favour of the `WfBelow n` side-invariant** (not a full `HasTypeAt n`): the enabling fact is that
+      **`Soundness.lean` does not import `Substitution`/`Generalization`**, so the level `n` lives only in
+      (a) the `let_poly` constructor's premises (scheme `genAt n defnTy` + a context-below-`n` witness) and
+      (b) `hasType_subst`/`genAt_closure_ready` — **both off the Soundness import path**. The two
+      preservation engines therefore treat `let_poly` as an *opaque* constructor carrying a body typing +
+      a precomputed closed `Rdy` (from `genAt_closure_ready` at the push), and **never mention `n`** — so
+      the soundness side is the plain `StackWfV` cascade with *no* level threading, and the full
+      `HasTypeAt n` alternative is unnecessary. The nested-`let_poly` "re-level on descent" crux is
+      dissolved by **`Ty.LevelMap.mono`** (`LevelMap n σ → n ≤ n' → LevelMap n' σ`, green, axioms clean):
+      the outer-scope `σ` is automatically a `LevelMap` at every deeper let's level, so `hasType_subst`'s
+      `let_poly` arm discharges the inner `generalizesAt_subst` from the *same* `σ` — no re-levelling.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
