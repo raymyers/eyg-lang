@@ -1,0 +1,224 @@
+diff --git a/lean/Eyg/Types/Generalization.lean b/lean/Eyg/Types/Generalization.lean
+index b7be7094..d3a84b40 100644
+--- a/lean/Eyg/Types/Generalization.lean
++++ b/lean/Eyg/Types/Generalization.lean
+@@ -190,16 +190,6 @@ prefix (`v ↦ v + arity`) so instantiation shifts them back down. -/
+ 
+ namespace Ty
+ 
+-/-- Generalization **arity** at level `n`: one quantifier slot per generalized variable (`≥ n`) of
+-`d`, sized so every such variable fits (`v - n < genArity` for `v ≥ n` free in `d`). Closed-below-`n`
+-types get arity `0` (monomorphic). -/
+-def genArity (n : Nat) (d : Ty) : Nat := (d.freeVars.map (fun v => v + 1 - n)).foldr Nat.max 0
+-
+-/-- The re-indexing turning `d` into a level-`n` scheme body with `arity` quantifiers: ambient vars
+-(`< n`) shift up past the prefix; generalized vars (`≥ n`) become quantifier `v - n`. -/
+-def reindexGen (n arity : Nat) : Nat → Ty :=
+-  fun v => if v < n then .var (v + arity) else .var (v - n)
+-
+ /-- An element of a `Nat` list is `≤` its `foldr max 0`. -/
+ theorem mem_le_foldr_max {x : Nat} {l : List Nat} (h : x ∈ l) :
+     x ≤ l.foldr Nat.max 0 := by
+@@ -264,12 +254,6 @@ theorem genArity_spec {n v : Nat} {d : Ty} (hv : v ∈ d.freeVars) (hn : n ≤ v
+ 
+ end Ty
+ 
+-/-- The computed generalization of `d` at level `n`: quantify the generalized (`≥ n`) variables. -/
+-def Scheme.genAt (n : Nat) (d : Ty) : Scheme :=
+-  ⟨d.genArity n, Ty.subst (Ty.reindexGen n (d.genArity n)) d⟩
+-
+-@[simp] theorem Scheme.genAt_arity (n : Nat) (d : Ty) : (genAt n d).arity = d.genArity n := rfl
+-
+ /-- Componentwise scheme equality (the `body` field is non-dependent). -/
+ theorem Scheme.ext' {s t : Scheme} (ha : s.arity = t.arity) (hb : s.body = t.body) : s = t := by
+   cases s; cases t; cases ha; cases hb; rfl
+@@ -412,12 +396,6 @@ theorem mem_freeVars_shift {k i : Nat} {t : Ty} :
+ 
+ end Ty
+ 
+-/-- The **ambient** free variables of a scheme `⟨arity, body⟩`: the body variables sitting *above* the
+-quantifier prefix (`≥ arity`), shifted down by `arity` (matching `instantiate`/`substScheme`, which map
+-an ambient body-index `i ≥ arity` to the ambient variable `i - arity`). -/
+-def Scheme.freeVars (s : Scheme) : List Nat :=
+-  (s.body.freeVars.filter (fun j => decide (s.arity ≤ j))).map (· - s.arity)
+-
+ /-- Membership in a scheme's ambient free variables: `m` is ambient-free iff `m + arity` is a body
+ free variable. -/
+ theorem Scheme.mem_freeVars {s : Scheme} {m : Nat} :
+@@ -467,11 +445,6 @@ theorem Scheme.mem_freeVars_substScheme {σ : Nat → Ty} {s : Scheme} {m : Nat}
+     rw [if_neg (by omega : ¬ p + s.arity < s.arity), Nat.add_sub_cancel, Ty.mem_freeVars_shift]
+     exact ⟨m, hmem, by omega⟩
+ 
+-/-- **Context below level `n`**: every ambient free variable of every binding's scheme is `< n`. The
+-side-invariant `hasType_subst`'s `let_poly` arm threads (`CtxWf n Γ`), kept off the preservation
+-engines (see the WfBelow decision note). -/
+-def CtxWf (n : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ i ∈ Scheme.freeVars b.2, i < n
+-
+ /-- **`CtxWf` is monotone in the level.** A context below `n` is below any `n' ≥ n`. Pairs with
+ `Ty.LevelMap.mono` for `hasType_subst`'s bump-at-binders: descending into a `lam`/`let` body raises the
+ level to cover the bound type's free variables, and both the context and the substitution lift. -/
+diff --git a/lean/Eyg/Types/Generation.lean b/lean/Eyg/Types/Generation.lean
+index 5a3f8e08..b54faebc 100644
+--- a/lean/Eyg/Types/Generation.lean
++++ b/lean/Eyg/Types/Generation.lean
+@@ -80,18 +80,27 @@ theorem inv_lambda {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m} {τ ε :
+       exact ⟨argTy, εb, retTy, hbody, heq.trans hτ⟩
+   | _ => simp at he
+ 
++/-- **Inversion for `Let`** (unified mono/poly). Either the binding is monomorphic (body typed at
++`.mono defnTy`) or polymorphic (value-restricted: `defn` is a `Lambda`; body typed at the computed
++generalization `genAt n defnTy`, with `CtxWf n Γ`). The two engines' Let-push split on this. -/
+ theorem inv_let {Γ : Ctx} {x : String} {defn body : Tree.Node m} {a : m} {τ ε : Ty}
+     (h : HasType Γ (⟨.Let x defn body, a⟩ : Tree.Node m) τ ε) :
+-    ∃ defnTy, HasType Γ defn defnTy ε ∧ HasType ((x, .mono defnTy) :: Γ) body τ ε := by
++    (∃ defnTy, HasType Γ defn defnTy ε ∧ HasType ((x, .mono defnTy) :: Γ) body τ ε) ∨
++    (∃ lx lbody la defnTy n, defn = ⟨.Lambda lx lbody, la⟩ ∧
++        HasType Γ defn defnTy ε ∧ CtxWf n Γ ∧
++        HasType ((x, Scheme.genAt n defnTy) :: Γ) body τ ε) := by
+   generalize he : (⟨.Let x defn body, a⟩ : Tree.Node m) = e at h
+   induction h with
+   | @let_ Γ x' defn' body' defnTy bodyTy ε a hdefn hbody =>
+-      cases he; exact ⟨defnTy, hdefn, hbody⟩
++      cases he; exact Or.inl ⟨defnTy, hdefn, hbody⟩
++  | @let_poly Γ x' lx lbody la body' defnTy bodyTy ε n a hdefn hcw hbody =>
++      cases he; exact Or.inr ⟨lx, lbody, la, defnTy, n, rfl, hdefn, hcw, hbody⟩
+   | conv hinner hτ hε ih =>
+-      obtain ⟨defnTy, hdefn, hbody⟩ := ih he
+-      -- retype both sub-derivations at the outer (τ, ε)
+-      exact ⟨defnTy, HasType.conv hdefn (.refl _) hε,
+-        HasType.conv hbody hτ hε⟩
++      rcases ih he with ⟨defnTy, hdefn, hbody⟩ |
++          ⟨lx, lbody, la, defnTy, n, hdl, hdefn, hcw, hbody⟩
++      · exact Or.inl ⟨defnTy, HasType.conv hdefn (.refl _) hε, HasType.conv hbody hτ hε⟩
++      · exact Or.inr ⟨lx, lbody, la, defnTy, n, hdl, HasType.conv hdefn (.refl _) hε, hcw,
++          HasType.conv hbody hτ hε⟩
+   | _ => simp at he
+ 
+ /-- **Typeable nodes are exactly the pure-core forms.** A well-typed node's
+@@ -113,6 +122,7 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+   | lam => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
+   | app => exact Or.inr (Or.inr (Or.inl ⟨_, _, rfl⟩))
+   | let_ => exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl⟩)))
++  | let_poly => exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl⟩)))
+   | int => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))
+   | str => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))
+   | bin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))))
+diff --git a/lean/Eyg/Types/Scheme.lean b/lean/Eyg/Types/Scheme.lean
+index 5d5032bf..d134f1ab 100644
+--- a/lean/Eyg/Types/Scheme.lean
++++ b/lean/Eyg/Types/Scheme.lean
+@@ -131,6 +131,17 @@ def freeVars : Ty → List Nat
+   | .effectExtend _ a b t => freeVars a ++ freeVars b ++ freeVars t
+   | _ => []
+ 
++/-- Generalization **arity** at level `n`: one quantifier slot per generalized variable (`≥ n`) of
++`d`, sized so every such variable fits (`v - n < genArity` for `v ≥ n` free in `d`). Closed-below-`n`
++types get arity `0` (monomorphic). (T6 `let_poly` generalization; relocated here so the `let_poly`
++typing rule can reference `Scheme.genAt`.) -/
++def genArity (n : Nat) (d : Ty) : Nat := (d.freeVars.map (fun v => v + 1 - n)).foldr Nat.max 0
++
++/-- The re-indexing turning `d` into a level-`n` scheme body with `arity` quantifiers: ambient vars
++(`< n`) shift up past the prefix; generalized vars (`≥ n`) become quantifier `v - n`. -/
++def reindexGen (n arity : Nat) : Nat → Ty :=
++  fun v => if v < n then .var (v + arity) else .var (v - n)
++
+ /-- **A substitution that fixes every free variable fixes the type.** -/
+ theorem subst_eq_of_fixes_free {σ : Nat → Ty} {t : Ty}
+     (h : ∀ i ∈ freeVars t, σ i = .var i) : subst σ t = t := by
+@@ -335,6 +346,25 @@ def substScheme (σ : Nat → Ty) (s : Scheme) : Scheme :=
+ @[simp] theorem substScheme_arity (σ : Nat → Ty) (s : Scheme) :
+     (substScheme σ s).arity = s.arity := rfl
+ 
++/-- The computed generalization of `d` at level `n`: quantify the generalized (`≥ n`) variables. The
++generalized variables (`≥ n`) become the quantifier prefix `0 … arity-1` (via `v ↦ v - n`), and the
++ambient variables (`< n`) shift up past the prefix (`v ↦ v + arity`). (T6 `let_poly`; relocated here so
++the `let_poly` typing rule can reference it.) -/
++def genAt (n : Nat) (d : Ty) : Scheme :=
++  ⟨d.genArity n, Ty.subst (Ty.reindexGen n (d.genArity n)) d⟩
++
++@[simp] theorem genAt_arity (n : Nat) (d : Ty) : (genAt n d).arity = d.genArity n := rfl
++
++/-- The **ambient** free variables of a scheme `⟨arity, body⟩`: the body variables sitting *above* the
++quantifier prefix (`≥ arity`), shifted down by `arity` (matching `instantiate`/`substScheme`). Used by
++`CtxWf` (the `let_poly` context-below-level side-invariant). -/
++def freeVars (s : Scheme) : List Nat :=
++  (s.body.freeVars.filter (fun j => decide (s.arity ≤ j))).map (· - s.arity)
++
++/-- A monomorphic scheme's ambient free vars are exactly its body's free vars (arity `0`). -/
++@[simp] theorem freeVars_mono (t : Ty) : freeVars (mono t) = t.freeVars := by
++  simp only [freeVars, mono, Nat.zero_le, decide_true, List.filter_true, Nat.sub_zero, List.map_id']
++
+ /-- `substScheme` on a monomorphic scheme is `subst` on its body. -/
+ @[simp] theorem substScheme_mono (σ : Nat → Ty) (t : Ty) :
+     substScheme σ (mono t) = mono (Ty.subst σ t) := by
+diff --git a/lean/Eyg/Types/Typing.lean b/lean/Eyg/Types/Typing.lean
+index f281074d..afe1dd4b 100644
+--- a/lean/Eyg/Types/Typing.lean
++++ b/lean/Eyg/Types/Typing.lean
+@@ -39,6 +39,12 @@ open Eyg.Ir
+ matching the interpreter's `Env` shadowing). -/
+ abbrev Ctx := List (String × Scheme)
+ 
++/-- **Context below level `n`**: every ambient free variable of every binding's scheme is `< n`. The
++side-invariant the `let_poly` rule stores and `hasType_subst`'s `let_poly` arm threads, kept off the
++preservation engines (see `progress/2026-06-18-T6-let_poly-levelmap-mono-and-wfbelow-decision.md`).
++Defined here (before `HasType`) so the `let_poly` constructor can carry it. -/
++def CtxWf (n : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ i ∈ Scheme.freeVars b.2, i < n
++
+ /-! ## `Handle` scheme component types (T5)
+ 
+ The deep-handler scheme `handle(l)` (`contextual.gleam` `handle`) factors into these
+@@ -87,6 +93,18 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
+       HasType Γ defn defnTy ε →
+       HasType ((x, .mono defnTy) :: Γ) body bodyTy ε →
+       HasType Γ ⟨.Let x defn body, a⟩ bodyTy ε
++  /-- **Polymorphic `let`** (T6 let-generalization, **value-restricted**: the bound `defn` is a
++  `Lambda`). The body is typed with `x` bound at the *computed* generalization `genAt n defnTy` (de
++  Bruijn-level discipline: generalize the type variables `≥ n`, the fresh boundary above the in-scope
++  ambient `[0,n)`), and the context is recorded below that level (`CtxWf n Γ`). The level `n` and
++  `genAt` are stored only here and consumed by `hasType_subst`/the readiness keystone — the
++  preservation engines treat this as an opaque constructor carrying a body typing + a precomputed
++  closed readiness (see the WfBelow decision note). -/
++  | let_poly {Γ x lx lbody la body defnTy bodyTy ε n a} :
++      HasType Γ ⟨.Lambda lx lbody, la⟩ defnTy ε →
++      CtxWf n Γ →
++      HasType ((x, Scheme.genAt n defnTy) :: Γ) body bodyTy ε →
++      HasType Γ ⟨.Let x ⟨.Lambda lx lbody, la⟩ body, a⟩ bodyTy ε
+   /-- Integer literal. -/
+   | int {Γ n ε a} : HasType Γ ⟨.Integer n, a⟩ .integer ε
+   /-- String literal. -/
+@@ -155,6 +173,23 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
+       HasType Γ e τ ε → Ty.TyEquiv τ τ' → Ty.TyEquiv ε ε' →
+       HasType Γ e τ' ε'
+ 
++/-- **`CtxWf` survives a `TyEquiv` context-binding rewrite.** Rewriting one binding's monomorphic type
++`.mono σ → .mono σ'` for `TyEquiv σ' σ` preserves `CtxWf` (`TyEquiv` preserves the free-var set, and a
++mono scheme's ambient free vars are its body's). The `let_poly` arm of `hasType_ctxConv` needs it. -/
++theorem ctxWf_ctxConv {n : Nat} {Δ Γ : Ctx} {x : String} {σ σ' : Ty}
++    (hc : Ty.TyEquiv σ' σ) (h : CtxWf n (Δ ++ (x, .mono σ) :: Γ)) :
++    CtxWf n (Δ ++ (x, .mono σ') :: Γ) := by
++  intro b hb i hi
++  rcases List.mem_append.mp hb with hbΔ | hbcons
++  · exact h b (List.mem_append.mpr (Or.inl hbΔ)) i hi
++  · rcases List.mem_cons.mp hbcons with rfl | hbΓ
++    · simp only [Scheme.freeVars_mono] at hi
++      have hi' : i ∈ Ty.freeVars σ := (Ty.freeVars_tyEquiv hc i).mp hi
++      have hb0 := h (x, Scheme.mono σ) (List.mem_append.mpr (Or.inr (List.mem_cons_self ..))) i
++      simp only [Scheme.freeVars_mono] at hb0
++      exact hb0 hi'
++    · exact h b (List.mem_append.mpr (Or.inr (List.mem_cons_of_mem _ hbΓ))) i hi
++
+ /-- **Context-binding conversion** (depth-general). Replacing one binding's
+ monomorphic type by a `TyEquiv`-equal one preserves typing. The `var` case at the
+ converted binding bridges via the leaf `conv` rule (`instantiate (.mono σ) = σ`); the
+@@ -197,6 +232,10 @@ theorem hasType_ctxConv {m : Type} {Γ₀ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+       intro Δ Γ x σ σ' heq hc; subst heq
+       exact HasType.let_ (ihdefn Δ Γ x σ σ' rfl hc)
+         (ihbody ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc)
++  | @let_poly Γ₁ z lx lbody la body defnTy bodyTy ε' n a hdefn hcw hbody ihdefn ihbody =>
++      intro Δ Γ x σ σ' heq hc; subst heq
++      exact HasType.let_poly (ihdefn Δ Γ x σ σ' rfl hc) (ctxWf_ctxConv hc hcw)
++        (ihbody ((z, Scheme.genAt n defnTy) :: Δ) Γ x σ σ' rfl hc)
+   | int => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.int
+   | str => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.str
+   | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.bin

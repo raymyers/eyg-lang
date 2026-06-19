@@ -794,6 +794,22 @@ for the **whole** core language.
       `MStateWf` (reduction creates no new let nodes), far lighter than full `HasTypeAt n` level-indexing.
       So the engines carry exactly one constant side-hypothesis (supplying `n ≤ n_lp` to the readiness
       keystone at the push), not per-rule level threading.
+      **⚙ CASCADE ATTEMPTED — typing layer green; two blockers pinned** (2026-06-18,
+      `progress/2026-06-18-T6-let_poly-cascade-attempt.md` + WIP patch
+      `progress/2026-06-18-T6-let_poly-cascade-WIP.patch`). The **typing-layer cascade builds**: def
+      relocation (`genAt`/`genArity`/`reindexGen`/`Scheme.freeVars`→`Scheme.lean`, `CtxWf`→`Typing.lean`),
+      the `HasType.let_poly` constructor, `hasType_ctxConv` arm (+ `ctxWf_ctxConv`), `inv_let` unified to a
+      mono/poly **disjunction** (the `Generalizes`-unified form is blocked by a `Generation`↔`Generalization`
+      import cycle), and the `hasType_expr_form` arm — all compile. **Blocker 1:** `hasType_subst`'s
+      `let_poly` arm needs the gate `n ≤ n_node` (so `LevelMap.mono` supplies `LevelMap n_node σ` for
+      `genAt_substScheme`/`ctxWf_substCtx`); since `n_node` is in the *derivation* not the term, this needs
+      a small **`WfLevel n` inductive over derivations** (~20 trivial arms) threaded through `hasType_subst`,
+      with the keystone supplied `WfLevel (n_lp+arity)` from the light program let-leveling invariant.
+      **Blocker 2:** the value-aware `StackWfV` two-engine coupling (unchanged shape; gated on Blocker 1
+      since it needs the compiled keystone). No green intermediate exists (the constructor breaks
+      `hasType_subst`/`weakenEff`/both engines at once), so the `.lean` edits were reverted to keep the tree
+      green; the WIP patch applies cleanly. Soundness touch points located: `weakenEff` (`:52`) +arm; the two
+      `inv_let` consumers (`:204`,`:2728`) split on the disjunction.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
