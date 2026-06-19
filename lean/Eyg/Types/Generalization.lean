@@ -549,4 +549,24 @@ theorem generalizes_subst_false :
   rw [hs, hc, hd] at h
   exact cex_neg h
 
+/-! ## Sanity: a polymorphic `let` instantiates `id` at a base type -/
+
+section
+open Eyg.Ir.Tree
+
+/-- `let id = \y. y in id 1` — the polymorphic `let` binds `id` at the generalized scheme
+`∀α. α → α` (`genAt 0 (var0 → var0)`), and the body instantiates it at `Integer`. -/
+example : HasType (m := Unit) []
+    (let_ "id" (lambda "y" (variable_ "y")) (apply (variable_ "id") (integer 1)))
+    .integer .empty := by
+  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0) .empty (.var 0)) ?_ ?_ ?_ ?_
+  · exact HasType.lam (HasType.var (s := .mono (.var 0)) (args := []) rfl)
+  · intro b hb; cases hb
+  · trivial
+  · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
+    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0) .empty (.var 0)))
+      (args := [.integer]) rfl
+
+end
+
 end Eyg.Types
