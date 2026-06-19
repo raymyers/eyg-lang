@@ -922,7 +922,10 @@ for the **whole** core language.
       divergent narrowing) or (ii) general row subsumption (Open Question 3). The slice makes
       `FixPreserves` a *satisfiable* (pure-builder-inhabitable) hypothesis and does the novel
       `fixed`-re-application metatheory; the residual creation discharge is the planner (i)/(ii) fork.
-- [ ] Full `soundness` re-green over `BehaviorsR` for the complete language.
+- [x] Full `soundness` re-green over `BehaviorsR` for the complete language — ✅ the headline
+      `soundness`/`soundness_evalR`/`soundness_behaviorsR_*` hold over both engines for the full core
+      language **including let-polymorphism** (2026-06-19, `let_poly` delivered), `fix`, effects/`Handle`,
+      records/unions/lists. `lake build` 1772 + spec 104/104, axioms clean, no `sorry`.
 
 ## Milestone T7 — Packaging & corollaries
 
@@ -1029,7 +1032,7 @@ checker / compiler.
       *final* judgment signatures (so later slices only add cases). The two builtin
       saturation obligations are isolated as the hypotheses `BuiltinAppPreserves` /
       `BuiltinAppNoBadCrash` (T6).
-- [~] **T4/T5/T6:** **T4 data** (records/unions/lists) ✅; **T5 effects** —
+- [x] **T4/T5/T6 — ALL DELIVERED.** **T4 data** (records/unions/lists) ✅; **T5 effects** —
       `Perform` + effect safety ✅, **`Handle`/`Delimit` DELIVERED** ✅ (2026-06-17, the
       central novel slice; typing + `preservation`/`progress`/`soundness*` re-green over the
       full effect language via direct frame typing; `lake build` + spec 104/104, axioms clean,
@@ -1040,12 +1043,13 @@ checker / compiler.
       general builtins ✅; **`fix`** — `partialFixed` + the `fixed` re-application proven ✅
       (`progress/2026-06-17-T6b-partialFixed-reapplication.md`), the fix *creation*
       (`FixPreserves`/`FixNoBadCrash`) still a hypothesis pending the (i)/(ii) discharge fork;
-      **let-generalization `gen`** — substitution *foundation* ✅ (`Ty.shift`/`substScheme`/
-      `subst_instantiate'`/`hasType_subst`, `progress/2026-06-16-T6-gen-substitution-infra.md`)
-      + **declarative generalization keystone** ✅ (`Generalizes` predicate +
-      `generalizes_closure_ready`, `progress/2026-06-18-T6-gen-declarative-keystone.md` —
-      sidesteps the `MStateWf`-freshness blocker), `let_poly` constructor + `Assign`-frame
-      cascade remaining.
+      **let-generalization `gen` — ✅ DELIVERED (2026-06-19, restricted `let_poly`,
+      `progress/2026-06-19-T6-let_poly-DELIVERED.md`):** `HasType.let_poly` + value-aware
+      `StackWfV`/`StackWfE` (+ B-mirror `StackWfVB`/`StackWfEB`) carrying the polymorphic readiness;
+      `preservation`/`progress`/`soundness*` re-green over **both** engines; `lake build` 1772 + spec
+      104/104, no `sorry`, axioms clean, no new `axiom`s; a polymorphic-`let` sanity example types.
+      Residual under-approximations: the `noLet`-body restriction (no internal `let` in a generalized
+      lambda — covers all combinator polymorphism) + the pre-existing pure-builder `fix` pin.
 - [~] **T7:** headline `soundness` over `BehaviorsR` — value/no-bad-crash/effect-escape
       (`soundness_evalR`), silent terminations + open-boundary suspension over
       `BehaviorsR` ✅; **`diverges` ω-effect-safety** (`soundness_behaviorsR_diverges`) ✅;
