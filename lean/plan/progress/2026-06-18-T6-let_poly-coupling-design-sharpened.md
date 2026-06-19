@@ -153,6 +153,19 @@ lambda→closure step then rewrites `control`/`env` and discharges the coupling,
    pure closure), so the B-coupling is the same shape; but the build will not compile with a
    half-done B-world. Budget for it in the same slice.
 
+## Import-ordering wrinkle (resolved) — do this first
+
+`HasType.let_poly` needs `Generalizes s Γ defnTy` as a constructor premise, but `Generalizes`
+currently lives in `Generalization.lean` (imports `Substitution` → `Typing`), so `HasType` (in
+`Typing.lean`) cannot reference it as written — a cycle. **Resolution (verified):** `Generalizes`
+and its helper `substCtx` depend only on `Ctx` (`Typing.lean:40`), `Scheme.instantiate`/
+`substScheme`, and `Ty.subst` — *all* already available in `Typing.lean` (it imports
+`Eyg.Types.Scheme`). So **move the `substCtx` + `Generalizes` `def`s into `Typing.lean`** (just
+after the `Ctx` abbrev, before `HasType`); leave their *lemmas* (`substCtx_lookup`,
+`substScheme_id`, `generalizes_mono`, `generalizes_closure_ready`, …) where they are in
+`Substitution.lean`/`Generalization.lean`. One `def` relocation, no lemma changes; everything
+downstream still resolves `substCtx`/`Generalizes` by the same name.
+
 ## Why this is a milestone slice, not a mechanical edit (unchanged conclusion)
 The value-aware `StackWfV`/`MStateWf` change ripples through *every* `.V`-state construction in
 both preservation engines, and the new constructor forces B-world arms. The *semantic* core is a
