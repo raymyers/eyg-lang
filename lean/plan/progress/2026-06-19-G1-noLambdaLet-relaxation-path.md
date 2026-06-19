@@ -31,11 +31,31 @@ What changed (the cascade, exactly as scoped):
 The engines (`Soundness.lean`) needed **no change** — they consume the body restriction only via
 `inv_let`, which now hands them `noLambdaLet`.
 
-## Remaining hard case (unchanged): nested *generalizable* let
+## Remaining hard case (unchanged): nested *generalizable* let — why it is foundational
 
 A body containing `let g = \… in …` (a nested binding that itself generalizes) is still excluded.
-That is the genuine crux below — it needs readiness *without re-substituting the body under the
-instantiation*, the deferred scheme-typed-closures redesign. Caveat 5 is **narrowed**, not closed.
+This is **not** an in-session tested slice; it is a foundational change to the type-theory core.
+The irreducible wall, re-confirmed from the code this session by checking every escape:
+
+- Readiness for the **outer** closure is `∀ args, HasTypeV (Closure x body env) (subst σ_args defnTy)`
+  and is *unavoidably* discharged by re-typing the body under the instantiation `σ_args`
+  (`closure_typed_of_lambda_subst` → `hasType_subst`). A scheme-carrying `HasTypeV.closure` does
+  not help: the body genuinely must typecheck at each instantiated type, and "typechecks at an
+  instance" *is* substitution. A mutual closure-readiness/`hasType_subst` induction does not help
+  either — the obstruction is in the **scheme**, not the readiness.
+- At the body's nested `let_poly` arm, `hasType_subst` needs `genAt` to commute with `σ_args`
+  (`genAt_substScheme`), whose premise is `Ty.LevelMap n_inner σ_args`. `σ_args` fixes the outer
+  context `Γ` but maps the *outer* generalized band `[n, n+arity)` to `args`; when `args` have free
+  vars `≥ n_inner` (the `\y. id y` use-site case — instantiate the inner binding at a locally-bound
+  fresh var), `σ_args` is **not** a `LevelMap` at `n_inner` (`…-instantiation-levelmap-gap.md`).
+- This is intrinsic to de-Bruijn **levels**: a quantified var and a fresh-from-instantiation var are
+  *both* high-numbered, so no level-based scheme representation separates them. Closing it needs a
+  representation with an explicit rigid/quantified marker (named, co-de-Bruijn, or a `∀`-rigid
+  tag) — a rewrite of the `Ty`/`Scheme`/generalization foundation, comparable in size to the whole
+  `let_poly` milestone. **Multi-session; deferred.** Caveat 5 is **narrowed**, not closed.
+
+Counterexample branch stays expected-empty: `let_poly` is value-restricted (generalizes only a
+syntactic `Lambda`), so this is sound HM — expect to *prove* (via the foundation rewrite), not refute.
 
 ---
 
