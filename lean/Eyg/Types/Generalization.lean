@@ -143,6 +143,38 @@ theorem generalizes_closure_ready {Γ : Ctx} {x : String} {body : Tree.Node m} {
   rw [heq]
   exact closure_typed_of_lambda_subst σ hfix henv hlam
 
+/-! ## Level-indexed generalization `GeneralizesAt` (the substitution-stable redesign, T6 gen)
+
+Since `generalizes_subst_false` (below) proves the bare `Generalizes` is not substitution-stable, the
+resolution is a de-Bruijn-**level** discipline: generalize only variables `≥ n` (the fresh boundary
+above the in-scope ambient `[0,n)`), with the witnessing `σ'` required to **fix `[0,n)`**. The full
+redesign threads `n` through the judgment (`progress/2026-06-18-T6-let_poly-level-redesign-design.md`);
+this is its declarative core plus the bridge that lets it slot into the existing keystone. The
+substitution-stability theorem `generalizesAt_subst` (the involved scheme-algebra over arbitrary
+instantiation args) is the remaining piece for the dedicated session. -/
+
+/-- `GeneralizesAt n s d`: every instantiation of `s` is a `subst σ' d` whose witnessing `σ'` **fixes
+the ambient region `[0,n)`** — so `σ'` only moves the *generalized* variables, which live at indices
+`≥ n`. Strengthens `Generalizes` along the freshness axis it was missing. -/
+def GeneralizesAt (n : Nat) (s : Scheme) (d : Ty) : Prop :=
+  ∀ args, ∃ σ', s.instantiate args = Ty.subst σ' d ∧ ∀ i, i < n → σ' i = .var i
+
+/-- **Bridge: `GeneralizesAt n` implies the keystone's `Generalizes`** when the context `Γ` is below
+level `n` (any `[0,n)`-fixing substitution fixes it). So the level-indexed predicate slots directly
+into `generalizes_closure_ready` — the keystone is unchanged; only the freshness premise sharpens. -/
+theorem generalizesAt_to_generalizes {n : Nat} {s : Scheme} {Γ : Ctx} {d : Ty}
+    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ)
+    (hg : GeneralizesAt n s d) : Generalizes s Γ d := by
+  intro args
+  obtain ⟨σ', heq, hfix⟩ := hg args
+  exact ⟨σ', heq, hΓ σ' hfix⟩
+
+/-- The monomorphic scheme generalizes at **any** level (no variables are generalized, so the
+identity `σ'` — which fixes `[0,n)` — witnesses every instantiation). The `arity = 0` base case. -/
+theorem generalizesAt_mono (n : Nat) (τ : Ty) : GeneralizesAt n (Scheme.mono τ) τ := by
+  intro args
+  exact ⟨fun i => .var i, by rw [Scheme.instantiate_mono, Ty.subst_id], fun i _ => rfl⟩
+
 /-! ## `Generalizes` is NOT substitution-stable — the `hasType_subst` blocker, machine-checked
 
 The `let_poly` implementation attempt (2026-06-18) stalled because the term-level substitution
