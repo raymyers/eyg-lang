@@ -156,7 +156,7 @@ index 5a3f8e08..c4dee740 100644
    | str => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))
    | bin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))))
 diff --git a/lean/Eyg/Types/Machine.lean b/lean/Eyg/Types/Machine.lean
-index ce1b3b70..e92a81eb 100644
+index ce1b3b70..bc64b244 100644
 --- a/lean/Eyg/Types/Machine.lean
 +++ b/lean/Eyg/Types/Machine.lean
 @@ -44,9 +44,9 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
@@ -191,7 +191,7 @@ index ce1b3b70..e92a81eb 100644
    | _ => simp at hs
  
  theorem stackWf_arg_inv {m : Type} {arg : Tree.Node m} {fenv : Env m} {a : m}
-@@ -233,6 +233,41 @@ theorem stackWf_nil_inv {m : Type} {σ ε τ : Ty} (h : StackWf ([] : Stack m) 
+@@ -233,6 +233,113 @@ theorem stackWf_nil_inv {m : Type} {σ ε τ : Ty} (h : StackWf ([] : Stack m) 
    | conv _ hσ hε ih => exact hσ.symm.trans (ih hs)
    | _ => simp at hs
  
@@ -210,30 +210,102 @@ index ce1b3b70..e92a81eb 100644
 +`StackWf`). -/
 +def StackWfV {m : Type} (v : Value m) : Stack m → Ty → Ty → Ty → Prop
 +  | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfV v rest σ ε τ
-+  | (Kontinue.Assign x body fenv, _) :: rest, _σ, ε, τ =>
-+      ∃ Γ sc bodyTy, (∀ args, HasTypeV v (sc.instantiate args)) ∧ EnvWf fenv Γ ∧
-+        HasType ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ
++  | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
++      ∃ Γ sc defnTy bodyTy, Ty.TyEquiv σ defnTy ∧ (∀ args, HasTypeV v (sc.instantiate args)) ∧
++        EnvWf fenv Γ ∧ HasType ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ
 +  | k, σ, ε, τ => StackWf k σ ε τ
 +
 +/-- Control-aware stack typing for an `.E` state: the control `e` (in env `env`) will become a value. At
 +an `Assign` head it carries (1) the **future closure's readiness** when `e` is a lambda, and (2) the
-+invariant that a **poly** Assign (non-`mono` scheme) only sits under a **lambda** control — ruling out an
-+arrow-typed builtin `Partial` flowing into a poly binding (false readiness, but semantically impossible).
-+`Trace` passes through; other heads are plain `StackWf`. -/
++invariant that the binding is **either monomorphic at the input type** (`sc = .mono defnTy`) **or the
++control is a lambda** (the poly case) — which rules out an arrow-typed builtin `Partial` flowing into a
++poly binding (false readiness, but semantically impossible). `Trace` passes through; other heads are plain
++`StackWf`. -/
 +def StackWfE {m : Type} (e : Tree.Node m) (env : Env m) : Stack m → Ty → Ty → Ty → Prop
 +  | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfE e env rest σ ε τ
-+  | (Kontinue.Assign x body fenv, _) :: rest, _σ, ε, τ =>
-+      ∃ Γ sc bodyTy, EnvWf fenv Γ ∧ HasType ((x, sc) :: Γ) body bodyTy ε ∧
-+        StackWf rest bodyTy ε τ ∧
++  | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
++      ∃ Γ sc defnTy bodyTy, Ty.TyEquiv σ defnTy ∧ EnvWf fenv Γ ∧
++        HasType ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ ∧
 +        (∀ lx lbody la, e = ⟨.Lambda lx lbody, la⟩ →
 +          ∀ args, HasTypeV (Value.Closure lx lbody env) (sc.instantiate args)) ∧
-+        ((∀ t, sc ≠ Scheme.mono t) → ∃ lx lbody la, e = ⟨.Lambda lx lbody, la⟩)
++        (sc = Scheme.mono defnTy ∨ ∃ lx lbody la, e = ⟨.Lambda lx lbody, la⟩)
 +  | k, σ, ε, τ => StackWf k σ ε τ
++
++/-- Forget the value-awareness: a `StackWfV` is a `StackWf`. -/
++theorem stackWfV_toStackWf {m : Type} {v : Value m} : ∀ {k : Stack m} {σ ε τ : Ty},
++    StackWfV v k σ ε τ → StackWf k σ ε τ
++  | [], _, _, _, h => h
++  | (Kontinue.Trace _, _) :: rest, _, _, _, h => StackWf.trace (stackWfV_toStackWf h)
++  | (Kontinue.Assign _ _ _, _) :: _, _, _, _, h => by
++      obtain ⟨_, _, _, _, hσ, _, henv, hbody, hrest⟩ := h
++      exact StackWf.conv (StackWf.assign henv hbody hrest) hσ.symm (.refl _)
++  | (Kontinue.Arg _ _, _) :: _, _, _, _, h => h
++  | (Kontinue.Apply _ _, _) :: _, _, _, _, h => h
++  | (Kontinue.CallWith _ _, _) :: _, _, _, _, h => h
++  | (Kontinue.Delimit _ _ _ _, _) :: _, _, _, _, h => h
++  termination_by k => k.length
++
++/-- Forget the control-awareness: a `StackWfE` is a `StackWf`. -/
++theorem stackWfE_toStackWf {m : Type} {e : Tree.Node m} {env : Env m} :
++    ∀ {k : Stack m} {σ ε τ : Ty}, StackWfE e env k σ ε τ → StackWf k σ ε τ
++  | [], _, _, _, h => h
++  | (Kontinue.Trace _, _) :: rest, _, _, _, h => StackWf.trace (stackWfE_toStackWf h)
++  | (Kontinue.Assign _ _ _, _) :: _, _, _, _, h => by
++      obtain ⟨_, _, _, _, hσ, henv, hbody, hrest, _, _⟩ := h
++      exact StackWf.conv (StackWf.assign henv hbody hrest) hσ.symm (.refl _)
++  | (Kontinue.Arg _ _, _) :: _, _, _, _, h => h
++  | (Kontinue.Apply _ _, _) :: _, _, _, _, h => h
++  | (Kontinue.CallWith _ _, _) :: _, _, _, _, h => h
++  | (Kontinue.Delimit _ _ _ _, _) :: _, _, _, _, h => h
++  termination_by k => k.length
++
++/-- **The lambda→closure transition.** When the control is a lambda, the `StackWfE`'s carried closure
++readiness becomes the `StackWfV` readiness for the produced closure. -/
++theorem stackWfE_lambda_step {m : Type} {lx : String} {lbody : Tree.Node m} {la : m} {env : Env m}
++    {k : Stack m} {σ ε τ : Ty} (h : StackWfE ⟨.Lambda lx lbody, la⟩ env k σ ε τ) :
++    StackWfV (Value.Closure lx lbody env) k σ ε τ := by
++  induction k with
++  | nil => exact h
++  | cons hd rest ih =>
++      obtain ⟨kont, ann⟩ := hd
++      cases kont with
++      | Trace w => exact ih h
++      | Assign x body fenv =>
++          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, hclo, _⟩ := h
++          exact ⟨Γ, sc, defnTy, bodyTy, hσ, hclo lx lbody la rfl, henv, hbody, hrest⟩
++      | Arg _ _ => exact h
++      | Apply _ _ => exact h
++      | CallWith _ _ => exact h
++      | Delimit _ _ _ _ => exact h
++
++/-- **A non-lambda value transition.** When the control is *not* a lambda, the `StackWfE` Assign head is
++forced monomorphic (the `sc = .mono defnTy ∨ control-is-λ` clause), so the produced value `v` (of the
++input type) discharges the trivial readiness. -/
++theorem stackWfE_value_step {m : Type} {e : Tree.Node m} {env : Env m} {v : Value m}
++    {k : Stack m} {σ ε τ : Ty} (h : StackWfE e env k σ ε τ) (hv : HasTypeV v σ)
++    (hne : ∀ lx lbody la, e ≠ ⟨.Lambda lx lbody, la⟩) : StackWfV v k σ ε τ := by
++  induction k with
++  | nil => exact h
++  | cons hd rest ih =>
++      obtain ⟨kont, ann⟩ := hd
++      cases kont with
++      | Trace w => exact ih h
++      | Assign x body fenv =>
++          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, _, hmono⟩ := h
++          rcases hmono with hsc | ⟨lx, lbody, la, he⟩
++          · subst hsc
++            exact ⟨Γ, .mono defnTy, defnTy, bodyTy, hσ,
++              fun args => by rw [Scheme.instantiate_mono]; exact hv.conv hσ, henv, hbody, hrest⟩
++          · exact absurd he (hne lx lbody la)
++      | Arg _ _ => exact h
++      | Apply _ _ => exact h
++      | CallWith _ _ => exact h
++      | Delimit _ _ _ _ => exact h
 +
  /-- A machine state is well-typed at answer type `τ` and effect row `ε`: the
  control yields an intermediate `τin` that the stack carries to `τ`. A `wait op env
  k` state (suspended performing `op`, awaiting a reply) is typed by **effect safety**
-@@ -242,8 +277,8 @@ expected input need only be equivalent to the declared reply type) to the answer
+@@ -242,8 +349,8 @@ expected input need only be equivalent to the declared reply type) to the answer
  `τ`. The reply value itself is supplied by the world — typed by the reply contract,
  discharged in `preservation`'s `reply` case. -/
  def MStateWf {m : Type} : MState m → Ty → Ty → Prop
@@ -293,10 +365,38 @@ index 5d5032bf..d134f1ab 100644
  @[simp] theorem substScheme_mono (σ : Nat → Ty) (t : Ty) :
      substScheme σ (mono t) = mono (Ty.subst σ t) := by
 diff --git a/lean/Eyg/Types/Soundness.lean b/lean/Eyg/Types/Soundness.lean
-index d4b84bdb..31ecd392 100644
+index d4b84bdb..03ef5a9b 100644
 --- a/lean/Eyg/Types/Soundness.lean
 +++ b/lean/Eyg/Types/Soundness.lean
-@@ -55,6 +55,8 @@ theorem weakenEffAux {Γ : Ctx} {e : Tree.Node m} {τ ε₁ : Ty}
+@@ -1,5 +1,6 @@
+ import Eyg.Types.Machine
+ import Eyg.Types.Generation
++import Eyg.Types.Generalization
+ import Eyg.Semantics.BehaviorR
+ 
+ /-!
+@@ -30,12 +31,18 @@ in the value constructor. -/
+ /-- Unfold `MStateWf` on a running `.E` state. -/
+ theorem mStateWf_E {e : Tree.Node m} {env k τ ε}
+     (h : MStateWf (.run (.E e, env, k)) τ ε) :
+-    ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWf k τin ε τ := h
++    ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWfE e env k τin ε τ := h
+ 
+ /-- Unfold `MStateWf` on a running `.V` state. -/
+ theorem mStateWf_V {v : Value m} {env k τ ε}
+     (h : MStateWf (.run (.V v, env, k)) τ ε) :
+-    ∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ := h
++    ∃ τin, HasTypeV v τin ∧ StackWfV v k τin ε τ := h
++
++/-- Package a value-producing `.E` step: a value `v : τin` reached on a `StackWfE`-typed stack (with a
++**non-lambda** control) yields a well-typed `.V` state (the readiness is mono-trivial). -/
++theorem vstate_of_value {v : Value m} {e : Tree.Node m} {env env' k τin ε τ} (hv : HasTypeV v τin)
++    (hst : StackWfE e env k τin ε τ) (hne : ∀ lx lb la, e ≠ ⟨.Lambda lx lb, la⟩) :
++    MStateWf (.run (.V v, env', k)) τ ε := ⟨τin, hv, stackWfE_value_step hst hv hne⟩
+ 
+ /-! ## Effect weakening is admissible (T6b / Open Question 3)
+ 
+@@ -55,6 +62,8 @@ theorem weakenEffAux {Γ : Ctx} {e : Tree.Node m} {τ ε₁ : Ty}
    | @app _ _ _ _ εf _ _ _ _ hwf _ ihf iharg =>
        exact fun ε₂ hw => HasType.app (ihf ε₂ hw) (Ty.effWeaken_trans hwf hw) (iharg ε₂ hw)
    | let_ _ _ ihdefn ihbody => exact fun ε₂ hw => HasType.let_ (ihdefn ε₂ hw) (ihbody ε₂ hw)
@@ -305,6 +405,134 @@ index d4b84bdb..31ecd392 100644
    | int => exact fun _ _ => HasType.int
    | str => exact fun _ _ => HasType.str
    | bin => exact fun _ _ => HasType.bin
+@@ -181,30 +190,50 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
+   cases expr with
+   | Integer n =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+-      exact ⟨τin, HasTypeV.int (inv_int hty), hst⟩
++      exact ⟨τin, HasTypeV.int (inv_int hty),
++        stackWfE_value_step hst (HasTypeV.int (inv_int hty)) (by rintro _ _ _ ⟨⟩)⟩
+   | String s =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+-      exact ⟨τin, HasTypeV.str (inv_str hty), hst⟩
++      exact ⟨τin, HasTypeV.str (inv_str hty),
++        stackWfE_value_step hst (HasTypeV.str (inv_str hty)) (by rintro _ _ _ ⟨⟩)⟩
+   | Binary b =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+-      exact ⟨τin, HasTypeV.bin (inv_bin hty), hst⟩
++      exact ⟨τin, HasTypeV.bin (inv_bin hty),
++        stackWfE_value_step hst (HasTypeV.bin (inv_bin hty)) (by rintro _ _ _ ⟨⟩)⟩
+   | Lambda x body =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨argTy, εb, retTy, hbody, heq⟩ := inv_lambda hty
+-      exact ⟨τin, HasTypeV.closure henv hbody heq, hst⟩
++      exact ⟨τin, HasTypeV.closure henv hbody heq, stackWfE_lambda_step hst⟩
+   | Variable x =>
+       obtain ⟨s, args, hlookup, heq⟩ := inv_var hty
+       obtain ⟨v, hvlk, hvty⟩ := envwf_lookup henv hlookup
+       simp only [reduce1Run, reduceEval, hvlk] at hr; cases hr
+-      exact ⟨τin, (hvty args).conv heq, hst⟩
++      exact ⟨τin, (hvty args).conv heq,
++        stackWfE_value_step hst ((hvty args).conv heq) (by rintro _ _ _ ⟨⟩)⟩
+   | Apply f arg =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨argTy, εf, hw, hf, harg⟩ := inv_app hty
+-      exact ⟨Γ, _, henv, hf, StackWf.arg henv harg hw hst⟩
++      exact ⟨Γ, _, henv, hf, StackWf.arg henv harg hw (stackWfE_toStackWf hst)⟩
+   | Let x defn body =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+-      obtain ⟨defnTy, hdefn, hbody⟩ := inv_let hty
+-      exact ⟨Γ, defnTy, henv, hdefn, StackWf.assign henv hbody hst⟩
++      rcases inv_let hty with ⟨defnTy, hdefn, hbody⟩ |
++          ⟨lx, lbody, la, defnTy, n, hdl, hdefn, hcw, hnl, hbody⟩
++      · -- monomorphic let
++        refine ⟨Γ, defnTy, henv, hdefn,
++          ⟨Γ, .mono defnTy, defnTy, τin, .refl _, henv, hbody, stackWfE_toStackWf hst, ?_,
++            Or.inl rfl⟩⟩
++        intro lx lbody la hlam args
++        subst hlam
++        rw [Scheme.instantiate_mono]
++        exact closure_typed_of_lambda henv hdefn
++      · -- polymorphic let (value-restricted: defn is a lambda)
++        subst hdl
++        refine ⟨Γ, defnTy, henv, hdefn,
++          ⟨Γ, Scheme.genAt n defnTy, defnTy, τin, .refl _, henv, hbody, stackWfE_toStackWf hst, ?_,
++            Or.inr ⟨lx, lbody, la, rfl⟩⟩⟩
++        intro lx' lbody' la' hlam args
++        cases hlam
++        exact genAt_closure_ready (fun _ hf => ctxWf_fixed hcw hf) hnl henv hdefn args
+   | Builtin id =>
+       obtain ⟨s, args, hs, heq⟩ := inv_builtin hty
+       obtain ⟨a, e, r, harrow⟩ := builtin_instantiate_arrow args hs
+@@ -212,53 +241,54 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
+       simp only [reduce1Run, reduceEval] at hr
+       split at hr
+       · cases hr
+-        refine ⟨τin, HasTypeV.partialBuiltin (args := args) ⟨hs, scheme_arity_pos hs⟩ ?_ heq, hst⟩
+-        rw [harrow]; exact BuiltinPartialWf.nil
++        refine ⟨τin, ?hv, stackWfE_value_step hst ?hv (by rintro _ _ _ ⟨⟩)⟩
++        exact HasTypeV.partialBuiltin (args := args) (applied := []) ⟨hs, scheme_arity_pos hs⟩
++          (by rw [harrow]; exact BuiltinPartialWf.nil) heq
+       · exact absurd hr (by simp)
+   | Tail =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨elem, heq⟩ := inv_tail hty
+-      exact ⟨τin, HasTypeV.listNil heq, hst⟩
++      exact vstate_of_value (HasTypeV.listNil heq) hst (by rintro _ _ _ ⟨⟩)
+   | Empty =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+-      exact ⟨τin, HasTypeV.record (fun _ _ hc => by cases hc) (fun _ _ _ hc _ => by cases hc)
+-        (inv_empty hty), hst⟩
++      exact vstate_of_value (HasTypeV.record (fun _ _ hc => by cases hc)
++        (fun _ _ _ hc _ => by cases hc) (inv_empty hty)) hst (by rintro _ _ _ ⟨⟩)
+   | Cons =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨elem, heq⟩ := inv_cons hty
+-      exact ⟨τin, HasTypeV.partialConsNil heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialConsNil heq) hst (by rintro _ _ _ ⟨⟩)
+   | Tag l =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨elem, tail, heq⟩ := inv_tag hty
+-      exact ⟨τin, HasTypeV.partialTag heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialTag heq) hst (by rintro _ _ _ ⟨⟩)
+   | NoCases =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨ret, heq⟩ := inv_nocases hty
+-      exact ⟨τin, HasTypeV.partialNoCases heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialNoCases heq) hst (by rintro _ _ _ ⟨⟩)
+   | Case l =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨inner, eff, ret, tail, heq⟩ := inv_case hty
+-      exact ⟨τin, HasTypeV.partialMatchNil heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialMatchNil heq) hst (by rintro _ _ _ ⟨⟩)
+   | Select l =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨fieldTy, tail, heq⟩ := inv_select hty
+-      exact ⟨τin, HasTypeV.partialSelect heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialSelect heq) hst (by rintro _ _ _ ⟨⟩)
+   | Extend l =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨fieldTy, row, heq⟩ := inv_extend hty
+-      exact ⟨τin, HasTypeV.partialExtendNil heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialExtendNil heq) hst (by rintro _ _ _ ⟨⟩)
+   | Overwrite l =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨newTy, oldTy, tail, heq⟩ := inv_overwrite hty
+-      exact ⟨τin, HasTypeV.partialOverwriteNil heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialOverwriteNil heq) hst (by rintro _ _ _ ⟨⟩)
+   | Perform l =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨argTy, replyTy, μ, heq⟩ := inv_perform hty
+-      exact ⟨τin, HasTypeV.partialPerformNil heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialPerformNil heq) hst (by rintro _ _ _ ⟨⟩)
+   | Handle l =>
+       simp only [reduce1Run, reduceEval] at hr; cases hr
+       obtain ⟨lift, reply, tail, ret, heq⟩ := inv_handle hty
+-      exact ⟨τin, HasTypeV.partialHandleNil heq, hst⟩
++      exact vstate_of_value (HasTypeV.partialHandleNil heq) hst (by rintro _ _ _ ⟨⟩)
+   | _ =>
+       exfalso
+       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
 diff --git a/lean/Eyg/Types/Substitution.lean b/lean/Eyg/Types/Substitution.lean
 index b888c3f7..af357779 100644
 --- a/lean/Eyg/Types/Substitution.lean

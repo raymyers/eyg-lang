@@ -69,3 +69,33 @@ poly Assign frame as a `StackWfE` whose λ-clause stores this `Rdy`; it rides th
 trivial/mono or vacuous-by-types, except the lambda-step which hands over `Rdy`), `preservation_V`
 (Assign-pop reads `StackWfV`'s readiness → `EnvWf.cons`), `progress`; **mirror in the B engine**
 (`StackWfVB`/`StackWfEB`). `StackWf.assign`-stores-`sc` is done (green, in the patch). No green intermediate.
+
+## Implementation progress (later same day) — predicates + helpers + preservation_E GREEN
+
+- **`StackWfV`/`StackWfE` defined** (Machine.lean, green) with the refined `assign` cases: both carry
+  `defnTy` + `TyEquiv σ defnTy` (the input link, so mono readiness `HasTypeV v defnTy` is derivable from
+  `v : σ`); `StackWfE` uses `sc = .mono defnTy ∨ control-is-λ`.
+- **4 helper lemmas green**: `stackWfV_toStackWf`, `stackWfE_toStackWf`, `stackWfE_lambda_step`
+  (λ→closure, hands the carried `Rdy` to `StackWfV`), `stackWfE_value_step` (non-λ control ⇒ mono ⇒
+  trivial readiness via `v.conv`). The two step lemmas use `induction k` (structural recursion via
+  pattern-`match` hit termination-checker friction; `induction` is robust).
+- **`MStateWf` switched**; `mStateWf_E`/`_V` accessors updated; **`vstate_of_value`** helper packages a
+  non-λ value-step (gets `m`/the value from the goal's expected type — a bare `have` can't infer them).
+- **`preservation_E` FULLY re-greened** (63→43 errors): every literal/data/`Variable`/builtin arm via
+  `vstate_of_value`; `Lambda` via `stackWfE_lambda_step`; `Apply` via `stackWfE_toStackWf`; the **`Let`
+  crux** builds the `StackWfE` poly/mono Assign frame (mono closure clause via `closure_typed_of_lambda`,
+  poly via `genAt_closure_ready (ctxWf_fixed hcw) hnl henv hdefn`). `import Eyg.Types.Generalization`
+  added to Soundness.
+
+## ⚠ Remaining subtlety (the 43 errors) — `StackWfV` production in the frame/effect cases
+
+`preservation_V`'s frame cases (and `progress`, B-engine) produce a value `v` on a *reorganized* stack
+(e.g. `Resume` → `move acc rest`), needing `StackWfV v k'`. A general `StackWf k' σ ε τ → HasTypeV v σ →
+StackWfV v k'` is **false** for a *poly* assign head (readiness about a generic `v` fails). It is true
+semantically — a poly assign's head value is only ever the bound λ's closure (produced at the λ-step), so
+no other producer sits a value on a poly-assign head — but that needs a per-case argument or a stack-level
+invariant. **Next:** either (a) a lemma `stackWf_toStackWfV` conditioned on "head assign is mono", with
+each frame case discharging it (the reorganized stacks' heads are mono/non-assign — e.g. via the input
+type: a poly assign's input is an arrow, contradicting most flowing values), or (b) strengthen the
+stack-typing invariant so poly-assign heads carry their closure readiness intrinsically. Tree green at HEAD;
+WIP patch (696 lines) has predicates + helpers + `preservation_E` green.
