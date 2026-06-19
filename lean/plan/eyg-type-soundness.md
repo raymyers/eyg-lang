@@ -680,6 +680,23 @@ for the **whole** core language.
       `MStateWf` (the surface `Handle`/`TauKeepsRow` touched). So `let_poly` is a focused
       milestone slice, not a mechanical edit; the keystone makes its hardest *semantic*
       obligation a one-liner once the stored `Γ`-typing is in hand. See the progress note.
+      **⚙ DESIGN SHARPENED (2026-06-18, `progress/2026-06-18-T6-let_poly-coupling-design-sharpened.md`):**
+      resolves the two items the first coupling note left open. Tracing the reduction
+      (`Reduction.lean:241` push stores `fenv = env`; `:222` pop binds into `fenv`) pins the exact
+      mechanism that **defeats pop-time readiness reconstruction**: in the generic preservation
+      state `env`/`fenv` are independent fields and `Γc`/`Γf` independent existentials, so the
+      keystone's coherent `(Γ, EnvWf·Γ, λ-typing, Generalizes)` package is unavailable at the pop.
+      **Resolution:** compute the closed readiness `Rdy : ∀args, HasTypeV (Closure x' body' env)
+      (s.instantiate args)` **at the push** (the one coherent point — `generalizes_closure_ready`
+      applies directly to `hdefn`), then *carry* `Rdy` + the value-coupling `val = w` across the
+      single lambda→closure step via a **value-aware stack predicate `StackWfV`** (value-aware only
+      at the `Assign` head; recurses through `trace`, drops to plain `StackWf` where the head
+      consumes the value). The `MStateWf` value case becomes `∃τin, HasTypeV v τin ∧ StackWfV v k
+      τin ε τ`; `StackWf.assign` generalizes to store an arbitrary scheme. The checklist (incl. the
+      **required B-world mirror** — adding the constructor breaks the base-row engine arms) and two
+      concrete E-side carry options are in the note. No code this session (the cascade is
+      all-or-nothing; no standalone green increment exists — confirmed); `lake build` 1772 + spec
+      104/104 still green.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
