@@ -54,6 +54,31 @@ rigid-marker rewrite — out of scope for a tested slice, per the plan's own PAR
 the "don't rabbit-hole" guideline. Bailing here with this scaffold rather than starting an
 un-landable WIP that would leave the tree red.
 
+## Addendum (2026-06-19, second session) — the *re-levelling* route is also non-additive
+
+The plan's readiness-keystone item offered **two** forks, not one: resolve "via the level
+discipline (re-levelled body typing on descent) **or** [the rigid marker]". This session
+independently re-derived the obstruction from the code and checked the **re-levelling** fork too,
+so the next session does not re-open it expecting a lighter path:
+
+- The wall is `Scheme.instantiate args = subst σ_args d` with
+  `σ_args = fun j => if j < arity then args.getD j else var (j − arity)` — a **down-shift** of the
+  ambient region `[arity,∞) → [0,∞)`. `generalizesAt_subst` needs `LevelMap n σ` (fix `[n,∞)`); a
+  down-shift fixes nothing above the prefix, so it is structurally **not** a `LevelMap`
+  (`Generalization.lean:218`). That is the exact reason the `let_poly` arm of `hasType_subst`
+  (`Substitution.lean:85`) stays vacuous via `noLambdaLet`.
+- The down-shift is **intrinsic to the scheme encoding** (quantifiers occupy the bottom `[0,arity)`
+  of the one flat scope, ambient pushed up to `[arity,∞)`). "Re-levelling instantiate" to map the
+  quantifier prefix to a *fresh top* region instead would make the substitution ambient-into-ambient
+  (a `LevelMap`), but it changes what `instantiate` returns (fresh vars, not `args`) and therefore
+  the meaning of `Scheme` / every `GeneralizesAt` consumer — i.e. it edits the representation, not
+  just a proof. **Not additive**, same verdict as the `.rigid` route. Neither fork is a tested slice.
+
+- **Baseline re-verified fresh this session** (not inherited): `lake build` 1773 jobs; `lake exe
+  spec` 104/104 (FBS≡interpreter 104/104, ir round-trip 21/21, CID 21/21); `#print axioms` for
+  `soundness` and `soundness_evalR` = `[propext, Classical.choice, Quot.sound]`; no `sorry`. The
+  "no regression" Definition-of-done item holds.
+
 ## Next-session execution scaffold (the rigid-marker rewrite)
 
 Do this as a dedicated multi-session milestone, not a slice:

@@ -98,6 +98,10 @@ threading a level through the judgment and re-greening both preservation engines
 > **no single-session tested slice exists**. Full keystone + re-green cascade + first-brick lemma
 > scoped in `progress/2026-06-19-G1-foundational-wall-confirmed-no-additive-slice.md`. Deferred to
 > a dedicated multi-session milestone; baseline this session: build 1773, spec 104/104, axioms clean.
+> **Re-confirmed (2026-06-19, 2nd session, addendum in that note):** the keystone's *other* fork —
+> "re-levelled body typing on descent" — is **also** non-additive. The `LevelMap` failure is intrinsic
+> to `Scheme.instantiate`'s ambient down-shift (`σ_args : [arity,∞)→[0,∞)`), so re-levelling changes
+> the scheme representation too, not just a proof. **Neither fork yields a single-session tested slice.**
 
 - [ ] **Decide the level carrier (item-1 fork, revisited).** Confirm or revise the
       `progress/2026-06-18-T6-let_poly-levelmap-mono-and-wfbelow-decision.md` decision: a light
