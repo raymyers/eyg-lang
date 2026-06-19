@@ -624,7 +624,17 @@ This is the milestone with no direct mechanization precedent — see the fork be
 **Deliverable:** the remaining generality; `progress`+`preservation`+`soundness`
 for the **whole** core language.
 
-- [~] **Let-generalization** `gen` (deferred from T2), declaratively and
+- [x] **Let-generalization** `gen` — **✅ DELIVERED (2026-06-19, restricted `let_poly`,
+      `progress/2026-06-19-T6-let_poly-DELIVERED.md`).** `HasType.let_poly` (value-restricted, scheme
+      `genAt n defnTy`, `CtxWf n Γ` + `noLet lbody`) + value-aware `StackWfV`/`StackWfE` (and B-mirror
+      `StackWfVB`/`StackWfEB`) carrying the polymorphic readiness from the let-push to the Assign-pop;
+      `preservation`/`progress`/`soundness*` re-green over **both** engines. `lake build` 1772 + spec
+      104/104, no `sorry`, axioms `propext`/`Classical.choice`/`Quot.sound`, no new `axiom`s. Key insights:
+      the **instantiation-vs-`LevelMap`** finding (→ restricted `noLet` route, arbitrary-σ `hasType_subst`
+      with vacuous `Let` arms), and **mono-only `StackWf.assign`** (poly assigns are transient, so
+      `stackWf_toStackWfV/E` are unconditional). Residual under-approximations: `noLet`-body (no internal
+      `let` inside a polymorphic function — covers all combinator polymorphism) + the pre-existing
+      pure-builder `fix` pin. *Original plan (now historical):* declaratively and
       **effect-safe** (only generalize effect tails that don't escape — mirror
       `close`/`close_eff`; Open Question #3). Extend the `Let` rule and re-green.
       **FOUNDATION DELIVERED** (`progress/2026-06-16-T6-gen-substitution-infra.md`,

@@ -80,18 +80,27 @@ theorem inv_lambda {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m} {τ ε :
       exact ⟨argTy, εb, retTy, hbody, heq.trans hτ⟩
   | _ => simp at he
 
+/-- **Inversion for `Let`** (unified mono/poly). Either the binding is monomorphic (body typed at
+`.mono defnTy`) or polymorphic (value-restricted: `defn` is a `Lambda`; body typed at the computed
+generalization `genAt n defnTy`, with `CtxWf n Γ`). The two engines' Let-push split on this. -/
 theorem inv_let {Γ : Ctx} {x : String} {defn body : Tree.Node m} {a : m} {τ ε : Ty}
     (h : HasType Γ (⟨.Let x defn body, a⟩ : Tree.Node m) τ ε) :
-    ∃ defnTy, HasType Γ defn defnTy ε ∧ HasType ((x, .mono defnTy) :: Γ) body τ ε := by
+    (∃ defnTy, HasType Γ defn defnTy ε ∧ HasType ((x, .mono defnTy) :: Γ) body τ ε) ∨
+    (∃ lx lbody la defnTy n, defn = ⟨.Lambda lx lbody, la⟩ ∧
+        HasType Γ defn defnTy ε ∧ CtxWf n Γ ∧ Tree.Node.noLet lbody ∧
+        HasType ((x, Scheme.genAt n defnTy) :: Γ) body τ ε) := by
   generalize he : (⟨.Let x defn body, a⟩ : Tree.Node m) = e at h
   induction h with
   | @let_ Γ x' defn' body' defnTy bodyTy ε a hdefn hbody =>
-      cases he; exact ⟨defnTy, hdefn, hbody⟩
+      cases he; exact Or.inl ⟨defnTy, hdefn, hbody⟩
+  | @let_poly Γ x' lx lbody la body' defnTy bodyTy ε n a hdefn hcw hnl hbody =>
+      cases he; exact Or.inr ⟨lx, lbody, la, defnTy, n, rfl, hdefn, hcw, hnl, hbody⟩
   | conv hinner hτ hε ih =>
-      obtain ⟨defnTy, hdefn, hbody⟩ := ih he
-      -- retype both sub-derivations at the outer (τ, ε)
-      exact ⟨defnTy, HasType.conv hdefn (.refl _) hε,
-        HasType.conv hbody hτ hε⟩
+      rcases ih he with ⟨defnTy, hdefn, hbody⟩ |
+          ⟨lx, lbody, la, defnTy, n, hdl, hdefn, hcw, hnl, hbody⟩
+      · exact Or.inl ⟨defnTy, HasType.conv hdefn (.refl _) hε, HasType.conv hbody hτ hε⟩
+      · exact Or.inr ⟨lx, lbody, la, defnTy, n, hdl, HasType.conv hdefn (.refl _) hε, hcw, hnl,
+          HasType.conv hbody hτ hε⟩
   | _ => simp at he
 
 /-- **Typeable nodes are exactly the pure-core forms.** A well-typed node's
@@ -113,6 +122,7 @@ theorem hasType_expr_form {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
   | lam => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
   | app => exact Or.inr (Or.inr (Or.inl ⟨_, _, rfl⟩))
   | let_ => exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl⟩)))
+  | let_poly => exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl⟩)))
   | int => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))
   | str => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))
   | bin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))))

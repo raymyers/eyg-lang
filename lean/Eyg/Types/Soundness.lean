@@ -1,5 +1,6 @@
 import Eyg.Types.Machine
 import Eyg.Types.Generation
+import Eyg.Types.Generalization
 import Eyg.Semantics.BehaviorR
 
 /-!
@@ -30,12 +31,24 @@ in the value constructor. -/
 /-- Unfold `MStateWf` on a running `.E` state. -/
 theorem mStateWf_E {e : Tree.Node m} {env k τ ε}
     (h : MStateWf (.run (.E e, env, k)) τ ε) :
-    ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWf k τin ε τ := h
+    ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWfE e env k τin ε τ := h
 
 /-- Unfold `MStateWf` on a running `.V` state. -/
 theorem mStateWf_V {v : Value m} {env k τ ε}
     (h : MStateWf (.run (.V v, env, k)) τ ε) :
-    ∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ := h
+    ∃ τin, HasTypeV v τin ∧ StackWfV v k τin ε τ := h
+
+/-- Package a value-producing `.E` step: a value `v : τin` reached on a `StackWfE`-typed stack (with a
+**non-lambda** control) yields a well-typed `.V` state (the readiness is mono-trivial). -/
+theorem vstate_of_value {v : Value m} {e : Tree.Node m} {env env' k τin ε τ} (hv : HasTypeV v τin)
+    (hst : StackWfE e env k τin ε τ) (hne : ∀ lx lb la, e ≠ ⟨.Lambda lx lb, la⟩) :
+    MStateWf (.run (.V v, env', k)) τ ε := ⟨τin, hv, stackWfE_value_step hst hv hne⟩
+
+/-- Package a `.V` state on a plain `StackWf` stack — `stackWf_toStackWfV` lifts the (mono) readiness.
+The frame-case `preservation_V` shape (`∃ ε'`). -/
+theorem vstate' {v : Value m} {env' : Env m} {rest : Stack m} {τin ε τ : Ty}
+    (hv : HasTypeV v τin) (hrest : StackWf rest τin ε τ) :
+    ∃ ε', MStateWf (.run (.V v, env', rest)) τ ε' := ⟨ε, τin, hv, stackWf_toStackWfV hrest hv⟩
 
 /-! ## Effect weakening is admissible (T6b / Open Question 3)
 
@@ -55,6 +68,8 @@ theorem weakenEffAux {Γ : Ctx} {e : Tree.Node m} {τ ε₁ : Ty}
   | @app _ _ _ _ εf _ _ _ _ hwf _ ihf iharg =>
       exact fun ε₂ hw => HasType.app (ihf ε₂ hw) (Ty.effWeaken_trans hwf hw) (iharg ε₂ hw)
   | let_ _ _ ihdefn ihbody => exact fun ε₂ hw => HasType.let_ (ihdefn ε₂ hw) (ihbody ε₂ hw)
+  | let_poly _ hcw hnl _ ihdefn ihbody =>
+      exact fun ε₂ hw => HasType.let_poly (ihdefn ε₂ hw) hcw hnl (ihbody ε₂ hw)
   | int => exact fun _ _ => HasType.int
   | str => exact fun _ _ => HasType.str
   | bin => exact fun _ _ => HasType.bin
@@ -181,30 +196,50 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
   cases expr with
   | Integer n =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, HasTypeV.int (inv_int hty), hst⟩
+      exact ⟨τin, HasTypeV.int (inv_int hty),
+        stackWfE_value_step hst (HasTypeV.int (inv_int hty)) (by rintro _ _ _ ⟨⟩)⟩
   | String s =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, HasTypeV.str (inv_str hty), hst⟩
+      exact ⟨τin, HasTypeV.str (inv_str hty),
+        stackWfE_value_step hst (HasTypeV.str (inv_str hty)) (by rintro _ _ _ ⟨⟩)⟩
   | Binary b =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, HasTypeV.bin (inv_bin hty), hst⟩
+      exact ⟨τin, HasTypeV.bin (inv_bin hty),
+        stackWfE_value_step hst (HasTypeV.bin (inv_bin hty)) (by rintro _ _ _ ⟨⟩)⟩
   | Lambda x body =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨argTy, εb, retTy, hbody, heq⟩ := inv_lambda hty
-      exact ⟨τin, HasTypeV.closure henv hbody heq, hst⟩
+      exact ⟨τin, HasTypeV.closure henv hbody heq, stackWfE_lambda_step hst⟩
   | Variable x =>
       obtain ⟨s, args, hlookup, heq⟩ := inv_var hty
       obtain ⟨v, hvlk, hvty⟩ := envwf_lookup henv hlookup
       simp only [reduce1Run, reduceEval, hvlk] at hr; cases hr
-      exact ⟨τin, (hvty args).conv heq, hst⟩
+      exact ⟨τin, (hvty args).conv heq,
+        stackWfE_value_step hst ((hvty args).conv heq) (by rintro _ _ _ ⟨⟩)⟩
   | Apply f arg =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨argTy, εf, hw, hf, harg⟩ := inv_app hty
-      exact ⟨Γ, _, henv, hf, StackWf.arg henv harg hw hst⟩
+      exact ⟨Γ, _, henv, hf, StackWf.arg henv harg hw (stackWfE_toStackWf (by rintro _ _ _ ⟨⟩) hst)⟩
   | Let x defn body =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      obtain ⟨defnTy, hdefn, hbody⟩ := inv_let hty
-      exact ⟨Γ, defnTy, henv, hdefn, StackWf.assign henv hbody hst⟩
+      rcases inv_let hty with ⟨defnTy, hdefn, hbody⟩ |
+          ⟨lx, lbody, la, defnTy, n, hdl, hdefn, hcw, hnl, hbody⟩
+      · -- monomorphic let
+        refine ⟨Γ, defnTy, henv, hdefn,
+          ⟨Γ, .mono defnTy, defnTy, τin, .refl _, henv, hbody, stackWfE_toStackWf (by rintro _ _ _ ⟨⟩) hst, ?_,
+            Or.inl rfl⟩⟩
+        intro lx lbody la hlam args
+        subst hlam
+        rw [Scheme.instantiate_mono]
+        exact closure_typed_of_lambda henv hdefn
+      · -- polymorphic let (value-restricted: defn is a lambda)
+        subst hdl
+        refine ⟨Γ, defnTy, henv, hdefn,
+          ⟨Γ, Scheme.genAt n defnTy, defnTy, τin, .refl _, henv, hbody, stackWfE_toStackWf (by rintro _ _ _ ⟨⟩) hst, ?_,
+            Or.inr ⟨lx, lbody, la, rfl⟩⟩⟩
+        intro lx' lbody' la' hlam args
+        cases hlam
+        exact genAt_closure_ready (fun _ hf => ctxWf_fixed hcw hf) hnl henv hdefn args
   | Builtin id =>
       obtain ⟨s, args, hs, heq⟩ := inv_builtin hty
       obtain ⟨a, e, r, harrow⟩ := builtin_instantiate_arrow args hs
@@ -212,53 +247,54 @@ theorem preservation_E [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       simp only [reduce1Run, reduceEval] at hr
       split at hr
       · cases hr
-        refine ⟨τin, HasTypeV.partialBuiltin (args := args) ⟨hs, scheme_arity_pos hs⟩ ?_ heq, hst⟩
-        rw [harrow]; exact BuiltinPartialWf.nil
+        refine ⟨τin, ?hv, stackWfE_value_step hst ?hv (by rintro _ _ _ ⟨⟩)⟩
+        exact HasTypeV.partialBuiltin (args := args) (applied := []) ⟨hs, scheme_arity_pos hs⟩
+          (by rw [harrow]; exact BuiltinPartialWf.nil) heq
       · exact absurd hr (by simp)
   | Tail =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, heq⟩ := inv_tail hty
-      exact ⟨τin, HasTypeV.listNil heq, hst⟩
+      exact vstate_of_value (HasTypeV.listNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Empty =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, HasTypeV.record (fun _ _ hc => by cases hc) (fun _ _ _ hc _ => by cases hc)
-        (inv_empty hty), hst⟩
+      exact vstate_of_value (HasTypeV.record (fun _ _ hc => by cases hc)
+        (fun _ _ _ hc _ => by cases hc) (inv_empty hty)) hst (by rintro _ _ _ ⟨⟩)
   | Cons =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, heq⟩ := inv_cons hty
-      exact ⟨τin, HasTypeV.partialConsNil heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialConsNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Tag l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, tail, heq⟩ := inv_tag hty
-      exact ⟨τin, HasTypeV.partialTag heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialTag heq) hst (by rintro _ _ _ ⟨⟩)
   | NoCases =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨ret, heq⟩ := inv_nocases hty
-      exact ⟨τin, HasTypeV.partialNoCases heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialNoCases heq) hst (by rintro _ _ _ ⟨⟩)
   | Case l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨inner, eff, ret, tail, heq⟩ := inv_case hty
-      exact ⟨τin, HasTypeV.partialMatchNil heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialMatchNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Select l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨fieldTy, tail, heq⟩ := inv_select hty
-      exact ⟨τin, HasTypeV.partialSelect heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialSelect heq) hst (by rintro _ _ _ ⟨⟩)
   | Extend l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨fieldTy, row, heq⟩ := inv_extend hty
-      exact ⟨τin, HasTypeV.partialExtendNil heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialExtendNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Overwrite l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨newTy, oldTy, tail, heq⟩ := inv_overwrite hty
-      exact ⟨τin, HasTypeV.partialOverwriteNil heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialOverwriteNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Perform l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨argTy, replyTy, μ, heq⟩ := inv_perform hty
-      exact ⟨τin, HasTypeV.partialPerformNil heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialPerformNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Handle l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨lift, reply, tail, ret, heq⟩ := inv_handle hty
-      exact ⟨τin, HasTypeV.partialHandleNil heq, hst⟩
+      exact vstate_of_value (HasTypeV.partialHandleNil heq) hst (by rintro _ _ _ ⟨⟩)
   | _ =>
       exfalso
       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
@@ -596,7 +632,9 @@ theorem resume_preserves [BEq m] {acc : Stack m} {iEnv : Env m} {v : Value m}
       cases hr
       have htailW : Ty.EffWeaken _ ε := hw.imp (fun h => heff.trans h) (fun h => heff.trans h)
       exact ⟨_, _, hv.conv ha.symm,
-        stackWf_resume (hseg ε htailW) (StackWf.conv hrest hr'.symm (.refl _))⟩
+        stackWf_toStackWfV
+          (stackWf_resume (hseg ε htailW) (StackWf.conv hrest hr'.symm (.refl _)))
+          (hv.conv ha.symm)⟩
 
 /-- **`Handle` install dispatch — fully general.** `reduceDeep` pushes `Apply exec ::
 Delimit l handler :: rest`: the exec runs under the handled row `⟨l:(lift,reply)|tail⟩`, the
@@ -799,14 +837,15 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
   obtain ⟨τin, hv, hst⟩ := mStateWf_V hwf
   cases kont with
   | Trace w =>
-      have hrest := stackWf_trace_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨ε, τin, hv, hrest⟩
+      exact ⟨ε, τin, hv, hst⟩
   | Assign x body fenv =>
-      obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henvc, hbody, hrest⟩ := stackWf_assign_inv hst
+      obtain ⟨Γ, sc, defnTy, bodyTy, hσ, hready, henvc, hbody, hrest⟩ := hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      refine ⟨ε0, _, _, EnvWf.cons (fun args => ?_) henvc, hbody, hrest⟩
-      simpa using hv.conv hσ
+      refine ⟨ε, _, _, EnvWf.cons hready henvc, hbody, stackWf_toStackWfE hrest ?_⟩
+      intro ly lb la hlam
+      subst hlam
+      exact closure_typed_of_lambda (EnvWf.cons hready henvc) hbody
   | Arg arg fenv =>
       obtain ⟨Γ, argTy, εf, retTy, ε0, hσ, hε, henvc, harg, hw, hrest⟩ := stackWf_arg_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
@@ -815,7 +854,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
       obtain ⟨lift, reply, tail, ret, εInner, rfl, hσ, hε, hweff, hh, hrest⟩ :=
         stackWf_delimit_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨εInner, ret, hv.conv hσ, hrest⟩
+      exact vstate' (hv.conv hσ) hrest
   | Apply f fenv =>
       obtain ⟨argTy, εf, retTy, ε0, hσ, hε, hf, hw, hrest⟩ := stackWf_applyf_inv hst
       replace hv := hv.conv hσ
@@ -824,10 +863,13 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            refine ⟨ε0, _, _, EnvWf.cons (fun args => ?_) henvc,
+            refine ⟨ε0, _, _, EnvWf.cons (fun args => by simpa using hv.conv hA.symm) henvc,
               weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
-              StackWf.trace hrest⟩
-            simpa using hv.conv hA.symm
+              stackWf_toStackWfE (StackWf.trace hrest) (fun ly lb la hlam => ?_)⟩
+            subst hlam
+            exact closure_typed_of_lambda
+              (EnvWf.cons (fun args => by simpa using hv.conv hA.symm) henvc)
+              (weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw))
       · cases hf with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
@@ -838,28 +880,28 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialConsOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialConsOne (hv.conv hA.symm) hR) hrest
         | partialConsOne hh he =>
             obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
             have hvl := hv.conv hD.symm
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.listCons hh hvl hR, hrest⟩
+            exact vstate' (HasTypeV.listCons hh hvl hR) hrest
         | partialTag he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.tagged (hv.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.tagged (hv.conv hA.symm) hR) hrest
         | partialNoCases he =>
             obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
             exact absurd (hv.conv hA.symm) canonical_union_empty
         | partialMatchNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialMatchOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialMatchOne (hv.conv hA.symm) hR) hrest
         | partialMatchOne hbranch he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialMatchTwo hbranch (hv.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialMatchTwo hbranch (hv.conv hA.symm) hR) hrest
         | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
             obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvu := hv.conv hD.symm
@@ -897,11 +939,11 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
                 obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
-                exact ⟨ε0, _, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+                exact vstate' (hvalue.conv (hf'.symm.trans hRet)) hrest
         | partialExtendNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialExtendOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialExtendOne (hv.conv hA.symm) hR) hrest
         | @partialExtendOne lbl _ fieldTy row _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := hv.conv hD.symm
@@ -909,7 +951,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             cases hvr with
             | record hpres hmatch hetag =>
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
-                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstate' (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -931,7 +973,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialOverwriteNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialOverwriteOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialOverwriteOne (hv.conv hA.symm) hR) hrest
         | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := hv.conv hD.symm
@@ -943,7 +985,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                 obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
                 cases hr
-                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstate' (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -965,7 +1007,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialHandleNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialHandleOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialHandleOne (hv.conv hA.symm) hR) hrest
         | partialHandleOne hh he =>
             simp only [reduce1Run, reduceApply] at hr
             exact install_preserves (.partialHandleOne hh he) hv hw hrest hr
@@ -983,10 +1025,13 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            refine ⟨ε0, _, _, EnvWf.cons (fun args => ?_) henvc,
+            refine ⟨ε0, _, _, EnvWf.cons (fun args => by simpa using harg.conv hA.symm) henvc,
               weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
-              StackWf.trace hrest⟩
-            simpa using harg.conv hA.symm
+              stackWf_toStackWfE (StackWf.trace hrest) (fun ly lb la hlam => ?_)⟩
+            subst hlam
+            exact closure_typed_of_lambda
+              (EnvWf.cons (fun args => by simpa using harg.conv hA.symm) henvc)
+              (weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw))
       · cases hv with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
@@ -997,28 +1042,28 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialConsOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialConsOne (harg.conv hA.symm) hR) hrest
         | partialConsOne hh he =>
             obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
             have hvl := harg.conv hD.symm
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.listCons hh hvl hR, hrest⟩
+            exact vstate' (HasTypeV.listCons hh hvl hR) hrest
         | partialTag he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.tagged (harg.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.tagged (harg.conv hA.symm) hR) hrest
         | partialNoCases he =>
             obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
             exact absurd (harg.conv hA.symm) canonical_union_empty
         | partialMatchNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialMatchOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialMatchOne (harg.conv hA.symm) hR) hrest
         | partialMatchOne hbranch he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialMatchTwo hbranch (harg.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialMatchTwo hbranch (harg.conv hA.symm) hR) hrest
         | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
             obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvu := harg.conv hD.symm
@@ -1054,11 +1099,11 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
                 obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
-                exact ⟨ε0, _, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+                exact vstate' (hvalue.conv (hf'.symm.trans hRet)) hrest
         | partialExtendNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialExtendOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialExtendOne (harg.conv hA.symm) hR) hrest
         | @partialExtendOne lbl _ fieldTy row _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := harg.conv hD.symm
@@ -1066,7 +1111,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
             cases hvr with
             | record hpres hmatch hetag =>
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
-                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstate' (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -1088,7 +1133,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialOverwriteNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialOverwriteOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialOverwriteOne (harg.conv hA.symm) hR) hrest
         | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := harg.conv hD.symm
@@ -1100,7 +1145,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
                 obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
                 cases hr
-                refine ⟨ε0, _, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstate' (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -1122,7 +1167,7 @@ theorem preservation_V [BEq m] (hsat : BuiltinAppPreserves m)
         | partialHandleNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨ε0, _, HasTypeV.partialHandleOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstate' (HasTypeV.partialHandleOne (harg.conv hA.symm) hR) hrest
         | partialHandleOne hh he =>
             simp only [reduce1Run, reduceApply] at hr
             exact install_preserves (.partialHandleOne hh he) harg hw hrest hr
@@ -1286,7 +1331,8 @@ theorem preservation [BEq m] (hsat : BuiltinAppPreserves m)
   | reply =>
       obtain ⟨a, b, replyTy, hEff, hbr, hStack⟩ := hwf
       simp only [ReplyContract] at hrep
-      exact ⟨ε, replyTy, (hrep a b hEff).conv hbr, hStack⟩
+      exact ⟨ε, replyTy, (hrep a b hEff).conv hbr,
+        stackWf_toStackWfV hStack ((hrep a b hEff).conv hbr)⟩
 
 /-- **Preservation across a `tau` step, with the effect row preserved exactly.** Pure
 machine moves keep the ambient `ε` (the `tau` case of `preservation` returns the same
@@ -1840,7 +1886,8 @@ theorem builtinApp_arity1 [BEq m] {key : String} {D R : Ty}
         | ok value =>
             rw [reduceCallBuiltin_sat h1 h2 h3 h4 harity rfl hrun] at htau
             injection htau with htau'; subst htau'
-            exact ⟨retTy, (hrunTy harg' hrun).conv hr, hst⟩
+            exact ⟨retTy, (hrunTy harg' hrun).conv hr,
+              stackWf_toStackWfV hst ((hrunTy harg' hrun).conv hr)⟩
       · intro v hval
         rw [reduceCall_builtin_eq, List.nil_append] at hval
         exact absurd hval (reduceCallBuiltin_ne_value h1 h2 h3 h4)
@@ -1876,7 +1923,7 @@ theorem builtinApp_arity2 [BEq m] {key : String} {s : Scheme} {sargs : List Ty} 
         rw [reduceCall_builtin_eq, List.nil_append,
           reduceCallBuiltin_acc h1 h2 h3 h4 harity (by simp)] at htau
         injection htau with htau'; subst htau'
-        refine ⟨retTy, ?_, hst⟩
+        refine ⟨retTy, ?val, stackWf_toStackWfV hst ?val⟩
         refine HasTypeV.partialBuiltin (args := sargs) ⟨hsch, 2, harity, by simp⟩ ?_ hr
         rw [hbase]
         exact BuiltinPartialWf.cons harg' BuiltinPartialWf.nil
@@ -1898,7 +1945,8 @@ theorem builtinApp_arity2 [BEq m] {key : String} {s : Scheme} {sargs : List Ty} 
                 rw [show [vval] ++ [arg] = [vval, arg] from rfl,
                   reduceCallBuiltin_sat h1 h2 h3 h4 harity rfl hrun] at htau
                 injection htau with htau'; subst htau'
-                exact ⟨retTy, (hrunTy hv harg' hrun).conv hr, hst⟩
+                exact ⟨retTy, (hrunTy hv harg' hrun).conv hr,
+                  stackWf_toStackWfV hst ((hrunTy hv harg' hrun).conv hr)⟩
           · intro v hval
             rw [reduceCall_builtin_eq] at hval
             exact absurd hval (reduceCallBuiltin_ne_value h1 h2 h3 h4)
@@ -2642,15 +2690,171 @@ theorem stackWfB_resume {m : Type} {acc k : Stack m} {σin εin σmid εmid εbo
     StackWfB (move acc k) σin εin εbot τ := by
   rw [move_eq]; exact stackSeg_toStackWfB hseg hk
 
+/-! ## Value-aware base-row stack typing for `let_poly` (B-engine mirror of `StackWfV`/`StackWfE`) -/
+
+/-- Base-row value-aware stack typing (mirror of `StackWfV`). -/
+def StackWfVB {m : Type} (v : Value m) : Stack m → Ty → Ty → Ty → Ty → Prop
+  | (Kontinue.Trace _, _) :: rest, σ, εtop, εbot, τ => StackWfVB v rest σ εtop εbot τ
+  | (Kontinue.Assign x body fenv, _) :: rest, σ, εtop, εbot, τ =>
+      ∃ Γ sc defnTy bodyTy, Ty.TyEquiv σ defnTy ∧ (∀ args, HasTypeV v (sc.instantiate args)) ∧
+        EnvWf fenv Γ ∧ HasType ((x, sc) :: Γ) body bodyTy εtop ∧ StackWfB rest bodyTy εtop εbot τ
+  | k, σ, εtop, εbot, τ => StackWfB k σ εtop εbot τ
+
+/-- Base-row control-aware stack typing (mirror of `StackWfE`). -/
+def StackWfEB {m : Type} (e : Tree.Node m) (env : Env m) : Stack m → Ty → Ty → Ty → Ty → Prop
+  | (Kontinue.Trace _, _) :: rest, σ, εtop, εbot, τ => StackWfEB e env rest σ εtop εbot τ
+  | (Kontinue.Assign x body fenv, _) :: rest, σ, εtop, εbot, τ =>
+      ∃ Γ sc defnTy bodyTy, Ty.TyEquiv σ defnTy ∧ EnvWf fenv Γ ∧
+        HasType ((x, sc) :: Γ) body bodyTy εtop ∧ StackWfB rest bodyTy εtop εbot τ ∧
+        (∀ lx lbody la, e = ⟨.Lambda lx lbody, la⟩ →
+          ∀ args, HasTypeV (Value.Closure lx lbody env) (sc.instantiate args)) ∧
+        (sc = Scheme.mono defnTy ∨ ∃ lx lbody la, e = ⟨.Lambda lx lbody, la⟩)
+  | k, σ, εtop, εbot, τ => StackWfB k σ εtop εbot τ
+
+/-- `StackWfB` (mono Assign) refines to `StackWfVB`. -/
+theorem stackWf_toStackWfVB {m : Type} {v : Value m} {k : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfB k σ εtop εbot τ) (hv : HasTypeV v σ) : StackWfVB v k σ εtop εbot τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih (stackWfB_trace_inv h)
+      | Assign x body fenv =>
+          obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henv, hbody, hrest⟩ := stackWfB_assign_inv h
+          exact ⟨Γ, .mono defnTy, defnTy, bodyTy, hσ,
+            fun args => by rw [Scheme.instantiate_mono]; exact hv.conv hσ, henv,
+            HasType.conv hbody (.refl _) hε.symm, StackWfB.conv hrest (.refl _) hε.symm⟩
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
+/-- `StackWfB` (mono Assign) refines to `StackWfEB` (with the closure typing for a λ control). -/
+theorem stackWf_toStackWfEB {m : Type} {e : Tree.Node m} {env : Env m} {k : Stack m}
+    {σ εtop εbot τ : Ty} (h : StackWfB k σ εtop εbot τ)
+    (hclo : ∀ lx lb la, e = ⟨.Lambda lx lb, la⟩ → HasTypeV (Value.Closure lx lb env) σ) :
+    StackWfEB e env k σ εtop εbot τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih (stackWfB_trace_inv h)
+      | Assign x body fenv =>
+          obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henv, hbody, hrest⟩ := stackWfB_assign_inv h
+          refine ⟨Γ, .mono defnTy, defnTy, bodyTy, hσ, henv,
+            HasType.conv hbody (.refl _) hε.symm, StackWfB.conv hrest (.refl _) hε.symm, ?_,
+            Or.inl rfl⟩
+          intro lx lb la hlam args
+          rw [Scheme.instantiate_mono]
+          exact (hclo lx lb la hlam).conv hσ
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
+/-- Forget control-awareness (non-λ control ⇒ mono Assign head): `StackWfEB` → `StackWfB`. -/
+theorem stackWfEB_toStackWfB {m : Type} {e : Tree.Node m} {env : Env m}
+    (hne : ∀ lx lbody la, e ≠ ⟨.Lambda lx lbody, la⟩) :
+    ∀ {k : Stack m} {σ εtop εbot τ : Ty}, StackWfEB e env k σ εtop εbot τ → StackWfB k σ εtop εbot τ
+  | [], _, _, _, _, h => h
+  | (Kontinue.Trace _, _) :: rest, _, _, _, _, h => StackWfB.trace (stackWfEB_toStackWfB hne h)
+  | (Kontinue.Assign _ _ _, _) :: _, _, _, _, _, h => by
+      obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, _, hmono⟩ := h
+      rcases hmono with rfl | ⟨lx, lb, la, he⟩
+      · exact StackWfB.conv (StackWfB.assign henv hbody hrest) hσ.symm (.refl _)
+      · exact absurd he (hne lx lb la)
+  | (Kontinue.Arg _ _, _) :: _, _, _, _, _, h => h
+  | (Kontinue.Apply _ _, _) :: _, _, _, _, _, h => h
+  | (Kontinue.CallWith _ _, _) :: _, _, _, _, _, h => h
+  | (Kontinue.Delimit _ _ _ _, _) :: _, _, _, _, _, h => h
+  termination_by k => k.length
+
+/-- λ→closure transition for the B-engine (mirror of `stackWfE_lambda_step`). -/
+theorem stackWfEB_lambda_step {m : Type} {lx : String} {lbody : Tree.Node m} {la : m} {env : Env m}
+    {k : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfEB ⟨.Lambda lx lbody, la⟩ env k σ εtop εbot τ) :
+    StackWfVB (Value.Closure lx lbody env) k σ εtop εbot τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih h
+      | Assign x body fenv =>
+          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, hclo, _⟩ := h
+          exact ⟨Γ, sc, defnTy, bodyTy, hσ, hclo lx lbody la rfl, henv, hbody, hrest⟩
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
+/-- non-λ value transition for the B-engine (mirror of `stackWfE_value_step`). -/
+theorem stackWfEB_value_step {m : Type} {e : Tree.Node m} {env : Env m} {v : Value m}
+    {k : Stack m} {σ εtop εbot τ : Ty} (h : StackWfEB e env k σ εtop εbot τ) (hv : HasTypeV v σ)
+    (hne : ∀ lx lbody la, e ≠ ⟨.Lambda lx lbody, la⟩) : StackWfVB v k σ εtop εbot τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih h
+      | Assign x body fenv =>
+          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, _, hmono⟩ := h
+          rcases hmono with hsc | ⟨lx, lb, la, he⟩
+          · subst hsc
+            exact ⟨Γ, .mono defnTy, defnTy, bodyTy, hσ,
+              fun args => by rw [Scheme.instantiate_mono]; exact hv.conv hσ, henv, hbody, hrest⟩
+          · exact absurd he (hne lx lb la)
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
+/-- Drop the base row: `StackWfVB` → `StackWfV` (mirror of `stackWfB_toStackWf`, value-aware). -/
+theorem stackWfVB_toStackWfV {m : Type} {v : Value m} {k : Stack m} {σ εtop εbot τ : Ty}
+    (h : StackWfVB v k σ εtop εbot τ) : StackWfV v k σ εtop τ := by
+  induction k with
+  | nil => exact stackWfB_toStackWf h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih h
+      | Assign x body fenv =>
+          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, hready, henv, hbody, hrest⟩ := h
+          exact ⟨Γ, sc, defnTy, bodyTy, hσ, hready, henv, hbody, stackWfB_toStackWf hrest⟩
+      | Arg _ _ => exact stackWfB_toStackWf h
+      | Apply _ _ => exact stackWfB_toStackWf h
+      | CallWith _ _ => exact stackWfB_toStackWf h
+      | Delimit _ _ _ _ => exact stackWfB_toStackWf h
+
+/-- Drop the base row: `StackWfEB` → `StackWfE` (control-aware). -/
+theorem stackWfEB_toStackWfE {m : Type} {e : Tree.Node m} {env : Env m} {k : Stack m}
+    {σ εtop εbot τ : Ty} (h : StackWfEB e env k σ εtop εbot τ) : StackWfE e env k σ εtop τ := by
+  induction k with
+  | nil => exact stackWfB_toStackWf h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih h
+      | Assign x body fenv =>
+          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, hclo, hmono⟩ := h
+          exact ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, stackWfB_toStackWf hrest, hclo, hmono⟩
+      | Arg _ _ => exact stackWfB_toStackWf h
+      | Apply _ _ => exact stackWfB_toStackWf h
+      | CallWith _ _ => exact stackWfB_toStackWf h
+      | Delimit _ _ _ _ => exact stackWfB_toStackWf h
+
 /-- **`MStateWfB`** — the base-row-tracking analogue of `MStateWf`: the stack is typed by
 `StackWfB` carrying the bottom-of-stack row `εbot` (invariantly `ε_init` across a run), while
 the control runs at the current *top* row `εtop`. The discharge of `TauKeepsRow` uses it: an
 escaping `op ∈ εtop` with no handler reflects to `op ∈ εbot` via `stackWfB_escape`. -/
 def MStateWfB {m : Type} : MState m → Ty → Ty → Prop
   | .run (.E e, env, k), τ, εbot =>
-      ∃ Γ τin εtop, EnvWf env Γ ∧ HasType Γ e τin εtop ∧ StackWfB k τin εtop εbot τ
+      ∃ Γ τin εtop, EnvWf env Γ ∧ HasType Γ e τin εtop ∧ StackWfEB e env k τin εtop εbot τ
   | .run (.V v, _, k), τ, εbot =>
-      ∃ τin εtop, HasTypeV v τin ∧ StackWfB k τin εtop εbot τ
+      ∃ τin εtop, HasTypeV v τin ∧ StackWfVB v k τin εtop εbot τ
   | .wait op _ k, τ, εbot =>
       ∃ a b replyTy εtop, Ty.EffContains εtop op a b ∧ Ty.TyEquiv b replyTy ∧
         StackWfB k replyTy εtop εbot τ ∧ noHandlerFor op k
@@ -2664,12 +2868,29 @@ theorem mStateWfB_initial {m : Type} {prog : Tree.Node m} {τ εinit : Ty}
 /-- Unfold `MStateWfB` on a running `.E` state. -/
 theorem mStateWfB_E {m : Type} {e : Tree.Node m} {env k τ εbot}
     (h : MStateWfB (.run (.E e, env, k)) τ εbot) :
-    ∃ Γ τin εtop, EnvWf env Γ ∧ HasType Γ e τin εtop ∧ StackWfB k τin εtop εbot τ := h
+    ∃ Γ τin εtop, EnvWf env Γ ∧ HasType Γ e τin εtop ∧ StackWfEB e env k τin εtop εbot τ := h
 
 /-- Unfold `MStateWfB` on a running `.V` state. -/
 theorem mStateWfB_V {m : Type} {v : Value m} {env k τ εbot}
     (h : MStateWfB (.run (.V v, env, k)) τ εbot) :
-    ∃ τin εtop, HasTypeV v τin ∧ StackWfB k τin εtop εbot τ := h
+    ∃ τin εtop, HasTypeV v τin ∧ StackWfVB v k τin εtop εbot τ := h
+
+/-- B-engine value-step packager (mirror of `vstate_of_value`). -/
+theorem vstate_of_value_B {v : Value m} {e : Tree.Node m} {env env' k τin εtop εbot τ}
+    (hv : HasTypeV v τin) (hst : StackWfEB e env k τin εtop εbot τ)
+    (hne : ∀ lx lb la, e ≠ ⟨.Lambda lx lb, la⟩) :
+    MStateWfB (.run (.V v, env', k)) τ εbot := ⟨τin, εtop, hv, stackWfEB_value_step hst hv hne⟩
+
+/-- B-engine `.V`-on-`StackWfB` packager (mirror of `vstate'`). -/
+theorem vstate'_B {v : Value m} {env' : Env m} {rest : Stack m} {τin εtop εbot τ : Ty}
+    (hv : HasTypeV v τin) (hrest : StackWfB rest τin εtop εbot τ) :
+    ∃ ε', MStateWfB (.run (.V v, env', rest)) τ ε' :=
+  ⟨εbot, τin, εtop, hv, stackWf_toStackWfVB hrest hv⟩
+
+/-- B-engine `.V`-on-`StackWfB` packager returning `MStateWfB` directly. -/
+theorem vstateB {v : Value m} {env' : Env m} {rest : Stack m} {τin εtop εbot τ : Ty}
+    (hv : HasTypeV v τin) (hrest : StackWfB rest τin εtop εbot τ) :
+    MStateWfB (.run (.V v, env', rest)) τ εbot := ⟨τin, εtop, hv, stackWf_toStackWfVB hrest hv⟩
 
 /-- **Forget the base row at the state level.** An `MStateWfB` is an `MStateWf` at its
 *top* row (drop `εbot` via `stackWfB_toStackWf`). Lets the `MStateWf`-stated terminal lemmas
@@ -2682,10 +2903,10 @@ theorem mStateWfB_toMStateWf [BEq m] {s : MState m} {τ εbot : Ty}
       cases c with
       | E e =>
           obtain ⟨Γ, τin, εtop, henv, hty, hst⟩ := h
-          exact ⟨εtop, Γ, τin, henv, hty, stackWfB_toStackWf hst⟩
+          exact ⟨εtop, Γ, τin, henv, hty, stackWfEB_toStackWfE hst⟩
       | V v =>
           obtain ⟨τin, εtop, hv, hst⟩ := h
-          exact ⟨εtop, τin, hv, stackWfB_toStackWf hst⟩
+          exact ⟨εtop, τin, hv, stackWfVB_toStackWfV hst⟩
   | wait op e k =>
       obtain ⟨a, b, replyTy, εtop, hEff, hbr, hst, _⟩ := h
       exact ⟨εtop, a, b, replyTy, hEff, hbr, stackWfB_toStackWf hst⟩
@@ -2705,30 +2926,45 @@ theorem preservation_E_B [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
   cases expr with
   | Integer n =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, εtop, HasTypeV.int (inv_int hty), hst⟩
+      exact vstate_of_value_B (HasTypeV.int (inv_int hty)) hst (by rintro _ _ _ ⟨⟩)
   | String s =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, εtop, HasTypeV.str (inv_str hty), hst⟩
+      exact vstate_of_value_B (HasTypeV.str (inv_str hty)) hst (by rintro _ _ _ ⟨⟩)
   | Binary b =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, εtop, HasTypeV.bin (inv_bin hty), hst⟩
+      exact vstate_of_value_B (HasTypeV.bin (inv_bin hty)) hst (by rintro _ _ _ ⟨⟩)
   | Lambda x body =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨argTy, εb, retTy, hbody, heq⟩ := inv_lambda hty
-      exact ⟨τin, εtop, HasTypeV.closure henv hbody heq, hst⟩
+      exact ⟨τin, εtop, HasTypeV.closure henv hbody heq, stackWfEB_lambda_step hst⟩
   | Variable x =>
       obtain ⟨s, args, hlookup, heq⟩ := inv_var hty
       obtain ⟨v, hvlk, hvty⟩ := envwf_lookup henv hlookup
       simp only [reduce1Run, reduceEval, hvlk] at hr; cases hr
-      exact ⟨τin, εtop, (hvty args).conv heq, hst⟩
+      exact vstate_of_value_B ((hvty args).conv heq) hst (by rintro _ _ _ ⟨⟩)
   | Apply f arg =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨argTy, εf, hw, hf, harg⟩ := inv_app hty
-      exact ⟨Γ, _, εtop, henv, hf, StackWfB.arg henv harg hw hst⟩
+      exact ⟨Γ, _, εtop, henv, hf,
+        StackWfB.arg henv harg hw (stackWfEB_toStackWfB (by rintro _ _ _ ⟨⟩) hst)⟩
   | Let x defn body =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      obtain ⟨defnTy, hdefn, hbody⟩ := inv_let hty
-      exact ⟨Γ, defnTy, εtop, henv, hdefn, StackWfB.assign henv hbody hst⟩
+      rcases inv_let hty with ⟨defnTy, hdefn, hbody⟩ |
+          ⟨lx, lbody, la, defnTy, n, hdl, hdefn, hcw, hnl, hbody⟩
+      · refine ⟨Γ, defnTy, εtop, henv, hdefn,
+          ⟨Γ, .mono defnTy, defnTy, τin, .refl _, henv, hbody,
+            stackWfEB_toStackWfB (by rintro _ _ _ ⟨⟩) hst, ?_, Or.inl rfl⟩⟩
+        intro lx lbody la hlam args
+        subst hlam
+        rw [Scheme.instantiate_mono]
+        exact closure_typed_of_lambda henv hdefn
+      · subst hdl
+        refine ⟨Γ, defnTy, εtop, henv, hdefn,
+          ⟨Γ, Scheme.genAt n defnTy, defnTy, τin, .refl _, henv, hbody,
+            stackWfEB_toStackWfB (by rintro _ _ _ ⟨⟩) hst, ?_, Or.inr ⟨lx, lbody, la, rfl⟩⟩⟩
+        intro lx' lbody' la' hlam args
+        cases hlam
+        exact genAt_closure_ready (fun _ hf => ctxWf_fixed hcw hf) hnl henv hdefn args
   | Builtin id =>
       obtain ⟨s, args, hs, heq⟩ := inv_builtin hty
       obtain ⟨a, e, r, harrow⟩ := builtin_instantiate_arrow args hs
@@ -2736,53 +2972,54 @@ theorem preservation_E_B [BEq m] {e : Tree.Node m} {env : Env m} {k : Stack m}
       simp only [reduce1Run, reduceEval] at hr
       split at hr
       · cases hr
-        refine ⟨τin, εtop, HasTypeV.partialBuiltin (args := args) ⟨hs, scheme_arity_pos hs⟩ ?_ heq, hst⟩
-        rw [harrow]; exact BuiltinPartialWf.nil
+        refine vstate_of_value_B ?hv hst (by rintro _ _ _ ⟨⟩)
+        exact HasTypeV.partialBuiltin (args := args) (applied := []) ⟨hs, scheme_arity_pos hs⟩
+          (by rw [harrow]; exact BuiltinPartialWf.nil) heq
       · exact absurd hr (by simp)
   | Tail =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, heq⟩ := inv_tail hty
-      exact ⟨τin, εtop, HasTypeV.listNil heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.listNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Empty =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
-      exact ⟨τin, εtop, HasTypeV.record (fun _ _ hc => by cases hc)
-        (fun _ _ _ hc _ => by cases hc) (inv_empty hty), hst⟩
+      exact vstate_of_value_B (HasTypeV.record (fun _ _ hc => by cases hc)
+        (fun _ _ _ hc _ => by cases hc) (inv_empty hty)) hst (by rintro _ _ _ ⟨⟩)
   | Cons =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, heq⟩ := inv_cons hty
-      exact ⟨τin, εtop, HasTypeV.partialConsNil heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialConsNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Tag l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨elem, tail, heq⟩ := inv_tag hty
-      exact ⟨τin, εtop, HasTypeV.partialTag heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialTag heq) hst (by rintro _ _ _ ⟨⟩)
   | NoCases =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨ret, heq⟩ := inv_nocases hty
-      exact ⟨τin, εtop, HasTypeV.partialNoCases heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialNoCases heq) hst (by rintro _ _ _ ⟨⟩)
   | Case l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨inner, eff, ret, tail, heq⟩ := inv_case hty
-      exact ⟨τin, εtop, HasTypeV.partialMatchNil heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialMatchNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Select l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨fieldTy, tail, heq⟩ := inv_select hty
-      exact ⟨τin, εtop, HasTypeV.partialSelect heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialSelect heq) hst (by rintro _ _ _ ⟨⟩)
   | Extend l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨fieldTy, row, heq⟩ := inv_extend hty
-      exact ⟨τin, εtop, HasTypeV.partialExtendNil heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialExtendNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Overwrite l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨newTy, oldTy, tail, heq⟩ := inv_overwrite hty
-      exact ⟨τin, εtop, HasTypeV.partialOverwriteNil heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialOverwriteNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Perform l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨argTy, replyTy, μ, heq⟩ := inv_perform hty
-      exact ⟨τin, εtop, HasTypeV.partialPerformNil heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialPerformNil heq) hst (by rintro _ _ _ ⟨⟩)
   | Handle l =>
       simp only [reduce1Run, reduceEval] at hr; cases hr
       obtain ⟨lift, reply, tail, ret, heq⟩ := inv_handle hty
-      exact ⟨τin, εtop, HasTypeV.partialHandleNil heq, hst⟩
+      exact vstate_of_value_B (HasTypeV.partialHandleNil heq) hst (by rintro _ _ _ ⟨⟩)
   | _ =>
       exfalso
       rcases hasType_expr_form hty with ⟨_, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ |
@@ -2825,7 +3062,9 @@ theorem resume_preserves_B [BEq m] {acc : Stack m} {iEnv : Env m} {v : Value m}
       cases hr
       have htailW : Ty.EffWeaken _ ε := hw.imp (fun h => heff.trans h) (fun h => heff.trans h)
       exact ⟨_, _, hv.conv ha.symm,
-        stackWfB_resume (hseg ε htailW) (StackWfB.conv hrest hr'.symm (.refl _))⟩
+        stackWf_toStackWfVB
+          (stackWfB_resume (hseg ε htailW) (StackWfB.conv hrest hr'.symm (.refl _)))
+          (hv.conv ha.symm)⟩
 
 /-- Base-row mirror of `install_preserves`. -/
 theorem install_preserves_B [BEq m] {l : String} {handler v : Value m}
@@ -3103,14 +3342,15 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
   obtain ⟨τin, εtop, hv, hst⟩ := mStateWfB_V hwf
   cases kont with
   | Trace w =>
-      have hrest := stackWfB_trace_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨τin, εtop, hv, hrest⟩
+      exact ⟨τin, εtop, hv, hst⟩
   | Assign x body fenv =>
-      obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henvc, hbody, hrest⟩ := stackWfB_assign_inv hst
+      obtain ⟨Γ, sc, defnTy, bodyTy, hσ, hready, henvc, hbody, hrest⟩ := hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      refine ⟨_, _, ε0, EnvWf.cons (fun args => ?_) henvc, hbody, hrest⟩
-      simpa using hv.conv hσ
+      refine ⟨_, _, _, EnvWf.cons hready henvc, hbody, stackWf_toStackWfEB hrest ?_⟩
+      intro ly lb la hlam
+      subst hlam
+      exact closure_typed_of_lambda (EnvWf.cons hready henvc) hbody
   | Arg arg fenv =>
       obtain ⟨Γ, argTy, εf, retTy, ε0, hσ, hε, henvc, harg, hw, hrest⟩ := stackWfB_arg_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
@@ -3119,7 +3359,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
       obtain ⟨lift, reply, tail, ret, εInner, rfl, hσ, hε, hweff, hh, hrest⟩ :=
         stackWfB_delimit_inv hst
       simp only [reduce1Run, reduceApply] at hr; cases hr
-      exact ⟨ret, εInner, hv.conv hσ, hrest⟩
+      exact ⟨ret, εInner, hv.conv hσ, stackWf_toStackWfVB hrest (hv.conv hσ)⟩
   | Apply f fenv =>
       obtain ⟨argTy, εf, retTy, ε0, hσ, hε, hf, hw, hrest⟩ := stackWfB_applyf_inv hst
       replace hv := hv.conv hσ
@@ -3128,10 +3368,13 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            refine ⟨_, _, ε0, EnvWf.cons (fun args => ?_) henvc,
+            refine ⟨_, _, ε0, EnvWf.cons (fun args => by simpa using hv.conv hA.symm) henvc,
               weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
-              StackWfB.trace hrest⟩
-            simpa using hv.conv hA.symm
+              stackWf_toStackWfEB (StackWfB.trace hrest) (fun ly lb la hlam => ?_)⟩
+            subst hlam
+            exact closure_typed_of_lambda
+              (EnvWf.cons (fun args => by simpa using hv.conv hA.symm) henvc)
+              (weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw))
       · cases hf with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
@@ -3142,28 +3385,28 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialConsOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialConsOne (hv.conv hA.symm) hR) hrest
         | partialConsOne hh he =>
             obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
             have hvl := hv.conv hD.symm
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.listCons hh hvl hR, hrest⟩
+            exact vstateB (HasTypeV.listCons hh hvl hR) hrest
         | partialTag he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.tagged (hv.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.tagged (hv.conv hA.symm) hR) hrest
         | partialNoCases he =>
             obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
             exact absurd (hv.conv hA.symm) canonical_union_empty
         | partialMatchNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialMatchOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialMatchOne (hv.conv hA.symm) hR) hrest
         | partialMatchOne hbranch he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialMatchTwo hbranch (hv.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialMatchTwo hbranch (hv.conv hA.symm) hR) hrest
         | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
             obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvu := hv.conv hD.symm
@@ -3199,11 +3442,11 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
                 obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
-                exact ⟨_, ε0, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+                exact vstateB (hvalue.conv (hf'.symm.trans hRet)) hrest
         | partialExtendNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialExtendOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialExtendOne (hv.conv hA.symm) hR) hrest
         | @partialExtendOne lbl _ fieldTy row _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := hv.conv hD.symm
@@ -3211,7 +3454,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
             cases hvr with
             | record hpres hmatch hetag =>
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
-                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstateB (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -3233,7 +3476,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | partialOverwriteNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialOverwriteOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialOverwriteOne (hv.conv hA.symm) hR) hrest
         | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := hv.conv hD.symm
@@ -3245,7 +3488,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
                 obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
                 cases hr
-                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstateB (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -3267,7 +3510,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | partialHandleNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialHandleOne (hv.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialHandleOne (hv.conv hA.symm) hR) hrest
         | partialHandleOne hh he =>
             simp only [reduce1Run, reduceApply] at hr
             exact install_preserves_B (.partialHandleOne hh he) hv hw hrest hr
@@ -3285,10 +3528,13 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | closure henvc hbody heqc =>
             obtain ⟨hA, hE, hR⟩ := Ty.tyEquiv_fun_components heqc
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            refine ⟨_, _, ε0, EnvWf.cons (fun args => ?_) henvc,
+            refine ⟨_, _, ε0, EnvWf.cons (fun args => by simpa using harg.conv hA.symm) henvc,
               weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw),
-              StackWfB.trace hrest⟩
-            simpa using harg.conv hA.symm
+              stackWf_toStackWfEB (StackWfB.trace hrest) (fun ly lb la hlam => ?_)⟩
+            subst hlam
+            exact closure_typed_of_lambda
+              (EnvWf.cons (fun args => by simpa using harg.conv hA.symm) henvc)
+              (weakenEff (HasType.conv hbody hR (.refl _)) (Ty.effWeaken_trans (.inl hE) hw))
       · cases hv with
         | partialBuiltin hs hp he =>
             simp only [reduce1Run, reduceApply] at hr
@@ -3299,28 +3545,28 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | partialConsNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialConsOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialConsOne (harg.conv hA.symm) hR) hrest
         | partialConsOne hh he =>
             obtain ⟨hD, _, hR⟩ := Ty.tyEquiv_fun_components he
             have hvl := harg.conv hD.symm
             obtain ⟨es, rfl⟩ := canonical_list hvl
             simp only [reduce1Run, reduceApply, reduceCall, Cast.asList] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.listCons hh hvl hR, hrest⟩
+            exact vstateB (HasTypeV.listCons hh hvl hR) hrest
         | partialTag he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.tagged (harg.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.tagged (harg.conv hA.symm) hR) hrest
         | partialNoCases he =>
             obtain ⟨hA, _, _⟩ := Ty.tyEquiv_fun_components he
             exact absurd (harg.conv hA.symm) canonical_union_empty
         | partialMatchNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialMatchOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialMatchOne (harg.conv hA.symm) hR) hrest
         | partialMatchOne hbranch he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialMatchTwo hbranch (harg.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialMatchTwo hbranch (harg.conv hA.symm) hR) hrest
         | @partialMatchTwo lbl _ _ inner eff ret tail1 _ hbranch hotherwise he =>
             obtain ⟨hD, hEff, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvu := harg.conv hD.symm
@@ -3356,11 +3602,11 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
                   (Ty.tyEquiv_rowContains (Ty.tyEquiv_recordRow hetag)).2 _ _ Ty.RowContains.head
                 obtain ⟨value, hget, hvalue⟩ := record_get hpres hmatch hcont
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr; cases hr
-                exact ⟨_, ε0, hvalue.conv (hf'.symm.trans hRet), hrest⟩
+                exact vstateB (hvalue.conv (hf'.symm.trans hRet)) hrest
         | partialExtendNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialExtendOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialExtendOne (harg.conv hA.symm) hR) hrest
         | @partialExtendOne lbl _ fieldTy row _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := harg.conv hD.symm
@@ -3368,7 +3614,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
             cases hvr with
             | record hpres hmatch hetag =>
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord] at hr; cases hr
-                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstateB (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -3390,7 +3636,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | partialOverwriteNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialOverwriteOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialOverwriteOne (harg.conv hA.symm) hR) hrest
         | @partialOverwriteOne lbl _ newTy oldTy tail _ hvf he =>
             obtain ⟨hD, _, hRet⟩ := Ty.tyEquiv_fun_components he
             have hvr := harg.conv hD.symm
@@ -3402,7 +3648,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
                 obtain ⟨_, hget, _⟩ := record_get hpres hmatch hcontH
                 simp only [reduce1Run, reduceApply, reduceCall, Cast.asRecord, hget] at hr
                 cases hr
-                refine ⟨_, ε0, HasTypeV.record ?_ ?_ hRet, hrest⟩
+                refine vstateB (HasTypeV.record ?_ ?_ hRet) hrest
                 · intro l' f' hc
                   cases hc with
                   | head => rw [recordInsert_get_eq]; simp
@@ -3424,7 +3670,7 @@ theorem preservation_V_B [BEq m] (hsatB : BuiltinAppPreservesB m)
         | partialHandleNil he =>
             obtain ⟨hA, _, hR⟩ := Ty.tyEquiv_fun_components he
             simp only [reduce1Run, reduceApply, reduceCall] at hr; cases hr
-            exact ⟨_, ε0, HasTypeV.partialHandleOne (harg.conv hA.symm) hR, hrest⟩
+            exact vstateB (HasTypeV.partialHandleOne (harg.conv hA.symm) hR) hrest
         | partialHandleOne hh he =>
             simp only [reduce1Run, reduceApply] at hr
             exact install_preserves_B (.partialHandleOne hh he) harg hw hrest hr
@@ -3479,7 +3725,8 @@ theorem preservation_keep_B [BEq m] (hsatB : BuiltinAppPreservesB m)
       obtain ⟨a, b, replyTy, εtop, hEff, hbr, hStack, hnh⟩ := hwf
       obtain ⟨a', b', hcbot, _, hbb'⟩ := stackWfB_escape hStack hnh hEff
       simp only [ReplyContract] at hrep
-      exact ⟨replyTy, εtop, (hrep a' b' hcbot).conv (hbb'.symm.trans hbr), hStack⟩
+      exact ⟨replyTy, εtop, (hrep a' b' hcbot).conv (hbb'.symm.trans hbr),
+        stackWf_toStackWfVB hStack ((hrep a' b' hcbot).conv (hbb'.symm.trans hbr))⟩
 
 /-! ### Discharging `BuiltinAppPreservesB`
 
@@ -3511,7 +3758,8 @@ theorem builtinApp_arity1_B [BEq m] {key : String} {D R : Ty}
       | ok value =>
           rw [reduceCallBuiltin_sat h1 h2 h3 h4 harity rfl hrun] at htau
           injection htau with htau'; subst htau'
-          exact ⟨retTy, ε, (hrunTy harg' hrun).conv hr, hst⟩
+          exact ⟨retTy, ε, (hrunTy harg' hrun).conv hr,
+            stackWf_toStackWfVB hst ((hrunTy harg' hrun).conv hr)⟩
   | cons hv hrest =>
       cases hrest with
       | nil => exact absurd rfl (hRna _ _ _)
@@ -3538,7 +3786,7 @@ theorem builtinApp_arity2_B [BEq m] {key : String} {s : Scheme} {sargs : List Ty
       rw [reduceCall_builtin_eq, List.nil_append,
         reduceCallBuiltin_acc h1 h2 h3 h4 harity (by simp)] at htau
       injection htau with htau'; subst htau'
-      refine ⟨retTy, ε, ?_, hst⟩
+      refine ⟨retTy, ε, ?val, stackWf_toStackWfVB hst ?val⟩
       refine HasTypeV.partialBuiltin (args := sargs) ⟨hsch, 2, harity, by simp⟩ ?_ hr
       rw [hbase]
       exact BuiltinPartialWf.cons harg' BuiltinPartialWf.nil
@@ -3555,7 +3803,8 @@ theorem builtinApp_arity2_B [BEq m] {key : String} {s : Scheme} {sargs : List Ty
               rw [show [vval] ++ [arg] = [vval, arg] from rfl,
                 reduceCallBuiltin_sat h1 h2 h3 h4 harity rfl hrun] at htau
               injection htau with htau'; subst htau'
-              exact ⟨retTy, ε, (hrunTy hv harg' hrun).conv hr, hst⟩
+              exact ⟨retTy, ε, (hrunTy hv harg' hrun).conv hr,
+                stackWf_toStackWfVB hst ((hrunTy hv harg' hrun).conv hr)⟩
       | cons _ hrest2 => cases hrest2 <;> exact absurd rfl (hRna _ _ _)
 
 /-- The base-row `fix`-creation obligation, isolated like `FixPreserves` (`.tau` half). -/

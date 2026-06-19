@@ -39,6 +39,12 @@ open Eyg.Ir
 matching the interpreter's `Env` shadowing). -/
 abbrev Ctx := List (String × Scheme)
 
+/-- **Context below level `n`**: every ambient free variable of every binding's scheme is `< n`. The
+side-invariant the `let_poly` rule stores and `hasType_subst`'s `let_poly` arm threads, kept off the
+preservation engines (see `progress/2026-06-18-T6-let_poly-levelmap-mono-and-wfbelow-decision.md`).
+Defined here (before `HasType`) so the `let_poly` constructor can carry it. -/
+def CtxWf (n : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ i ∈ Scheme.freeVars b.2, i < n
+
 /-! ## `Handle` scheme component types (T5)
 
 The deep-handler scheme `handle(l)` (`contextual.gleam` `handle`) factors into these
@@ -87,6 +93,19 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
       HasType Γ defn defnTy ε →
       HasType ((x, .mono defnTy) :: Γ) body bodyTy ε →
       HasType Γ ⟨.Let x defn body, a⟩ bodyTy ε
+  /-- **Polymorphic `let`** (T6 let-generalization, **value-restricted**: the bound `defn` is a
+  `Lambda`). The body is typed with `x` bound at the *computed* generalization `genAt n defnTy` (de
+  Bruijn-level discipline: generalize the type variables `≥ n`, the fresh boundary above the in-scope
+  ambient `[0,n)`), and the context is recorded below that level (`CtxWf n Γ`). The level `n` and
+  `genAt` are stored only here and consumed by `hasType_subst`/the readiness keystone — the
+  preservation engines treat this as an opaque constructor carrying a body typing + a precomputed
+  closed readiness (see the WfBelow decision note). -/
+  | let_poly {Γ x lx lbody la body defnTy bodyTy ε n a} :
+      HasType Γ ⟨.Lambda lx lbody, la⟩ defnTy ε →
+      CtxWf n Γ →
+      Tree.Node.noLet lbody →
+      HasType ((x, Scheme.genAt n defnTy) :: Γ) body bodyTy ε →
+      HasType Γ ⟨.Let x ⟨.Lambda lx lbody, la⟩ body, a⟩ bodyTy ε
   /-- Integer literal. -/
   | int {Γ n ε a} : HasType Γ ⟨.Integer n, a⟩ .integer ε
   /-- String literal. -/
@@ -155,6 +174,23 @@ inductive HasType {m : Type} : Ctx → Tree.Node m → Ty → Ty → Prop where
       HasType Γ e τ ε → Ty.TyEquiv τ τ' → Ty.TyEquiv ε ε' →
       HasType Γ e τ' ε'
 
+/-- **`CtxWf` survives a `TyEquiv` context-binding rewrite.** Rewriting one binding's monomorphic type
+`.mono σ → .mono σ'` for `TyEquiv σ' σ` preserves `CtxWf` (`TyEquiv` preserves the free-var set, and a
+mono scheme's ambient free vars are its body's). The `let_poly` arm of `hasType_ctxConv` needs it. -/
+theorem ctxWf_ctxConv {n : Nat} {Δ Γ : Ctx} {x : String} {σ σ' : Ty}
+    (hc : Ty.TyEquiv σ' σ) (h : CtxWf n (Δ ++ (x, .mono σ) :: Γ)) :
+    CtxWf n (Δ ++ (x, .mono σ') :: Γ) := by
+  intro b hb i hi
+  rcases List.mem_append.mp hb with hbΔ | hbcons
+  · exact h b (List.mem_append.mpr (Or.inl hbΔ)) i hi
+  · rcases List.mem_cons.mp hbcons with rfl | hbΓ
+    · simp only [Scheme.freeVars_mono] at hi
+      have hi' : i ∈ Ty.freeVars σ := (Ty.freeVars_tyEquiv hc i).mp hi
+      have hb0 := h (x, Scheme.mono σ) (List.mem_append.mpr (Or.inr (List.mem_cons_self ..))) i
+      simp only [Scheme.freeVars_mono] at hb0
+      exact hb0 hi'
+    · exact h b (List.mem_append.mpr (Or.inr (List.mem_cons_of_mem _ hbΓ))) i hi
+
 /-- **Context-binding conversion** (depth-general). Replacing one binding's
 monomorphic type by a `TyEquiv`-equal one preserves typing. The `var` case at the
 converted binding bridges via the leaf `conv` rule (`instantiate (.mono σ) = σ`); the
@@ -197,6 +233,10 @@ theorem hasType_ctxConv {m : Type} {Γ₀ : Ctx} {e : Tree.Node m} {τ ε : Ty}
       intro Δ Γ x σ σ' heq hc; subst heq
       exact HasType.let_ (ihdefn Δ Γ x σ σ' rfl hc)
         (ihbody ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc)
+  | @let_poly Γ₁ z lx lbody la body defnTy bodyTy ε' n a hdefn hcw hnl hbody ihdefn ihbody =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      exact HasType.let_poly (ihdefn Δ Γ x σ σ' rfl hc) (ctxWf_ctxConv hc hcw) hnl
+        (ihbody ((z, Scheme.genAt n defnTy) :: Δ) Γ x σ σ' rfl hc)
   | int => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.int
   | str => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.str
   | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.bin

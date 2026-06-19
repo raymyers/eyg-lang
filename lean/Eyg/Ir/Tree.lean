@@ -100,6 +100,18 @@ def reference (identifier : Cid) : Node Unit := node (.ContentReference identifi
 def release (package : String) (rel : Int) (identifier : Cid) : Node Unit :=
   node (.ReleaseReference package rel identifier)
 
+/-- **`e` contains no `Let` node** (structurally). Used as the value-restriction guard on a
+polymorphic `let`'s generalized lambda body (T6 `let_poly`): a let-free body lets the readiness
+keystone re-type it under the instantiation substitution with the *original* (arbitrary-σ)
+`hasType_subst` whose `Let`/`let_poly` arms are then vacuous — sidestepping the instantiation-vs-LevelMap
+gap that genuinely-nested let-generalization hits (see the cascade progress notes). Covers all
+combinator polymorphism (`\x.x`, `\x.\y.x`, `\f.\x. f (f x)`, …). -/
+def Node.noLet {m : Type} : Node m → Prop
+  | ⟨.Lambda _ b, _⟩ => b.noLet
+  | ⟨.Apply f a, _⟩ => f.noLet ∧ a.noLet
+  | ⟨.Let _ _ _, _⟩ => False
+  | _ => True
+
 /-- `func(params, body)` — fold params right into nested lambdas. -/
 def func (params : List String) (body : Node Unit) : Node Unit :=
   params.foldr (fun param acc => lambda param acc) body

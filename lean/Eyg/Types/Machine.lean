@@ -233,6 +233,151 @@ theorem stackWf_nil_inv {m : Type} {σ ε τ : Ty} (h : StackWf ([] : Stack m) �
   | conv _ hσ hε ih => exact hσ.symm.trans (ih hs)
   | _ => simp at hs
 
+/-! ## Value-aware stack typing for `let_poly` (T6)
+
+The polymorphic `let`'s Assign frame binds the value at a **scheme** `genAt n defnTy`, so the Assign-pop
+must know the incoming value is **ready** — `∀ args, HasTypeV v (sc.instantiate args)` — which is *not*
+derivable from the value's monotype (it is the false-for-generic-`v` value-substitution property). So the
+readiness is carried in a value-aware stack predicate. `StackWfV v k` (the value flowing in is `v`) is
+value-aware at the `Assign` head; `StackWfE e env k` (the control `e` will become a value) carries the
+*future* closure's readiness across the lambda→closure step. See
+`progress/2026-06-18-T6-let_poly-stackwfV-stackwfE-design.md`. -/
+
+/-- Value-aware stack typing: the value `v` flows into stack `k`. At an `Assign` head it carries the
+binding **readiness** about `v`; `Trace` passes `v` through; every other head consumes `v` (plain
+`StackWf`). -/
+def StackWfV {m : Type} (v : Value m) : Stack m → Ty → Ty → Ty → Prop
+  | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfV v rest σ ε τ
+  | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
+      ∃ Γ sc defnTy bodyTy, Ty.TyEquiv σ defnTy ∧ (∀ args, HasTypeV v (sc.instantiate args)) ∧
+        EnvWf fenv Γ ∧ HasType ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ
+  | k, σ, ε, τ => StackWf k σ ε τ
+
+/-- Control-aware stack typing for an `.E` state: the control `e` (in env `env`) will become a value. At
+an `Assign` head it carries (1) the **future closure's readiness** when `e` is a lambda, and (2) the
+invariant that the binding is **either monomorphic at the input type** (`sc = .mono defnTy`) **or the
+control is a lambda** (the poly case) — which rules out an arrow-typed builtin `Partial` flowing into a
+poly binding (false readiness, but semantically impossible). `Trace` passes through; other heads are plain
+`StackWf`. -/
+def StackWfE {m : Type} (e : Tree.Node m) (env : Env m) : Stack m → Ty → Ty → Ty → Prop
+  | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfE e env rest σ ε τ
+  | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
+      ∃ Γ sc defnTy bodyTy, Ty.TyEquiv σ defnTy ∧ EnvWf fenv Γ ∧
+        HasType ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ ∧
+        (∀ lx lbody la, e = ⟨.Lambda lx lbody, la⟩ →
+          ∀ args, HasTypeV (Value.Closure lx lbody env) (sc.instantiate args)) ∧
+        (sc = Scheme.mono defnTy ∨ ∃ lx lbody la, e = ⟨.Lambda lx lbody, la⟩)
+  | k, σ, ε, τ => StackWf k σ ε τ
+
+/-- **`StackWf` (only mono Assign frames) refines to `StackWfV`** for any value `v` of the input type.
+Sound because plain `StackWf` Assign frames are **monomorphic** (poly Assign frames live only in the
+transient `StackWfV`/`StackWfE` states — they are popped one step after creation, never persisting in a
+plain stack), so the binding readiness `∀args, HasTypeV v ((.mono defnTy).instantiate args)` is the
+trivial `HasTypeV v defnTy`. This is what re-greens the frame/effect cases of `preservation_V`/`progress`,
+which produce values on reorganized stacks. -/
+theorem stackWf_toStackWfV {m : Type} {v : Value m} {k : Stack m} {σ ε τ : Ty}
+    (h : StackWf k σ ε τ) (hv : HasTypeV v σ) : StackWfV v k σ ε τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih (stackWf_trace_inv h)
+      | Assign x body fenv =>
+          obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henv, hbody, hrest⟩ := stackWf_assign_inv h
+          exact ⟨Γ, .mono defnTy, defnTy, bodyTy, hσ,
+            fun args => by rw [Scheme.instantiate_mono]; exact hv.conv hσ, henv,
+            HasType.conv hbody (.refl _) hε.symm, StackWf.conv hrest (.refl _) hε.symm⟩
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
+/-- **`StackWf` (mono Assign frames) refines to `StackWfE`** for a control `e`, given the closure typing
+when `e` is a lambda (`hclo`). The dual of `stackWf_toStackWfV` for `.E` states. -/
+theorem stackWf_toStackWfE {m : Type} {e : Tree.Node m} {env : Env m} {k : Stack m} {σ ε τ : Ty}
+    (h : StackWf k σ ε τ)
+    (hclo : ∀ lx lb la, e = ⟨.Lambda lx lb, la⟩ → HasTypeV (Value.Closure lx lb env) σ) :
+    StackWfE e env k σ ε τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih (stackWf_trace_inv h)
+      | Assign x body fenv =>
+          obtain ⟨Γ, defnTy, bodyTy, ε0, hσ, hε, henv, hbody, hrest⟩ := stackWf_assign_inv h
+          refine ⟨Γ, .mono defnTy, defnTy, bodyTy, hσ, henv,
+            HasType.conv hbody (.refl _) hε.symm, StackWf.conv hrest (.refl _) hε.symm, ?_, Or.inl rfl⟩
+          intro lx lb la hlam args
+          rw [Scheme.instantiate_mono]
+          exact (hclo lx lb la hlam).conv hσ
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
+/-- Forget the control-awareness: a `StackWfE` (for a **non-lambda** control, so any Assign head is
+monomorphic) is a `StackWf`. -/
+theorem stackWfE_toStackWf {m : Type} {e : Tree.Node m} {env : Env m}
+    (hne : ∀ lx lbody la, e ≠ ⟨.Lambda lx lbody, la⟩) :
+    ∀ {k : Stack m} {σ ε τ : Ty}, StackWfE e env k σ ε τ → StackWf k σ ε τ
+  | [], _, _, _, h => h
+  | (Kontinue.Trace _, _) :: rest, _, _, _, h => StackWf.trace (stackWfE_toStackWf hne h)
+  | (Kontinue.Assign _ _ _, _) :: _, _, _, _, h => by
+      obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, _, hmono⟩ := h
+      rcases hmono with rfl | ⟨lx, lb, la, he⟩
+      · exact StackWf.conv (StackWf.assign henv hbody hrest) hσ.symm (.refl _)
+      · exact absurd he (hne lx lb la)
+  | (Kontinue.Arg _ _, _) :: _, _, _, _, h => h
+  | (Kontinue.Apply _ _, _) :: _, _, _, _, h => h
+  | (Kontinue.CallWith _ _, _) :: _, _, _, _, h => h
+  | (Kontinue.Delimit _ _ _ _, _) :: _, _, _, _, h => h
+  termination_by k => k.length
+
+/-- **The lambda→closure transition.** When the control is a lambda, the `StackWfE`'s carried closure
+readiness becomes the `StackWfV` readiness for the produced closure. -/
+theorem stackWfE_lambda_step {m : Type} {lx : String} {lbody : Tree.Node m} {la : m} {env : Env m}
+    {k : Stack m} {σ ε τ : Ty} (h : StackWfE ⟨.Lambda lx lbody, la⟩ env k σ ε τ) :
+    StackWfV (Value.Closure lx lbody env) k σ ε τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih h
+      | Assign x body fenv =>
+          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, hclo, _⟩ := h
+          exact ⟨Γ, sc, defnTy, bodyTy, hσ, hclo lx lbody la rfl, henv, hbody, hrest⟩
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
+/-- **A non-lambda value transition.** When the control is *not* a lambda, the `StackWfE` Assign head is
+forced monomorphic (the `sc = .mono defnTy ∨ control-is-λ` clause), so the produced value `v` (of the
+input type) discharges the trivial readiness. -/
+theorem stackWfE_value_step {m : Type} {e : Tree.Node m} {env : Env m} {v : Value m}
+    {k : Stack m} {σ ε τ : Ty} (h : StackWfE e env k σ ε τ) (hv : HasTypeV v σ)
+    (hne : ∀ lx lbody la, e ≠ ⟨.Lambda lx lbody, la⟩) : StackWfV v k σ ε τ := by
+  induction k with
+  | nil => exact h
+  | cons hd rest ih =>
+      obtain ⟨kont, ann⟩ := hd
+      cases kont with
+      | Trace w => exact ih h
+      | Assign x body fenv =>
+          obtain ⟨Γ, sc, defnTy, bodyTy, hσ, henv, hbody, hrest, _, hmono⟩ := h
+          rcases hmono with hsc | ⟨lx, lbody, la, he⟩
+          · subst hsc
+            exact ⟨Γ, .mono defnTy, defnTy, bodyTy, hσ,
+              fun args => by rw [Scheme.instantiate_mono]; exact hv.conv hσ, henv, hbody, hrest⟩
+          · exact absurd he (hne lx lbody la)
+      | Arg _ _ => exact h
+      | Apply _ _ => exact h
+      | CallWith _ _ => exact h
+      | Delimit _ _ _ _ => exact h
+
 /-- A machine state is well-typed at answer type `τ` and effect row `ε`: the
 control yields an intermediate `τin` that the stack carries to `τ`. A `wait op env
 k` state (suspended performing `op`, awaiting a reply) is typed by **effect safety**
@@ -242,8 +387,8 @@ expected input need only be equivalent to the declared reply type) to the answer
 `τ`. The reply value itself is supplied by the world — typed by the reply contract,
 discharged in `preservation`'s `reply` case. -/
 def MStateWf {m : Type} : MState m → Ty → Ty → Prop
-  | .run (.E e, env, k), τ, ε => ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWf k τin ε τ
-  | .run (.V v, _, k), τ, ε => ∃ τin, HasTypeV v τin ∧ StackWf k τin ε τ
+  | .run (.E e, env, k), τ, ε => ∃ Γ τin, EnvWf env Γ ∧ HasType Γ e τin ε ∧ StackWfE e env k τin ε τ
+  | .run (.V v, _, k), τ, ε => ∃ τin, HasTypeV v τin ∧ StackWfV v k τin ε τ
   | .wait op _ k, τ, ε =>
       ∃ a b replyTy, Ty.EffContains ε op a b ∧ Ty.TyEquiv b replyTy ∧ StackWf k replyTy ε τ
 

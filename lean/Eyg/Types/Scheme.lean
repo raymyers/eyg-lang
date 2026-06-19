@@ -131,6 +131,17 @@ def freeVars : Ty → List Nat
   | .effectExtend _ a b t => freeVars a ++ freeVars b ++ freeVars t
   | _ => []
 
+/-- Generalization **arity** at level `n`: one quantifier slot per generalized variable (`≥ n`) of
+`d`, sized so every such variable fits (`v - n < genArity` for `v ≥ n` free in `d`). Closed-below-`n`
+types get arity `0` (monomorphic). (T6 `let_poly` generalization; relocated here so the `let_poly`
+typing rule can reference `Scheme.genAt`.) -/
+def genArity (n : Nat) (d : Ty) : Nat := (d.freeVars.map (fun v => v + 1 - n)).foldr Nat.max 0
+
+/-- The re-indexing turning `d` into a level-`n` scheme body with `arity` quantifiers: ambient vars
+(`< n`) shift up past the prefix; generalized vars (`≥ n`) become quantifier `v - n`. -/
+def reindexGen (n arity : Nat) : Nat → Ty :=
+  fun v => if v < n then .var (v + arity) else .var (v - n)
+
 /-- **A substitution that fixes every free variable fixes the type.** -/
 theorem subst_eq_of_fixes_free {σ : Nat → Ty} {t : Ty}
     (h : ∀ i ∈ freeVars t, σ i = .var i) : subst σ t = t := by
@@ -334,6 +345,25 @@ def substScheme (σ : Nat → Ty) (s : Scheme) : Scheme :=
 
 @[simp] theorem substScheme_arity (σ : Nat → Ty) (s : Scheme) :
     (substScheme σ s).arity = s.arity := rfl
+
+/-- The computed generalization of `d` at level `n`: quantify the generalized (`≥ n`) variables. The
+generalized variables (`≥ n`) become the quantifier prefix `0 … arity-1` (via `v ↦ v - n`), and the
+ambient variables (`< n`) shift up past the prefix (`v ↦ v + arity`). (T6 `let_poly`; relocated here so
+the `let_poly` typing rule can reference it.) -/
+def genAt (n : Nat) (d : Ty) : Scheme :=
+  ⟨d.genArity n, Ty.subst (Ty.reindexGen n (d.genArity n)) d⟩
+
+@[simp] theorem genAt_arity (n : Nat) (d : Ty) : (genAt n d).arity = d.genArity n := rfl
+
+/-- The **ambient** free variables of a scheme `⟨arity, body⟩`: the body variables sitting *above* the
+quantifier prefix (`≥ arity`), shifted down by `arity` (matching `instantiate`/`substScheme`). Used by
+`CtxWf` (the `let_poly` context-below-level side-invariant). -/
+def freeVars (s : Scheme) : List Nat :=
+  (s.body.freeVars.filter (fun j => decide (s.arity ≤ j))).map (· - s.arity)
+
+/-- A monomorphic scheme's ambient free vars are exactly its body's free vars (arity `0`). -/
+@[simp] theorem freeVars_mono (t : Ty) : freeVars (mono t) = t.freeVars := by
+  simp only [freeVars, mono, Nat.zero_le, decide_true, List.filter_true, Nat.sub_zero, List.map_id']
 
 /-- `substScheme` on a monomorphic scheme is `subst` on its body. -/
 @[simp] theorem substScheme_mono (σ : Nat → Ty) (t : Ty) :

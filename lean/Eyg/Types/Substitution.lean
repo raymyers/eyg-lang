@@ -53,11 +53,13 @@ theorem substCtx_lookup {σ : Nat → Ty} {Γ : Ctx} {x : String} {s : Scheme}
       · simp only [hxy] at h ⊢; cases h; rfl
       · simp only [hxy] at h ⊢; exact ih h
 
-/-- **Type substitution for `HasType`.** A well-typed term stays well-typed under an
-ambient type substitution `σ`, with the type, effect row, and context all
-substituted. -/
+/-- **Type substitution for `HasType`** (on `Let`-free terms). A well-typed term stays well-typed under
+an ambient type substitution `σ`. The `noLet` hypothesis makes the `let_`/`let_poly` arms **vacuous** —
+which is exactly the restricted-`let_poly` route (the readiness keystone re-types only a `noLet`
+generalized-lambda body, so arbitrary `σ` is sound there; substituting a `let_poly` under arbitrary `σ`
+is *false*, `generalizes_subst_false`, hence excluded by `noLet`). -/
 theorem hasType_subst {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} (σ : Nat → Ty)
-    (h : HasType Γ e τ ε) :
+    (h : HasType Γ e τ ε) (hnl : Tree.Node.noLet e) :
     HasType (substCtx σ Γ) e (Ty.subst σ τ) (Ty.subst σ ε) := by
   induction h with
   | @var Γ x s args ε a hl =>
@@ -67,15 +69,18 @@ theorem hasType_subst {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} (σ : Nat → Ty
       rw [Scheme.subst_instantiate' σ s args, Builtins.scheme_substScheme σ hs]
       exact HasType.builtin hs
   | @lam Γ x body argTy εb retTy ε a hbody ih =>
+      simp only [Tree.Node.noLet] at hnl
       simp only [substCtx_cons, Scheme.substScheme_mono] at ih
       simp only [Ty.subst]
-      exact HasType.lam ih
+      exact HasType.lam (ih hnl)
   | @app Γ f arg argTy εf retTy ε a hf hw harg ihf iharg =>
+      simp only [Tree.Node.noLet] at hnl
       simp only [Ty.subst] at ihf
-      exact HasType.app ihf (Ty.subst_effWeaken σ hw) iharg
+      exact HasType.app (ihf hnl.1) (Ty.subst_effWeaken σ hw) (iharg hnl.2)
   | @let_ Γ x defn body defnTy bodyTy ε a hdefn hbody ihdefn ihbody =>
-      simp only [substCtx_cons, Scheme.substScheme_mono] at ihbody
-      exact HasType.let_ ihdefn ihbody
+      simp only [Tree.Node.noLet] at hnl
+  | @let_poly Γ x lx lbody la body defnTy bodyTy ε n a hdefn hcw hnl' hbody ihdefn ihbody =>
+      simp only [Tree.Node.noLet] at hnl
   | int => simp only [Ty.subst]; exact HasType.int
   | str => simp only [Ty.subst]; exact HasType.str
   | bin => simp only [Ty.subst]; exact HasType.bin
@@ -95,7 +100,7 @@ theorem hasType_subst {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} (σ : Nat → Ty
               (Ty.subst σ ret) := by
         simp [handleTy, handlerTy, execTy, kontTy, Ty.subst]
       rw [heq]; exact HasType.handle
-  | conv _ hτ hε ih => exact HasType.conv ih (Ty.subst_tyEquiv σ hτ) (Ty.subst_tyEquiv σ hε)
+  | conv _ hτ hε ih => exact HasType.conv (ih hnl) (Ty.subst_tyEquiv σ hτ) (Ty.subst_tyEquiv σ hε)
 
 /-! ## Value-level substitution for `gen`-eligible values
 
@@ -112,21 +117,6 @@ values — those forms are excluded), so the unsound `record`(non-empty)/`tagged
 `listCons`/applied-partial cases need not appear; they are ruled out by the
 `closureCtxFixed` discipline at the use site rather than a syntactic predicate. The
 closure case takes its context-fixing hypothesis `hclo`. -/
-
-/-- Value-substitution for a **closure** whose captured context `σ` fixes. The
-heart of `gen` soundness: re-type the closure at the substituted arrow, reusing the
-term-level `hasType_subst` for the body and the unchanged `EnvWf` for the env. -/
-theorem hasTypeV_subst_closure {x : String} {body : Tree.Node m} {env : Env m} {τ : Ty}
-    (σ : Nat → Ty) (h : HasTypeV (.Closure x body env) τ)
-    (hclo : ∀ Γc, EnvWf env Γc → substCtx σ Γc = Γc) :
-    HasTypeV (.Closure x body env) (Ty.subst σ τ) := by
-  cases h with
-  | closure henv hbody he =>
-      have hfix := hclo _ henv
-      refine HasTypeV.closure henv ?_ (Ty.subst_tyEquiv σ he)
-      have hb := hasType_subst σ hbody
-      rw [substCtx_cons, Scheme.substScheme_mono, hfix] at hb
-      exact hb
 
 /-! ## Typing a syntactic-value's evaluation result under a known context
 
@@ -153,10 +143,10 @@ theorem closure_typed_of_lambda {Γ : Ctx} {x : String} {body : Tree.Node m} {a 
 substituted type — the per-`args` obligation behind `EnvWf.cons` for a generalized
 binding, proved via `hasType_subst` (no value substitution lemma needed). -/
 theorem closure_typed_of_lambda_subst {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
-    {env : Env m} {τ ε : Ty} (σ : Nat → Ty) (hfix : substCtx σ Γ = Γ)
+    {env : Env m} {τ ε : Ty} (σ : Nat → Ty) (hfix : substCtx σ Γ = Γ) (hnl : Tree.Node.noLet body)
     (henv : EnvWf env Γ) (h : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) :
     HasTypeV (.Closure x body env) (Ty.subst σ τ) := by
-  have h' := hasType_subst σ h
+  have h' := hasType_subst σ h (by simp only [Tree.Node.noLet]; exact hnl)
   rw [hfix] at h'
   exact closure_typed_of_lambda henv h'
 

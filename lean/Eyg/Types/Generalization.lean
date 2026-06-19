@@ -135,13 +135,14 @@ existential captured context. -/
 theorem generalizes_closure_ready {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
     {env : Env m} {defnTy ε : Ty} {s : Scheme}
     (hgen : Generalizes s Γ defnTy)
+    (hnl : Tree.Node.noLet body)
     (henv : EnvWf env Γ)
     (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
     ∀ args, HasTypeV (Value.Closure x body env) (s.instantiate args) := by
   intro args
   obtain ⟨σ, heq, hfix⟩ := hgen args
   rw [heq]
-  exact closure_typed_of_lambda_subst σ hfix henv hlam
+  exact closure_typed_of_lambda_subst σ hfix hnl henv hlam
 
 /-! ## Level-indexed generalization `GeneralizesAt` (the substitution-stable redesign, T6 gen)
 
@@ -189,16 +190,6 @@ quantifier prefix `0 … arity-1` (via `v ↦ v - n`), and the ambient variables
 prefix (`v ↦ v + arity`) so instantiation shifts them back down. -/
 
 namespace Ty
-
-/-- Generalization **arity** at level `n`: one quantifier slot per generalized variable (`≥ n`) of
-`d`, sized so every such variable fits (`v - n < genArity` for `v ≥ n` free in `d`). Closed-below-`n`
-types get arity `0` (monomorphic). -/
-def genArity (n : Nat) (d : Ty) : Nat := (d.freeVars.map (fun v => v + 1 - n)).foldr Nat.max 0
-
-/-- The re-indexing turning `d` into a level-`n` scheme body with `arity` quantifiers: ambient vars
-(`< n`) shift up past the prefix; generalized vars (`≥ n`) become quantifier `v - n`. -/
-def reindexGen (n arity : Nat) : Nat → Ty :=
-  fun v => if v < n then .var (v + arity) else .var (v - n)
 
 /-- An element of a `Nat` list is `≤` its `foldr max 0`. -/
 theorem mem_le_foldr_max {x : Nat} {l : List Nat} (h : x ∈ l) :
@@ -264,12 +255,6 @@ theorem genArity_spec {n v : Nat} {d : Ty} (hv : v ∈ d.freeVars) (hn : n ≤ v
 
 end Ty
 
-/-- The computed generalization of `d` at level `n`: quantify the generalized (`≥ n`) variables. -/
-def Scheme.genAt (n : Nat) (d : Ty) : Scheme :=
-  ⟨d.genArity n, Ty.subst (Ty.reindexGen n (d.genArity n)) d⟩
-
-@[simp] theorem Scheme.genAt_arity (n : Nat) (d : Ty) : (genAt n d).arity = d.genArity n := rfl
-
 /-- Componentwise scheme equality (the `body` field is non-dependent). -/
 theorem Scheme.ext' {s t : Scheme} (ha : s.arity = t.arity) (hb : s.body = t.body) : s = t := by
   cases s; cases t; cases ha; cases hb; rfl
@@ -308,10 +293,11 @@ point, and carries across the lambda→closure step (the coupling design's `Stac
 theorem genAt_closure_ready {n : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
     {env : Env m} {defnTy ε : Ty}
     (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ)
+    (hnl : Tree.Node.noLet body)
     (henv : EnvWf env Γ)
     (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
     ∀ args, HasTypeV (Value.Closure x body env) ((Scheme.genAt n defnTy).instantiate args) :=
-  generalizes_closure_ready (genAt_generalizes hΓ) henv hlam
+  generalizes_closure_ready (genAt_generalizes hΓ) hnl henv hlam
 
 /-- **Generalization arity is stable under a level map.** A level map fixes the generalized region
 `[n,∞)` and keeps the ambient region within `[0,n)` (weight `0`), so the weighted max defining the
@@ -412,12 +398,6 @@ theorem mem_freeVars_shift {k i : Nat} {t : Ty} :
 
 end Ty
 
-/-- The **ambient** free variables of a scheme `⟨arity, body⟩`: the body variables sitting *above* the
-quantifier prefix (`≥ arity`), shifted down by `arity` (matching `instantiate`/`substScheme`, which map
-an ambient body-index `i ≥ arity` to the ambient variable `i - arity`). -/
-def Scheme.freeVars (s : Scheme) : List Nat :=
-  (s.body.freeVars.filter (fun j => decide (s.arity ≤ j))).map (· - s.arity)
-
 /-- Membership in a scheme's ambient free variables: `m` is ambient-free iff `m + arity` is a body
 free variable. -/
 theorem Scheme.mem_freeVars {s : Scheme} {m : Nat} :
@@ -466,11 +446,6 @@ theorem Scheme.mem_freeVars_substScheme {σ : Nat → Ty} {s : Scheme} {m : Nat}
     refine ⟨p + s.arity, hbody, ?_⟩
     rw [if_neg (by omega : ¬ p + s.arity < s.arity), Nat.add_sub_cancel, Ty.mem_freeVars_shift]
     exact ⟨m, hmem, by omega⟩
-
-/-- **Context below level `n`**: every ambient free variable of every binding's scheme is `< n`. The
-side-invariant `hasType_subst`'s `let_poly` arm threads (`CtxWf n Γ`), kept off the preservation
-engines (see the WfBelow decision note). -/
-def CtxWf (n : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ i ∈ Scheme.freeVars b.2, i < n
 
 /-- **`CtxWf` is monotone in the level.** A context below `n` is below any `n' ≥ n`. Pairs with
 `Ty.LevelMap.mono` for `hasType_subst`'s bump-at-binders: descending into a `lam`/`let` body raises the
