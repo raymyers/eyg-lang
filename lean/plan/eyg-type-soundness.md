@@ -810,6 +810,25 @@ for the **whole** core language.
       `hasType_subst`/`weakenEff`/both engines at once), so the `.lean` edits were reverted to keep the tree
       green; the WIP patch applies cleanly. Soundness touch points located: `weakenEff` (`:52`) +arm; the two
       `inv_let` consumers (`:204`,`:2728`) split on the disjunction.
+      **⚠ DESIGN-LEVEL FINDING — the readiness substitution is the INSTANTIATION, not a `LevelMap`**
+      (2026-06-18, `progress/2026-06-18-T6-let_poly-instantiation-levelmap-gap.md`). Wiring the keystone
+      revealed that `generalizesAt_subst`/`genAt_substScheme` (built for *ambient* level-map substitutions)
+      do **not** serve the readiness keystone: it re-types the generalized lambda **body** under the
+      **instantiation** witness `σ_args`, which maps `v ≥ n+arity ↦ var (v−n−arity)` (a down-shift) and so is
+      **not a `LevelMap`** — yet with `let_poly` present `hasType_subst` for arbitrary `σ` is false
+      (`generalizes_subst_false`). A `LevelMap` witness `σ'` (identity above `n+arity`, valid since
+      `FV(defnTy) ⊆ [0,n+arity)`) exists **only when the instantiation `args` are low** (`FV ⊆ [0,n+arity)`),
+      which fails for the common `\y. id y` (polymorphic use at a locally-bound type). **Decisive split:** a
+      generalized lambda body with **no nested `let_poly`** re-types under *arbitrary* `σ` via the existing
+      arms (no `LevelMap`, no gap) — covering `\x.x`, `\x.\y.x`, … i.e. **all practical rank-1
+      polymorphism**; only **nested** let-generalization is hard (high-`args` × nested-generalized
+      interplay). **Revised plan:** ship a **restricted `let_poly`** (forbid nested let-generalization in the
+      generalized body, via a syntactic `NoLet`-body premise or a light `ProgWf` invariant) using the
+      *original arbitrary-`σ`* `hasType_subst` with a **vacuous** `let_poly` arm — this needs none of the
+      `LevelMap`/`generalizesAt_subst` machinery and unblocks the `StackWfV` engine coupling. **Defer** full
+      nested `let_poly` (needs readiness *without* re-substituting the body under instantiation — scheme-typed
+      closures / lazy instantiation; the `LevelMap` route does **not** close it). The `LevelMap.mono`/`CtxWf`/
+      `genAt_substScheme` infra stays committed-green for that future full version.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
