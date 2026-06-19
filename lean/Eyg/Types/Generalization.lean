@@ -274,6 +274,15 @@ theorem genAt_generalizesAt (n : Nat) (d : Ty) : GeneralizesAt n (Scheme.genAt n
     rw [if_neg (by omega)]
     congr 1; omega
 
+/-- **The computed `genAt` feeds the existing keystone.** For a context below level `n`, the computed
+generalization satisfies the declarative `Generalizes` that `generalizes_closure_ready` consumes — so
+the `let_poly` rule can store `genAt n defnTy` and discharge the `EnvWf.cons` readiness clause through
+the unchanged keystone. The rule-facing connective for the threading session. -/
+theorem genAt_generalizes {n : Nat} {Γ : Ctx} {d : Ty}
+    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ) :
+    Generalizes (Scheme.genAt n d) Γ d :=
+  generalizesAt_to_generalizes hΓ (genAt_generalizesAt n d)
+
 /-- **Generalization arity is stable under a level map.** A level map fixes the generalized region
 `[n,∞)` and keeps the ambient region within `[0,n)` (weight `0`), so the weighted max defining the
 arity is unchanged. The arity-equality half of the commutation `genAt_substScheme`. -/
