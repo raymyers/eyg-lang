@@ -155,6 +155,42 @@ index 5a3f8e08..c4dee740 100644
    | int => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))
    | str => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)))))
    | bin => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl⟩))))))
+diff --git a/lean/Eyg/Types/Machine.lean b/lean/Eyg/Types/Machine.lean
+index ce1b3b70..5ba42e08 100644
+--- a/lean/Eyg/Types/Machine.lean
++++ b/lean/Eyg/Types/Machine.lean
+@@ -44,9 +44,9 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
+       StackWf ((Kontinue.Trace w, a) :: rest) τin ε τout
+   /-- `Assign` (the `let` continuation): the incoming value is the definition; the
+   body is run in the captured env extended with it. -/
+-  | assign {a x body fenv Γ defnTy bodyTy ε τout rest} :
++  | assign {a x body fenv Γ s defnTy bodyTy ε τout rest} :
+       EnvWf fenv Γ →
+-      HasType ((x, .mono defnTy) :: Γ) body bodyTy ε →
++      HasType ((x, s) :: Γ) body bodyTy ε →
+       StackWf rest bodyTy ε τout →
+       StackWf ((Kontinue.Assign x body fenv, a) :: rest) defnTy ε τout
+   /-- `Arg`: the incoming value is the *function* `argTy →⟨εf⟩ retTy`; the stored
+@@ -155,14 +155,14 @@ theorem stackWf_trace_inv {m : Type} {w : Value m} {a : m} {rest : Stack m} {σ
+ theorem stackWf_assign_inv {m : Type} {x : String} {body : Tree.Node m} {fenv : Env m}
+     {a : m} {rest : Stack m} {σ ε τ : Ty}
+     (h : StackWf ((Kontinue.Assign x body fenv, a) :: rest) σ ε τ) :
+-    ∃ Γ defnTy bodyTy ε0, Ty.TyEquiv σ defnTy ∧ Ty.TyEquiv ε ε0 ∧ EnvWf fenv Γ ∧
+-      HasType ((x, .mono defnTy) :: Γ) body bodyTy ε0 ∧ StackWf rest bodyTy ε0 τ := by
++    ∃ Γ sc defnTy bodyTy ε0, Ty.TyEquiv σ defnTy ∧ Ty.TyEquiv ε ε0 ∧ EnvWf fenv Γ ∧
++      HasType ((x, sc) :: Γ) body bodyTy ε0 ∧ StackWf rest bodyTy ε0 τ := by
+   generalize hs : ((Kontinue.Assign x body fenv, a) :: rest) = s at h
+   induction h with
+-  | assign henv hbody hrest => cases hs; exact ⟨_, _, _, _, .refl _, .refl _, henv, hbody, hrest⟩
++  | assign henv hbody hrest => cases hs; exact ⟨_, _, _, _, _, .refl _, .refl _, henv, hbody, hrest⟩
+   | conv _ hσ hε ih =>
+-      obtain ⟨Γ, dT, bT, ε0, hσ', hε', henv, hbody, hrest⟩ := ih hs
+-      exact ⟨Γ, dT, bT, ε0, hσ.symm.trans hσ', hε.symm.trans hε', henv, hbody, hrest⟩
++      obtain ⟨Γ, sc, dT, bT, ε0, hσ', hε', henv, hbody, hrest⟩ := ih hs
++      exact ⟨Γ, sc, dT, bT, ε0, hσ.symm.trans hσ', hε.symm.trans hε', henv, hbody, hrest⟩
+   | _ => simp at hs
+ 
+ theorem stackWf_arg_inv {m : Type} {arg : Tree.Node m} {fenv : Env m} {a : m}
 diff --git a/lean/Eyg/Types/Scheme.lean b/lean/Eyg/Types/Scheme.lean
 index 5d5032bf..d134f1ab 100644
 --- a/lean/Eyg/Types/Scheme.lean
