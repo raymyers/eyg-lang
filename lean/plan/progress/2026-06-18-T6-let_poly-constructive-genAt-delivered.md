@@ -51,6 +51,13 @@ The substitution-stability core (`Generalization.lean`):
   one line from the commutation + `genAt_generalizesAt`. **This is the substitution-stability the
   `hasType_subst` `let_poly` arm needs** (with the rule's scheme pinned to `genAt`).
 
+Rule-facing bridges into the existing keystone (so the threading session has the connectives ready):
+- **`genAt_generalizes`** — `genAt n d` satisfies the declarative `Generalizes` that
+  `generalizes_closure_ready` consumes (for a context below level `n`).
+- **`genAt_closure_ready`** — push-time polymorphic readiness: the let-bound lambda's closure inhabits
+  **every** instantiation of `genAt n defnTy`. This is exactly the closed `Rdy` the `Assign`-push
+  computes once and the coupling design's `StackWfV` carries to the pop.
+
 Axioms: `propext`/`Quot.sound` only (no `Classical.choice`, no `sorry`, no new `axiom`s).
 `lake build` 1772 + `lake exe spec` 104/104.
 

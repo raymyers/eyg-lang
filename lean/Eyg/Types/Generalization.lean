@@ -283,6 +283,19 @@ theorem genAt_generalizes {n : Nat} {Γ : Ctx} {d : Ty}
     Generalizes (Scheme.genAt n d) Γ d :=
   generalizesAt_to_generalizes hΓ (genAt_generalizesAt n d)
 
+/-- **Push-time polymorphic readiness for a `genAt`-generalized `let`.** Combines the rule-facing
+bridge `genAt_generalizes` with the keystone `generalizes_closure_ready`: a let-bound lambda's runtime
+closure inhabits **every** instantiation of its computed scheme `genAt n defnTy` (for a context below
+level `n`). This is the closed readiness `Rdy` the `Assign`-push computes once, at the one coherent
+point, and carries across the lambda→closure step (the coupling design's `StackWfV`). -/
+theorem genAt_closure_ready {n : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
+    {env : Env m} {defnTy ε : Ty}
+    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ)
+    (henv : EnvWf env Γ)
+    (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
+    ∀ args, HasTypeV (Value.Closure x body env) ((Scheme.genAt n defnTy).instantiate args) :=
+  generalizes_closure_ready (genAt_generalizes hΓ) henv hlam
+
 /-- **Generalization arity is stable under a level map.** A level map fixes the generalized region
 `[n,∞)` and keeps the ambient region within `[0,n)` (weight `0`), so the weighted max defining the
 arity is unchanged. The arity-equality half of the commutation `genAt_substScheme`. -/
