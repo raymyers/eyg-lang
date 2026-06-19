@@ -54,3 +54,26 @@ from `val : defnTy`. So the closed `Rdy` (from `genAt_closure_ready` at the push
 This is the Handle-sized engineering piece (no green intermediate — the constructor breaks both engines at
 once). The design is fully settled and the keystone it depends on is green; it is pure mechanical coupling.
 Tree green at HEAD (`.lean` working changes stashed into the patch).
+
+## ⚠ `StackWfV` design refinement — the forgetful-map soundness point (resolved)
+
+Working the `StackWfV`↔`StackWf` relationship surfaced a subtlety worth pinning before the grind:
+
+- **`StackWf.assign` must store a *scheme* `s`** (mono = `.mono defnTy`), as the forgetful target of
+  `StackWfV.assign`. It is the **structural** (weaker) claim — it does **not** assert the incoming value is
+  ready for `s`. (A poly→mono fold is *unsound*: scheme-binding specialization `body:(x,s) ⊢ → body:(x,.mono (s.inst args))` is **false** — the body may use `x` at other instances. So the forgetful map must keep the scheme, not specialize it.)
+- **`StackWfV.assign` adds the value-specific readiness** `∀ args, HasTypeV v (s.instantiate args)`. This is
+  the only sound carrier of the binding obligation (it is exactly the false-for-generic-`v` value-subst
+  lemma, true only for the specific closure).
+- **Consequence:** `MStateWf`'s value case must use **`StackWfV` consistently** (every `.V`-state along the
+  run). The structural `StackWf.assign` alone is **insufficient for no-crash soundness** — an Assign-pop
+  with an un-ready value can bad-crash when the body instantiates `x`. So the soundness fold carries
+  `StackWfV` at each value state; `stackWfV_toStackWf` (drop the readiness → structural `StackWf.assign`) is
+  used only in the answer-type/segment composition where no pop-binding happens.
+
+So the grind is: (1) `StackWf.assign` store `s` (+ inversion + the 2 construction sites + `stackSeg`
+arm); (2) `StackWfV` inductive (8 frames; only `assign` carries readiness, `trace` recurses, others mirror
+`StackWf`) + `stackWfV_toStackWf` + inversions; (3) `MStateWf` value case → `StackWfV`, with the E-control
+case carrying `Rdy` about the future closure (computed at the push via `genAt_closure_ready`, where
+`env = fenv`, the one coherent point) across the lambda→closure step; (4) re-green preservation_E/V/progress
++ the `MStateWfB`/`StackWfB` mirror. Coherent, large, no green intermediate.
