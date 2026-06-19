@@ -68,9 +68,23 @@ level and the ambient-into-ambient condition is available at each binder.
    *well-formedness* relation `CtxWf n Γ` + `TyWf n τ` consumed only where generalization/substitution
    happen — **less invasive**; evaluate first. The minimal-blast-radius choice is the key design call.
 2. **`GeneralizesAt`** + its substitution-stability lemma (level map `σ`: `∀i≥n, σ i = var i` and
-   `∀i<n, FV(σ i) ⊆ [0,n)`) → `GeneralizesAt n (substScheme σ s) (subst σ d)`. Uses `subst_instantiate'`
-   (already proven). This is the standalone technical heart; **provable in isolation** (attempt it
-   first as a green foundation), modulo the ∀-args quantifier bookkeeping.
+   `∀i<n, FV(σ i) ⊆ [0,n)`) → `GeneralizesAt n (substScheme σ s) (subst σ d)`.
+   **DELIVERED (partial):** `GeneralizesAt`, the bridge `generalizesAt_to_generalizes` (slots into the
+   keystone when `Γ` is below level `n`), and `generalizesAt_mono` are landed green
+   (`Generalization.lean`). **⚠ The substitution-stability theorem `generalizesAt_subst` itself
+   resisted a direct proof** — finding (this session): for the **declarative** `GeneralizesAt` (`∃σ'`),
+   an *arbitrary* instantiation `args'` of the substituted scheme does **not** reduce through
+   `subst_instantiate'` (which only relates `(substScheme σ s).instantiate` at **σ-image** args
+   `instArgs σ s a`, not all `args'`), and `s.body`/`d` are tied only *through* substitutions (the `∃σ'`
+   gives no structural `s.body = …d…` handle). Unrolling gives `(substScheme σ s).instantiate args' =
+   subst φ s.body` with `φ i = (i<arity ? args'.getD i : σ(i-arity))`, but matching this to
+   `subst σ'' (subst σ d)` needs a correspondence between the scheme's quantifier indices and `d`'s
+   `≥n` variables that the declarative `∃` does not expose. **Design fork for the dedicated session:**
+   reformulate `GeneralizesAt` **constructively** — `s = gen_n d` (computed generalization at level `n`,
+   re-indexing `d`'s `≥n` vars to the quantifier prefix via `shift`) — so the quantifier↔variable
+   correspondence is definitional and `generalizesAt_subst` becomes a `subst_instantiate'`-style
+   commutation. (The keystone/`generalizes_closure_ready` only consume the *declarative* `Generalizes`
+   via the bridge, so a constructive `GeneralizesAt` still feeds it.)
 3. **`hasType_subst`** re-stated with the level-map premise; its `let_poly` arm discharges via (2).
    Re-green its existing callers (they pass level maps — verify the keystone's `σ` qualifies).
 4. The `let_poly` machine coupling from `2026-06-18-T6-let_poly-coupling-design-sharpened.md`

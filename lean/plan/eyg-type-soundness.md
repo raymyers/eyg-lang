@@ -740,10 +740,14 @@ for the **whole** core language.
       level must be threaded *structurally* (bumped at each binder) and `hasType_subst` re-levelled as it
       descends, with the ambient-into-ambient condition `∀i<n, FV(σ i) ⊆ [0,n)`. Scoped milestone:
       (1) the minimal-blast-radius call — full `HasTypeAt n` vs. a `WfBelow n` side-invariant;
-      (2) `generalizesAt_subst` (standalone green foundation, uses `subst_instantiate'`; the ∀-args
-      scheme-algebra is the involved part); (3) re-state `hasType_subst` with the level-map premise;
+      (2) `generalizesAt_subst`; (3) re-state `hasType_subst` with the level-map premise;
       (4) the unchanged machine coupling. Items 1–3 are the genuine multi-session structural
-      prerequisite. Tree green: `lake build` 1772 + spec 104/104.
+      prerequisite. **`GeneralizesAt` + the bridge `generalizesAt_to_generalizes` + `generalizesAt_mono`
+      DELIVERED green** (`Eyg/Types/Generalization.lean`); **`generalizesAt_subst` resisted a direct
+      proof** — finding: the *declarative* `∃σ'` form does not reduce arbitrary substituted-scheme
+      instantiations through `subst_instantiate'`, so it likely needs a **constructive** `GeneralizesAt`
+      (`s = gen_n d`, computed generalization) — a design fork recorded in the redesign note. Tree green:
+      `lake build` 1772 + spec 104/104.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
