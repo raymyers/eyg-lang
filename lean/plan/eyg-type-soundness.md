@@ -732,6 +732,18 @@ for the **whole** core language.
       false — so the declarative-keystone route's insufficiency is a *theorem*, not a hand-argument.
       (This sharpens the optimism of `progress/2026-06-18-T6-gen-declarative-keystone.md`: the keystone
       does **not** sidestep the freshness blocker — the blocker re-emerges at `hasType_subst`.)
+      **⚙ RESOLUTION DESIGNED** (`progress/2026-06-18-T6-let_poly-level-redesign-design.md`): the
+      de-Bruijn-**level** redesign — a level-indexed `GeneralizesAt n s d` (generalized vars `≥ n`,
+      witnessing `σ'` fixes `[0,n)`) that *is* substitution-stable for level-map `σ`. The note pins the
+      **non-obvious crux** a naive "add a level" attempt misses: **nested `let_poly` at deeper levels**
+      `n' > n` — the keystone's instantiation `σ'` fixes `[0,n)` but acts on `[n,∞) ⊇ [n',∞)`, so the
+      level must be threaded *structurally* (bumped at each binder) and `hasType_subst` re-levelled as it
+      descends, with the ambient-into-ambient condition `∀i<n, FV(σ i) ⊆ [0,n)`. Scoped milestone:
+      (1) the minimal-blast-radius call — full `HasTypeAt n` vs. a `WfBelow n` side-invariant;
+      (2) `generalizesAt_subst` (standalone green foundation, uses `subst_instantiate'`; the ∀-args
+      scheme-algebra is the involved part); (3) re-state `hasType_subst` with the level-map premise;
+      (4) the unchanged machine coupling. Items 1–3 are the genuine multi-session structural
+      prerequisite. Tree green: `lake build` 1772 + spec 104/104.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the
