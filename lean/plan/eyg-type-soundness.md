@@ -705,7 +705,14 @@ for the **whole** core language.
       `subst σ t = t → ∀ i ∈ freeVars t, σ i = .var i`) and **`Ty.freeVars_tyEquiv`** (`TyEquiv`
       preserves the free-var set). `lake build` 1772 + spec 104/104. The constructor/cascade probe
       itself was reverted (the full slice is all-or-nothing through the two-engine `Soundness.lean`);
-      these two lemmas are the kept increment.
+      these two lemmas are the kept increment. **`generalizes_ctxConv` also DELIVERED**
+      (`Eyg/Types/Generalization.lean`, + `substCtx_eq_self_iff`): `TyEquiv σ' σ → Generalizes s
+      (Δ++(x,.mono σ)::Γ) d → Generalizes s (Δ++(x,.mono σ')::Γ) d` — the typing-layer obstacle the
+      probe found, now fully pre-cleared in the exact shape the `hasType_ctxConv` `let_poly` arm
+      consumes. **All standalone-green increments for `let_poly` are now landed**; the remaining work
+      (the `HasType.let_poly` constructor + value-aware `StackWfV` + generalized `StackWf.assign` +
+      both preservation engines) has no committable sub-increment and is the dedicated implementation
+      session.
 - [~] **Builtin-saturation typing.** ⚙ **Per-builtin `Builtin.run` typing DELIVERED**
       (T6a, `Eyg/Types/Soundness.lean`) — *independent of the `Handle` blocker, and
       confirmed mechanical*. Every builtin in the analyzer scheme table **except the

@@ -189,11 +189,13 @@ helper is required. It IS provable, resting on two lemmas — both now **DELIVER
   variables). ✅
 
 Both compile (`lake build` 1772 + spec unaffected; pure structural inductions, axioms inherited).
-The remaining `generalizes_ctxConv` helper follows mechanically: from `substCtx σg Γ₁ = Γ₁`
-extract (via A) that `σg` fixes `freeVars σ` pointwise; by (B) it fixes `freeVars σ'`; by
-`subst_eq_of_fixes_free` (⟸) `subst σg σ' = σ'`, so `σg` fixes the rewritten context too. (It is
-*not* landed yet because its exact `(Δ,Γ,x,σ,σ')` shape will be fixed by the `hasType_ctxConv`
-`let_poly` arm during implementation.)
+
+**`generalizes_ctxConv` now also DELIVERED green** (`Generalization.lean`, + helper
+`substCtx_eq_self_iff`): `TyEquiv σ' σ → Generalizes s (Δ++(x,.mono σ)::Γ) d → Generalizes s
+(Δ++(x,.mono σ')::Γ) d`, in the exact `(Δ,Γ,x,σ,σ')` shape `hasType_ctxConv`'s `let_poly` arm
+will consume. Proof: from `substCtx σg Γ₁ = Γ₁` extract (A) `σg` fixes `freeVars σ` pointwise; by
+(B) it fixes `freeVars σ'`; by `subst_eq_of_fixes_free` (⟸) `subst σg σ' = σ'`. So the
+typing-layer obstacle is fully pre-cleared before the cascade.
 
 **Scope impact:** confirms `let_poly` needs *new free-var metatheory* on top of the machine
 coupling — so even the typing-layer cascade (before any `Soundness.lean` work) is non-trivial. The
@@ -207,6 +209,18 @@ both preservation engines, and the new constructor forces B-world arms. The *sem
 one-liner (the keystone at the push), but the *machine coupling* — carrying a closed `Rdy` + the
 `val = w` equality across the lambda-step in a value-aware stack predicate — is the genuine work,
 ≈ comparable to the `Handle`/`StackSegWf` slice.
+
+## Standalone increments landed; remainder is the coupled cascade
+
+Everything that can be made green *without* the all-or-nothing constructor/`StackWfV` cascade is
+now landed and committed: the sharpened design, the import resolution, and the three new lemmas
+(`fixes_free_of_subst_eq`, `freeVars_tyEquiv`, `generalizes_ctxConv` + `substCtx_eq_self_iff`).
+The remaining `let_poly` work — the `HasType.let_poly` constructor, the value-aware `StackWfV`,
+the generalized `StackWf.assign`, and the re-greening of **both** preservation engines — has **no
+standalone green increment** (adding the constructor or generalizing `assign` breaks every
+induction/inversion across `Typing`/`Generation`/`Substitution`/`Machine`/`Soundness` and the
+B-engine at once, so it is committable only when the whole slice is green). That is the dedicated
+implementation session; the typing-layer obstacles it would hit are now pre-cleared.
 
 ## Status this session
 - Sharpened the design: readiness is computed **at the push** (the only context-coherent point);
