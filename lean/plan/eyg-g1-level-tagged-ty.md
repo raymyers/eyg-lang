@@ -257,6 +257,41 @@ the datatype change itself.
       `sorry`. Purely additive (`HasType`, `HasTypeAt`, `Runtime.lean`, `Soundness.lean` untouched).
       **Only obstruction (B) remains for the value-typing keystone**: `HasTypeVAt`/`EnvWfAt` (or Phase 4's
       `noLambdaLet` drop) to turn this term-level re-typing into `HasTypeV (Value.Closure …)`.
+      **Progress 2026-07-08 (seventh follow-up session — obstruction (B) RESOLVED, the value-side keystone
+      landed; Caveat 5's soundness gap closed both term- and value-side), see
+      `progress/2026-07-08-G1-phase3b-HasTypeVAt-value-keystone-landed.md`:** one green additive commit in
+      a new file `Eyg/Types/RuntimeAtV.lean` — obstruction (B) is closed. (1) **`HasTypeVAt lvl v τ`** —
+      the level-native value-typing sibling of `HasTypeV`, whose `closure` constructor consumes a
+      **level-native `HasTypeAtV lvl Γ ⟨.Lambda x body, a⟩ τ ε`** lambda derivation (which exists for
+      arbitrarily nested generalization, no `noLambdaLet`) instead of the `noLambdaLet`-restricted
+      magnitude `HasType` body derivation `HasTypeV.closure` demands; base literals thread `Ty.TyEquiv`
+      unchanged; `HasTypeVAt.conv` derived. (2) **`EnvWfAt env Γ`** — the level-native `EnvWf` sibling,
+      its `cons` readiness stated over `HasTypeVAt s.level`/`Scheme.instantiateV` at the scheme's own
+      generalization level, with the natural instantiation-args side-condition `∀ t ∈ args, ∀ l ∈
+      t.levels, l ≤ s.level` (the value-side of `hasTypeAtV_substAt`'s `hσ` bound). (3) **The value-level
+      keystone `genAtV_closure_ready_value`** — the level-native `generalizes_closure_ready`: composes
+      `genAtV_instantiate_lam_ready` (term level) with `HasTypeVAt.closure` to prove a let-bound lambda's
+      runtime closure inhabits **every** (well-formed) instantiation of `genAtV ℓ defnTy` — exactly the
+      `EnvWfAt.cons` obligation, discharged with **no `noLambdaLet`** on the closure body. (4) **The
+      nested demonstration** — reusing `hInnerV`/`hOuterV_instantiate`, builds the *actual runtime
+      closure* `Value.Closure "x" outerBody []` for the outer lambda `\x. (let inner = \y.y in inner x)`
+      and shows it `HasTypeVAt`-typed at `Integer → Integer` (via both the keystone `hOuterVClosure_ready`
+      /`hOuterVClosure_typed_integer_arrow` and the plain constructor `hOuterVClosure_via_constructor`) —
+      the whole chain `term derivation → closure value → typed-at-every-instantiation` genuinely closing
+      for the doubly-nested Caveat-5 case the original `HasType`/`HasTypeV`/`generalizes_closure_ready`
+      chain reaches only vacuously. `lake build` 1777 jobs, spec 104/104 on all three lines, axioms
+      `[propext, Classical.choice, Quot.sound]` (soundness, soundness_evalR, and the new theorems), no
+      `sorry`. Purely additive (`HasType`, `HasTypeV`, `EnvWf`, `Runtime.lean`, `Soundness.lean`, every
+      prior declaration untouched; only edits outside the new file are the `import` in `Eyg.lean` and this
+      note). **This is the complete mathematical resolution of Caveat 5's soundness gap — both the
+      term-typing and value-typing sides of nested let-polymorphism, all the way down to a concrete
+      runtime closure.** Remaining for Phases 4–7: fold this back into `Typing.lean`/`Machine`/`Runtime`/
+      `Soundness.lean` by actually dropping `noLambdaLet` from `HasType.let_poly` and re-greening the
+      soundness proof over the level-native judgments — engineering, not open mathematics. The
+      value-side `HasTypeVAt` deliberately mirrors only the generalization-bearing shapes (base literals +
+      the crux `closure`); the runtime-continuation / partial value constructors (`partialBuiltin`,
+      `partialResume`, data/partials) carry zero generalization content and are mechanical
+      `HasTypeV → HasTypeVAt lvl` transliterations left for the Phase-5 `Machine`/`Runtime` re-green.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
