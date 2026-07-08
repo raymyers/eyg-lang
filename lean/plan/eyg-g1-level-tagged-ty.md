@@ -73,9 +73,22 @@ that and is where a constructor-arity change costs the most just from re-elabora
       re-level problem that blocked the untagged system doesn't arise because
       `genAt`/`substAt` never inspect index magnitude, only the level tag.
       **Checkpoint passed — proceeding to Phase 3.**
-- [ ] **Phase 3 — `level = 0` collapse lemma.** The tagged system restricted to one level
-      agrees with the current untagged system. This is what lets the existing fixture suite
-      and every non-`let_poly` typing rule port by rewrite instead of re-proof.
+- [x] **Phase 3a — port the level tag onto the real `Ty`, collapsed to level `0`.** DONE
+      (2026-07-08, commit `8108591a`): `Ty.var(idx)` → `Ty.var(level, idx)`; every
+      pre-existing use pinned to level `0` (pure representation change, zero semantic
+      change). `lake build` 1774, spec 104/104, axioms unchanged. See
+      `progress/2026-07-08-G1-phase3a-done-phase3b-scoped.md`.
+- [ ] **Phase 3b — make `Scheme`/`genAt`/`instantiate` level-native.** Give `Scheme` a
+      `level` field; `genAt`/`instantiate`/`substScheme` become level-tag-based (no
+      reindexing). **Attempted 2026-07-08, not landed — found a real subtlety, fully
+      scoped in the progress note above:** `hasType_subst` must become
+      level-parameterized (not hardcoded to level `0`) throughout its whole induction,
+      not just the `let_poly` arm; and `subst_instantiate`/`subst_instantiate'` (the
+      `var`/`builtin` rule arms) need a genuine side-condition on the ambient
+      substitution's range (distinct from — but analogous in spirit to — the old
+      `LevelMap`), unlike the *stored-scheme* commutation (`substScheme_genAt`-shape),
+      which the spike already confirmed is unconditional. Continuation spec with 7
+      concrete steps is in the progress note.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
