@@ -139,7 +139,48 @@ A session with Lean LSP tool access (interactive goal-state inspection, not just
 will move much faster through step 3's ~400-line `Generalization.lean` redesign than batch-feedback
 iteration would.
 
+## Update (same session): the level-native flip itself is now proven, not just hand-derived
+
+After writing the above, the two design corrections (findings 1 and 2) were applied and the
+level-native design was landed as an **additive prototype** — `Scheme.genAtV`/`instantiateV`/
+`substSchemeV` (the `V` suffix: "level-native **v**ariant"), coexisting with the still-magnitude-based
+`genAt`/`instantiate`/`substScheme` without touching any of their (or `Generalization.lean`'s) existing
+call sites.
+
+**`Scheme.subst_instantiateV`** (commit `3e25495c`) — the actual target: substitution commutes with
+level-native instantiation for a scheme generalized at any nonzero level `ℓ`, given `hclean` (`σ`'s
+range never mentions level `ℓ`). Proved directly from `substAt_substAt_comm` (the first commit's
+result) plus a short calculation on `List.getD`/`List.map` bounds-cases. This is genuinely the
+mathematical core `hasType_subst`'s `var`/`builtin` arms will need once `Typing.lean` is re-threaded —
+now proven on the real 12-former `Ty` and the real `Scheme` (with its `arity` field and mono
+short-circuit), not just the spike's 2-former toy model with no `arity` at all. Confirms both design
+corrections (findings 1–2 above) were exactly right: the proof goes through cleanly with the
+`arity = 0` short-circuit in `instantiateV` and without ever needing `substSchemeV`-after-`genAtV` to
+equal `genAtV` on the substituted body.
+
+**`CtxWfV`/`ctxWfV_cons`** (commit `58d22a0a`) — the freshness-threading discipline
+(`LevelTagSpike.lean`'s `CtxWf2`/`ctxWf2_cons`, plus its closing "feeds `hclean` at every deeper level"
+example) ported onto the real `Ctx`/`Scheme`, using the already-proven `Ty.clean_of_levels_lt`. This
+was the one piece of the spike not yet ported by the first commit — its port is now complete.
+
+### What's left to actually retire Phase 3b
+
+`subst_instantiateV` + `CtxWfV` are the two pieces `hasType_subst`'s `let_poly`/`var`/`builtin` arms
+need — but wiring them into the keystone (`generalizes_closure_ready`) requires a level-native
+`GeneralizesAtV` (mirroring `GeneralizesAt`/`genAt_generalizesAt`), and *that* keystone bottoms out in
+`closure_typed_of_lambda_subst` (`Substitution.lean`), which is built on `hasType_subst` — **still
+hardcoded to level `0`** (`Ty.subst`, not `Ty.substAt ℓ`) throughout its entire induction. So the
+remaining Phase 3b work is unavoidably: level-parameterize `hasType_subst` itself (`Ty.substAt ℓ`
+threaded through all ~15 rule cases in `Substitution.lean`, not just the `let_poly` arm — the finding
+from the prior progress note, unchanged). This is qualitatively different from everything landed this
+session (which was either purely additive or a short, mechanically-checkable calculation) — it's a
+large, live rewrite of an existing induction, best done with actual Lean LSP tool access (interactive
+goal-state inspection at each rule case) rather than batch `lake build` iteration, which is all this
+session had.
+
 ## Current state
 
-Tree is green at commit `53300a81`: `lake build` 1774, spec 104/104, axioms unchanged, no `sorry`
-anywhere. This note plus the plan update are the only changes on top of that commit.
+Tree is green at commit `58d22a0a`: `lake build` 1774, spec 104/104, axioms unchanged
+(`[propext, Classical.choice, Quot.sound]`), no `sorry` anywhere. Four commits this session
+(`ea64f73c`, `53300a81`, `3e25495c`, `58d22a0a`), each independently green. This note plus the plan
+update are the only further changes on top.
