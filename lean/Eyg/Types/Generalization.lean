@@ -486,6 +486,53 @@ theorem ctxWf_fixed {n : Nat} {Γ : Ctx} (hΓ : CtxWf n Γ)
   intro b hb
   exact Scheme.substScheme_eq_of_fixes_free (fun i hi => hfix i (hΓ b hb i hi))
 
+/-! ## The non-vacuous `let_poly` arm, isolated (G1 Phase 3b — the `hasType_subst` wall, machine-grounded)
+
+`hasType_subst`'s `let_poly` arm (`Substitution.lean:85`) is discharged only **vacuously** — the
+`noLambdaLet` hypothesis on the whole term collapses to `False` the moment the term binds a `Lambda`
+in a `let`. The two lemmas below establish, on the existing `HasType` judgment (no new judgment, fully
+proved), that the arm **can fire non-vacuously** under a level-map ambient substitution: the scheme-
+context obligation commutes (`substCtx_cons_genAt`) and the whole `let_poly` node reconstructs from
+substituted sub-derivations (`hasType_substLM_letPoly`). This turns the "the arm is vacuous" wall into
+a precise, checked statement of exactly what a full `hasType_substAt` still needs (see the progress
+note): a judgment tracking the *ambient* de-Bruijn level so that each stored generalization level
+`n` can be known `≥` it — the one hypothesis these lemmas take as given (`Ty.LevelMap n σ` at exactly
+the let's stored level) that a full induction cannot yet supply, because the current `HasType.let_poly`
+does not record the ambient level. -/
+
+/-- **The `let_poly` context obligation commutes with a level-map substitution.** Applying a
+`LevelMap n σ` to a context extended with the generalized binding `genAt n defnTy` equals extending
+the substituted context with the generalization of the *substituted* type — via `genAt_substScheme`.
+This is exactly the equation a `hasType_subst` body IH must match to reconstruct the `let_poly` node:
+the substituted body is typed under `substCtx σ ((x, genAt n defnTy) :: Γ)`, and this rewrites it into
+the `(x, genAt n (subst σ defnTy)) :: substCtx σ Γ` the reconstructed rule demands. -/
+theorem substCtx_cons_genAt {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ)
+    (x : String) (defnTy : Ty) (Γ : Ctx) :
+    substCtx σ ((x, Scheme.genAt n defnTy) :: Γ)
+      = (x, Scheme.genAt n (Ty.subst σ defnTy)) :: substCtx σ Γ := by
+  simp only [substCtx_cons, genAt_substScheme hσ]
+
+/-- **The `let_poly` arm of a level-parameterized `hasType_subst`, fired non-vacuously.** Given a
+`LevelMap n σ` at the let's stored generalization level `n`, a `CtxWf n Γ` (the level side-invariant
+the rule already stores), and the two sub-derivations a substitution induction would deliver — the
+definition re-typed at `subst σ defnTy` (`hdefn'`) and the body re-typed under the *substituted*
+generalized binding (`hbody'`, whose context is exactly `substCtx_cons_genAt`'s right-hand side) — the
+whole `Let` node reconstructs via `HasType.let_poly`. Unlike `hasType_subst`'s arm, `noLambdaLet` is
+required only on the inner lambda body `lbody` (the genuine restriction the rule always carries), *not*
+on the whole term: the term here binds a `Lambda` in a `let`, so the general `hasType_subst` cannot
+even reach it. `CtxWf n (substCtx σ Γ)` is re-established by `ctxWf_substCtx`. -/
+theorem hasType_substLM_letPoly {m : Type} {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ)
+    {Γ : Ctx} {x lx : String} {lbody body : Tree.Node m} {la a : m}
+    {defnTy bodyTy ε : Ty}
+    (hcw : CtxWf n Γ)
+    (hnl : Tree.Node.noLambdaLet lbody)
+    (hdefn' : HasType (substCtx σ Γ) ⟨.Lambda lx lbody, la⟩ (Ty.subst σ defnTy) (Ty.subst σ ε))
+    (hbody' : HasType ((x, Scheme.genAt n (Ty.subst σ defnTy)) :: substCtx σ Γ) body
+      (Ty.subst σ bodyTy) (Ty.subst σ ε)) :
+    HasType (substCtx σ Γ) ⟨.Let x ⟨.Lambda lx lbody, la⟩ body, a⟩
+      (Ty.subst σ bodyTy) (Ty.subst σ ε) :=
+  HasType.let_poly (n := n) hdefn' (ctxWf_substCtx hcw hσ) hnl hbody'
+
 /-! ## Level-native `CtxWfV` (Phase 3b prototype, not yet wired in)
 
 The level-tag analog of `CtxWf` above, bounding a context's bindings' `Ty.levels` instead of
