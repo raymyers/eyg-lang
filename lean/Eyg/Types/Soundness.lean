@@ -1956,8 +1956,8 @@ open Ty in
 /-- Enumerate the builtin scheme table: a scheme entry pins both the builtin name
 and its scheme. -/
 theorem scheme_cases {id : String} {s : Scheme} (h : Builtins.scheme id = some s) :
-    (id = "equal" ∧ s = ⟨1, pure2 (q 0) (q 0) boolean⟩) ∨
-    (id = "fix" ∧ s = ⟨4, .fun (.fun (.fun (q 0) (q 2) (q 3)) .empty (.fun (q 0) (q 2) (q 3)))
+    (id = "equal" ∧ s = ⟨1, 0, pure2 (q 0) (q 0) boolean⟩) ∨
+    (id = "fix" ∧ s = ⟨4, 0, .fun (.fun (.fun (q 0) (q 2) (q 3)) .empty (.fun (q 0) (q 2) (q 3)))
         .empty (.fun (q 0) (q 2) (q 3))⟩) ∨
     (id = "int_compare" ∧ s = .mono (pure2 integer integer Builtins.intCompareResult)) ∨
     (id = "int_add" ∧ s = .mono (pure2 integer integer integer)) ∨
@@ -2014,7 +2014,7 @@ theorem fixPreserves [BEq m] : FixPreserves m := by
       obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
       have harg' : HasTypeV arg a' := harg.conv ha.symm
       -- pin the narrowed fix scheme
-      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+      have hsfix : s = ⟨4, 0, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
           (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ := by
         rcases scheme_cases hs with ⟨h,_⟩|⟨_,h⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|
           ⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩
@@ -2031,7 +2031,7 @@ theorem fixPreserves [BEq m] : FixPreserves m := by
         · simp at hlt
       subst happ
       -- compute the (narrowed) instantiated base; `cons` peels nothing (`applied = []`)
-      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+      have hB : Scheme.instantiate ⟨4, 0, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
             (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ args
           = .fun (.fun (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3)))
               .empty (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3))))
@@ -3830,7 +3830,7 @@ theorem fixPreservesB [BEq m] : FixPreservesB m := by
       obtain ⟨hs, n, harity, hlt⟩ := hwf
       obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
       have harg' : HasTypeV arg a' := harg.conv ha.symm
-      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+      have hsfix : s = ⟨4, 0, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
           (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ := by
         rcases scheme_cases hs with ⟨h,_⟩|⟨_,h⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|
           ⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩
@@ -3845,7 +3845,7 @@ theorem fixPreservesB [BEq m] : FixPreservesB m := by
         · rfl
         · simp at hlt
       subst happ
-      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+      have hB : Scheme.instantiate ⟨4, 0, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
             (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ args
           = .fun (.fun (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3)))
               .empty (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3))))

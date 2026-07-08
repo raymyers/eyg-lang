@@ -119,7 +119,7 @@ theorem generalizes_ctxConv {s : Scheme} {Δ Γ : Ctx} {x : String} {σ σ' d : 
       have hb2 := hfix (x, Scheme.mono σ) (by simp)
       simp only [Scheme.substScheme_mono] at hb2
       have hσ : Ty.subst σg σ = σ := by
-        simp only [Scheme.mono, Scheme.mk.injEq] at hb2; exact hb2.2
+        simp only [Scheme.mono, Scheme.mk.injEq] at hb2; exact hb2.2.2
       simp only [Scheme.substScheme_mono]
       exact congrArg Scheme.mono (key σg hσ)
     · exact hfix b (List.mem_append.mpr (Or.inr (List.mem_cons_of_mem _ hbΓ)))
@@ -256,8 +256,9 @@ theorem genArity_spec {n v : Nat} {d : Ty} (hv : v ∈ d.freeVars) (hn : n ≤ v
 end Ty
 
 /-- Componentwise scheme equality (the `body` field is non-dependent). -/
-theorem Scheme.ext' {s t : Scheme} (ha : s.arity = t.arity) (hb : s.body = t.body) : s = t := by
-  cases s; cases t; cases ha; cases hb; rfl
+theorem Scheme.ext' {s t : Scheme} (ha : s.arity = t.arity) (hc : s.level = t.level)
+    (hb : s.body = t.body) : s = t := by
+  cases s; cases t; cases ha; cases hc; cases hb; rfl
 
 /-- **`genAt` is a sound generalization** — every instantiation of `genAt n d` is a `subst`-instance
 of `d` whose witnessing substitution fixes the ambient region `[0,n)`. (The witness fixes `[0,n)`
@@ -344,7 +345,7 @@ theorem genAt_substScheme {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ) (
   have harity := genArity_subst hσ d
   obtain ⟨hfix, hamb⟩ := hσ
   -- both schemes have arity `d.genArity n`; equate componentwise
-  refine Scheme.ext' ?_ ?_
+  refine Scheme.ext' ?_ rfl ?_
   · simp only [Scheme.substScheme_arity, Scheme.genAt_arity]; exact harity.symm
   -- body equality, via subst_subst on both sides + agreement on FV(d)
   simp only [Scheme.substScheme, Scheme.genAt, harity, Ty.subst_subst]
@@ -415,7 +416,7 @@ which collapses to `var i` exactly when `σ` fixes `i - arity`.) -/
 theorem Scheme.substScheme_eq_of_fixes_free {σ : Nat → Ty} {s : Scheme}
     (h : ∀ i ∈ s.freeVars, σ i = .var 0 i) : Scheme.substScheme σ s = s := by
   rw [Scheme.substScheme]
-  refine Scheme.ext' rfl ?_
+  refine Scheme.ext' rfl rfl ?_
   apply Ty.subst_eq_of_fixes_free
   intro j hj
   by_cases hja : j < s.arity
@@ -504,7 +505,7 @@ private def cexΓ : Ctx := [("y", Scheme.mono (.var 0 1))]
 
 /-- The generalization **holds** before substitution: every instance `t` of `⟨1, var 0⟩` is
 `subst [0↦t] (var 0)` with `[0↦t]` fixing `cexΓ` (it touches only `var 0`, and `FV(cexΓ) = {1}`). -/
-private theorem cex_pos : Generalizes ⟨1, .var 0 0⟩ cexΓ (.var 0 0) := by
+private theorem cex_pos : Generalizes ⟨1, 0, .var 0 0⟩ cexΓ (.var 0 0) := by
   intro args
   refine ⟨fun i => if i = 0 then args.getD 0 (.var 0 0) else .var 0 i, ?_, ?_⟩
   · simp [Scheme.instantiate, Ty.subst]
@@ -513,7 +514,7 @@ private theorem cex_pos : Generalizes ⟨1, .var 0 0⟩ cexΓ (.var 0 0) := by
 /-- The generalization **fails** at let-site type `var 1` (the same scheme, but the let-site type is
 now a context variable): instantiating to `var 0` would need a `σ'` with `σ' 1 = var 0` *and* (to fix
 `cexΓ`) `σ' 1 = var 1`. -/
-private theorem cex_neg : ¬ Generalizes ⟨1, .var 0 0⟩ cexΓ (.var 0 1) := by
+private theorem cex_neg : ¬ Generalizes ⟨1, 0, .var 0 0⟩ cexΓ (.var 0 1) := by
   intro H
   obtain ⟨σ', heq, hfix⟩ := H [.var 0 0]
   -- hfix : substCtx σ' cexΓ = cexΓ  ⟹  subst σ' (var 1) = var 1
@@ -523,7 +524,7 @@ private theorem cex_neg : ¬ Generalizes ⟨1, .var 0 0⟩ cexΓ (.var 0 1) := b
     simp only [List.map_cons, List.map_nil, Scheme.substScheme_mono, List.cons.injEq,
       Prod.mk.injEq, true_and, and_true] at e
     exact congrArg Scheme.body e
-  have hinst : Scheme.instantiate ⟨1, .var 0 0⟩ [Ty.var 0 0] = Ty.var 0 0 := by
+  have hinst : Scheme.instantiate ⟨1, 0, .var 0 0⟩ [Ty.var 0 0] = Ty.var 0 0 := by
     simp [Scheme.instantiate, Ty.subst, List.getD_cons_zero]
   rw [hinst, hsub] at heq
   exact absurd heq (by decide)
@@ -538,10 +539,10 @@ theorem generalizes_subst_false :
         Generalizes s Γ d →
         Generalizes (Scheme.substScheme σ s) (substCtx σ Γ) (Ty.subst σ d) := by
   intro H
-  have h := H ⟨1, .var 0 0⟩ cexΓ (.var 0 0) (fun i => if i = 0 then .var 0 1 else .var 0 i) cex_pos
+  have h := H ⟨1, 0, .var 0 0⟩ cexΓ (.var 0 0) (fun i => if i = 0 then .var 0 1 else .var 0 i) cex_pos
   -- normalize the substituted witness back to the `cex_neg` shape, then contradict
-  have hs : Scheme.substScheme (fun i => if i = 0 then (.var 0 1 : Ty) else .var 0 i) ⟨1, .var 0 0⟩
-      = ⟨1, .var 0 0⟩ := by
+  have hs : Scheme.substScheme (fun i => if i = 0 then (.var 0 1 : Ty) else .var 0 i) ⟨1, 0, .var 0 0⟩
+      = ⟨1, 0, .var 0 0⟩ := by
     simp [Scheme.substScheme, Ty.subst]
   have hc : substCtx (fun i => if i = 0 then (.var 0 1 : Ty) else .var 0 i) cexΓ = cexΓ := by
     simp [cexΓ, substCtx, Scheme.substScheme_mono, Ty.subst]

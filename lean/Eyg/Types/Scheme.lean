@@ -514,17 +514,22 @@ theorem clean_of_levels_lt {σ : Nat → Ty} {n : Nat} (hlt : ∀ i, ∀ l ∈ (
 
 end Ty
 
-/-- A polymorphic type scheme: `∀ (arity de-Bruijn vars). body`. The quantified
-variables are `var 0 … var (arity-1)` occurring in `body` (`binding.Poly`). -/
+/-- A polymorphic type scheme. `level` is the generalization layer this scheme's own quantifiers
+belong to (`plan/eyg-g1-level-tagged-ty.md` Phase 3b) — pinned to `0` everywhere for now (a pure
+representation change, mirroring Phase 3a's `Ty.var` port): `genAt`/`instantiate`/`substScheme` still
+use the old arity/`reindexGen` magnitude machinery below, ignoring this field entirely. Flipping them
+to be level-native (no reindexing) is the remaining Phase 3b work; this field addition just clears the
+field-arity mechanical churn out of that step's way. -/
 structure Scheme where
   arity : Nat
+  level : Nat
   body : Ty
   deriving DecidableEq, Repr, Inhabited
 
 namespace Scheme
 
 /-- A monomorphic scheme (no quantifiers). -/
-def mono (t : Ty) : Scheme := ⟨0, t⟩
+def mono (t : Ty) : Scheme := ⟨0, 0, t⟩
 
 /-- Instantiate a scheme by substituting its quantified variables with `args`
 (`binding.instantiate`). The `arity` **quantified** variables (`var i`, `i <
@@ -553,8 +558,8 @@ at body-index `i ≥ arity`, is replaced by `σ (i - arity)` **shifted up by `ar
 (so its own variables land back above the quantifier prefix). This is exactly the
 map that makes substitution commute with instantiation (`subst_instantiate`). -/
 def substScheme (σ : Nat → Ty) (s : Scheme) : Scheme :=
-  ⟨s.arity, Ty.subst (fun i => if i < s.arity then .var 0 i else Ty.shift s.arity (σ (i - s.arity)))
-    s.body⟩
+  ⟨s.arity, s.level,
+    Ty.subst (fun i => if i < s.arity then .var 0 i else Ty.shift s.arity (σ (i - s.arity))) s.body⟩
 
 @[simp] theorem substScheme_arity (σ : Nat → Ty) (s : Scheme) :
     (substScheme σ s).arity = s.arity := rfl
@@ -564,7 +569,7 @@ generalized variables (`≥ n`) become the quantifier prefix `0 … arity-1` (vi
 ambient variables (`< n`) shift up past the prefix (`v ↦ v + arity`). (T6 `let_poly`; relocated here so
 the `let_poly` typing rule can reference it.) -/
 def genAt (n : Nat) (d : Ty) : Scheme :=
-  ⟨d.genArity n, Ty.subst (Ty.reindexGen n (d.genArity n)) d⟩
+  ⟨d.genArity n, 0, Ty.subst (Ty.reindexGen n (d.genArity n)) d⟩
 
 @[simp] theorem genAt_arity (n : Nat) (d : Ty) : (genAt n d).arity = d.genArity n := rfl
 
@@ -702,12 +707,12 @@ def intCompareResult : Ty := union' [("Lt", unit), ("Eq", unit), ("Gt", unit)]
 /-- The (partial) builtin scheme table — the T2 arithmetic/string/core subset of
 `contextual.builtins()`. Returns `none` for builtins not yet transcribed. -/
 def scheme : String → Option Scheme
-  | "equal" => some ⟨1, pure2 (q 0) (q 0) boolean⟩
+  | "equal" => some ⟨1, 0, pure2 (q 0) (q 0) boolean⟩
   -- `fix : ((self →⟨∅⟩ self) →⟨∅⟩ self)` with `self = (q0 →⟨q2⟩ q3)` — fixpoint forced to a
   -- **function** type AND the **builder pinned pure** (`q1 = ∅`, left unused in the arity-4
   -- prefix): the analyzer-divergent narrowing that discharges `FixPreserves` via the pure-builder
   -- `partialFixed` (rejects builder-side-effecting recursion the reference analyzer accepts).
-  | "fix" => some ⟨4,
+  | "fix" => some ⟨4, 0,
       .fun (.fun (.fun (q 0) (q 2) (q 3)) .empty (.fun (q 0) (q 2) (q 3)))
         .empty (.fun (q 0) (q 2) (q 3))⟩
   | "int_compare" => some (.mono (pure2 integer integer intCompareResult))
@@ -741,7 +746,7 @@ example : scheme "int_add" = some (.mono (.fun .integer .empty (.fun .integer .e
   rfl
 
 -- Instantiating `equal` at `Integer` gives `Integer → Integer → boolean`.
-example : (Scheme.instantiate ⟨1, Ty.pure2 (Ty.q 0) (Ty.q 0) Ty.boolean⟩ [Ty.integer])
+example : (Scheme.instantiate ⟨1, 0, Ty.pure2 (Ty.q 0) (Ty.q 0) Ty.boolean⟩ [Ty.integer])
     = Ty.pure2 Ty.integer Ty.integer Ty.boolean := rfl
 
 -- `fix` instantiated at `q0:=Integer, q1:=∅, q2:=∅, q3:=Integer` (so `self = Integer →⟨∅⟩
@@ -749,7 +754,7 @@ example : (Scheme.instantiate ⟨1, Ty.pure2 (Ty.q 0) (Ty.q 0) Ty.boolean⟩ [Ty
 -- fixpoint is a function type, as the hardened scheme requires.
 example :
     (Scheme.instantiate
-      ⟨4, .fun (.fun (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3)) (Ty.q 1) (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3)))
+      ⟨4, 0, .fun (.fun (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3)) (Ty.q 1) (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3)))
         (Ty.q 1) (.fun (Ty.q 0) (Ty.q 2) (Ty.q 3))⟩
       [Ty.integer, Ty.empty, Ty.empty, Ty.integer])
     = .fun (.fun (.fun Ty.integer Ty.empty Ty.integer) Ty.empty
