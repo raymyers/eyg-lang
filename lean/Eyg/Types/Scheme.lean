@@ -670,6 +670,84 @@ theorem subst_instantiate' (σ : Nat → Ty) (s : Scheme) (args : List Ty) :
       rw [if_neg (by omega), Nat.add_sub_cancel]
     rw [hid, Ty.subst_id]
 
+/-! ### Level-native `genAt`/`instantiate`/`substScheme` (Phase 3b prototype, not yet wired in)
+
+`plan/eyg-g1-level-tagged-ty.md` Phase 3b: the level-native redesign of `genAt`/`instantiate`/
+`substScheme` — no `reindexGen`, dispatching on the `level` tag instead of index magnitude. Named
+with a `V` suffix (for "level-native **v**ariant") to coexist with the still-magnitude-based
+`genAt`/`instantiate`/`substScheme` above without disturbing any of their (or `Generalization.lean`'s)
+existing call sites; **not yet consumed by `Typing.lean`** — that rewiring is later Phase 3b/4 work.
+Landed now because the two design subtleties below were only discoverable by writing the definitions
+down precisely (see `progress/2026-07-08-G1-phase3b-scheme-level-field-and-substAt-ported.md`). -/
+
+/-- Level-native generalization: quantify **all** of `d`'s own occurrences at level `ℓ` — no
+reindexing, `d`'s body is carried through unchanged (the caller is responsible for having tagged the
+to-be-generalized variables at `ℓ` when the scheme is built, unlike the old `genAt` which computed the
+tagging itself from index magnitude). `arity` is carried only for informational parity with the old
+design — **not** consumed by `instantiateV`/`substSchemeV` below, so it need not be exactly accurate
+under substitution (see `subst_instantiateV`'s docstring). -/
+def genAtV (ℓ : Nat) (d : Ty) : Scheme := ⟨(d.levels.filter (· = ℓ)).length, ℓ, d⟩
+
+/-- Level-native instantiation: substitute at the scheme's own `level`. The `arity = 0` short-circuit
+is **required**, not optional — without it, a monomorphic scheme whose body references an ambient
+variable that happens to share `s.level`'s tag would be incorrectly rewritten by a nonempty `args`,
+breaking `instantiateV_mono`. (`Ty.subst`'s per-index `i < arity` branch in the old `instantiate` is
+gone; this is a coarser, single outer split, not zero — a deliberate, minor correction to a literal
+reading of the continuation spec, not an oversight.) -/
+def instantiateV (s : Scheme) (args : List Ty) : Ty :=
+  if s.arity = 0 then s.body
+  else Ty.substAt s.level (fun i => args.getD i (.var s.level i)) s.body
+
+/-- A monomorphic scheme instantiates to its body, ignoring `args` unconditionally — the property
+`instantiateV`'s `arity = 0` short-circuit exists to guarantee. -/
+@[simp] theorem instantiateV_mono (t : Ty) (args : List Ty) : (mono t).instantiateV args = t := by
+  simp [instantiateV, mono]
+
+/-- Level-native ambient substitution: apply `σ` (always ambient, i.e. level-`0`, per `Ty.subst`)
+structurally to the body, carrying `.arity`/`.level` through **unchanged**. Unlike the old
+`substScheme`, this does **not** recompute `arity` from the substituted body — deliberately: neither
+`instantiateV` nor this function ever reads `.arity` (only the `= 0` check, itself preserved since the
+field is untouched), so recomputation is unnecessary machinery that `subst_instantiateV` below doesn't
+need either. -/
+def substSchemeV (σ : Nat → Ty) (s : Scheme) : Scheme := ⟨s.arity, s.level, Ty.subst σ s.body⟩
+
+/-- **Substitution commutes with level-native instantiation**, for a scheme generalized at any
+nonzero level `ℓ` (nonzero: level `0` is the ambient scope `σ` itself operates on, so a scheme's own
+quantifiers must live at a *different*, nonzero level for this to hold — matching the level-tag
+design's intent that fresh generalization levels are always `≥ 1`), **provided** `σ`'s range never
+mentions level `ℓ` (`hclean` — the same side-condition `substAt_substAt_comm` needs, threaded here
+through `instantiateV`; discharged in the real system by a `CtxWf`-style freshness bound via
+`clean_of_levels_lt`, not yet wired to a rule). This is the level-native replacement for
+`subst_instantiate`, and — unlike a naive `substSchemeV σ (genAtV ℓ d) = genAtV ℓ (subst σ d)` scheme
+equality (which would additionally require `σ` to preserve the level-`ℓ` occurrence *count* in `d`,
+a strictly stronger and unnecessary demand) — targets exactly what `hasType_subst`'s `var`/`builtin`
+arms will need: the instantiated *type*, not the stored scheme literal. -/
+theorem subst_instantiateV {ℓ : Nat} (hℓ : ℓ ≠ 0) {σ : Nat → Ty}
+    (hclean : ∀ i, ∀ j, j ∉ Ty.freeVarsAt ℓ (σ i)) (d : Ty) (args : List Ty) :
+    Ty.subst σ ((genAtV ℓ d).instantiateV args)
+      = (substSchemeV σ (genAtV ℓ d)).instantiateV (args.map (Ty.subst σ)) := by
+  unfold instantiateV substSchemeV genAtV
+  by_cases harity : (d.levels.filter (· = ℓ)).length = 0
+  · simp only [harity, if_true]
+  · simp only [harity, if_false]
+    rw [Ty.subst_eq_substAt_zero, Ty.subst_eq_substAt_zero,
+      Ty.substAt_substAt_comm (Ne.symm hℓ) _ hclean]
+    congr 1
+    funext i
+    rw [← Ty.subst_eq_substAt_zero]
+    by_cases hi : i < args.length
+    · have hi' : i < args.length := hi
+      rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_map,
+        List.getElem?_eq_getElem hi']
+      rfl
+    · have hi' : ¬ i < args.length := hi
+      have hmap : ¬ i < (args.map (Ty.subst σ)).length := by simpa using hi'
+      rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+        List.getElem?_eq_none (by omega), List.getElem?_eq_none (by omega)]
+      show Ty.subst σ (Ty.var ℓ i) = Ty.var ℓ i
+      rw [Ty.subst_eq_substAt_zero]
+      simp only [Ty.substAt, if_neg hℓ]
+
 end Scheme
 
 /-! ## Scheme builders (`contextual.q`/`pure1`/`pure2`/`pure3`) -/
