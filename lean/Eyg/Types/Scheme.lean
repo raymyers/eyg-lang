@@ -312,6 +312,204 @@ theorem mem_freeVars_subst {σ : Nat → Ty} {t : Ty} {i : Nat} :
   | empty => simp [subst, freeVars]
   | never => simp [subst, freeVars]
 
+/-! ### Level-tagged substitution (`substAt`), ported from the G1 spike onto the real `Ty`
+
+`plan/eyg-g1-level-tagged-ty.md` Phase 3b: `Scheme.genAt`/`instantiate`/`substScheme` are to become
+level-native, substituting only at one target level `ℓ` and leaving every other level's `var`
+leaves untouched — no reindexing. `LevelTagSpike.lean` validated the two commutation facts this needs
+on a toy `var`/`fn`-only model; this section ports both onto the **real**, 12-former `Ty` (the audit
+flagged as still-open in `progress/2026-07-08-G1-phase3a-done-phase3b-scoped.md` continuation spec
+step 5) — confirming, as expected, that none of the extra formers (`list`/`record`/`union`/`promise`/
+row & effect extension) touch `var` specially, so both facts hold unconditionally the same way. -/
+
+/-- The `(idx)` occurrences of `t` at exactly level `ℓ` — the level-parameterized generalization of
+`freeVars` (which is `freeVarsAt 0`, see `freeVars_eq_freeVarsAt_zero`). -/
+def freeVarsAt (ℓ : Nat) : Ty → List Nat
+  | .var l i => if l = ℓ then [i] else []
+  | .fun a e r => freeVarsAt ℓ a ++ freeVarsAt ℓ e ++ freeVarsAt ℓ r
+  | .list a => freeVarsAt ℓ a
+  | .record r => freeVarsAt ℓ r
+  | .union r => freeVarsAt ℓ r
+  | .promise a => freeVarsAt ℓ a
+  | .rowExtend _ f t => freeVarsAt ℓ f ++ freeVarsAt ℓ t
+  | .effectExtend _ a b t => freeVarsAt ℓ a ++ freeVarsAt ℓ b ++ freeVarsAt ℓ t
+  | _ => []
+
+theorem freeVars_eq_freeVarsAt_zero (t : Ty) : freeVars t = freeVarsAt 0 t := by
+  induction t with
+  | var l i => cases l <;> simp [freeVars, freeVarsAt]
+  | _ => simp_all [freeVars, freeVarsAt]
+
+/-- Every distinct level occurring anywhere in a type (own quantifiers and ambient references
+alike) — the level-tag analog of the spike's `Ty2.levels`. Used by the `CtxWf`-style
+freshness-threading bridge (`clean_of_levels_lt`). -/
+def levels : Ty → List Nat
+  | .var l _ => [l]
+  | .fun a e r => levels a ++ levels e ++ levels r
+  | .list a => levels a
+  | .record r => levels r
+  | .union r => levels r
+  | .promise a => levels a
+  | .rowExtend _ f t => levels f ++ levels t
+  | .effectExtend _ a b t => levels a ++ levels b ++ levels t
+  | _ => []
+
+/-- Substitute at a single level `ℓ`: rewrite every `var ℓ i` leaf via `σ i`; leaves at any other
+level are untouched. No shifting anywhere, unlike `subst`/`reindexGen` composed with magnitude
+bookkeeping — this is the primitive Phase 3b's level-native `Scheme.genAt`/`instantiate`/
+`substScheme` are built from. (`subst σ = substAt 0 σ` definitionally, `subst_eq_substAt_zero`.) -/
+def substAt (ℓ : Nat) (σ : Nat → Ty) : Ty → Ty
+  | .var l i => if l = ℓ then σ i else .var l i
+  | .fun a e r => .fun (substAt ℓ σ a) (substAt ℓ σ e) (substAt ℓ σ r)
+  | .binary => .binary
+  | .integer => .integer
+  | .string => .string
+  | .list a => .list (substAt ℓ σ a)
+  | .record r => .record (substAt ℓ σ r)
+  | .union r => .union (substAt ℓ σ r)
+  | .empty => .empty
+  | .rowExtend l f t => .rowExtend l (substAt ℓ σ f) (substAt ℓ σ t)
+  | .effectExtend l a b t => .effectExtend l (substAt ℓ σ a) (substAt ℓ σ b) (substAt ℓ σ t)
+  | .never => .never
+  | .promise a => .promise (substAt ℓ σ a)
+
+theorem subst_eq_substAt_zero (σ : Nat → Ty) (t : Ty) : subst σ t = substAt 0 σ t := by
+  induction t with
+  | var l i => cases l <;> simp [subst, substAt]
+  | _ => simp_all [subst, substAt]
+
+/-- `substAt ℓ σ` never removes a leaf at a level other than `ℓ`. -/
+theorem mem_freeVarsAt_substAt_of_ne {ℓ l' i : Nat} {σ : Nat → Ty} {t : Ty}
+    (hl : l' ≠ ℓ) (h : i ∈ freeVarsAt l' t) : i ∈ freeVarsAt l' (substAt ℓ σ t) := by
+  induction t with
+  | var l j =>
+      by_cases hlj : l = l'
+      · subst hlj
+        simpa only [substAt, if_neg hl] using h
+      · simp only [freeVarsAt, if_neg hlj] at h
+        exact absurd h (by simp)
+  | «fun» a e r iha ihe ihr =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, freeVarsAt, List.mem_append]
+      rcases h with (h | h) | h
+      · exact Or.inl (Or.inl (iha h))
+      · exact Or.inl (Or.inr (ihe h))
+      · exact Or.inr (ihr h)
+  | list a ih => simpa only [substAt, freeVarsAt] using ih h
+  | record r ih => simpa only [substAt, freeVarsAt] using ih h
+  | union r ih => simpa only [substAt, freeVarsAt] using ih h
+  | promise a ih => simpa only [substAt, freeVarsAt] using ih h
+  | rowExtend l f t ihf iht =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, freeVarsAt, List.mem_append]
+      rcases h with h | h
+      · exact Or.inl (ihf h)
+      · exact Or.inr (iht h)
+  | effectExtend l a b t iha ihb iht =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, freeVarsAt, List.mem_append]
+      rcases h with (h | h) | h
+      · exact Or.inl (Or.inl (iha h))
+      · exact Or.inl (Or.inr (ihb h))
+      · exact Or.inr (iht h)
+  | _ => nomatch h
+
+/-- **A level with no occurrence in `t` is untouched by a substitution at that level.** The
+converse-shaped fact to `mem_freeVarsAt_substAt_of_ne`, and the key step in the cross-level
+commutation below. -/
+theorem substAt_eq_self_of_not_mem {ℓ : Nat} {σ : Nat → Ty} {t : Ty}
+    (h : ∀ i, i ∉ freeVarsAt ℓ t) : substAt ℓ σ t = t := by
+  induction t with
+  | var l i =>
+      by_cases hl : l = ℓ
+      · subst hl; exact absurd (List.mem_singleton_self i) (by simpa [freeVarsAt] using h i)
+      · simp only [substAt, if_neg hl]
+  | «fun» a e r iha ihe ihr =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihe (fun i hi => h i (Or.inl (Or.inr hi))), ihr (fun i hi => h i (Or.inr hi))]
+  | list a ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | record r ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | union r ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | promise a ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | rowExtend l f t ihf iht =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, ihf (fun i hi => h i (Or.inl hi)), iht (fun i hi => h i (Or.inr hi))]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihb (fun i hi => h i (Or.inl (Or.inr hi))), iht (fun i hi => h i (Or.inr hi))]
+  | _ => rfl
+
+/-- **Cross-level commutation, conditionally.** Substituting at `ℓ1` and at `ℓ2` commute — for `ℓ1 ≠
+ℓ2` — *provided* `σ`'s range never mentions level `ℓ2` (`hclean`). Ported from the spike's
+`Ty2.substAt_substAt_comm`; confirms the extra 10 formers (beyond the spike's `var`/`fn`) don't
+disturb the argument, since none of them touch `var` specially. This is exactly `Scheme.
+subst_instantiate`'s missing piece once `hasType_subst` is level-parameterized (Phase 3b step 6). -/
+theorem substAt_substAt_comm {ℓ1 ℓ2 : Nat} (hne : ℓ1 ≠ ℓ2) {σ : Nat → Ty} (τ : Nat → Ty)
+    (hclean : ∀ i, ∀ j, j ∉ freeVarsAt ℓ2 (σ i)) (t : Ty) :
+    substAt ℓ1 σ (substAt ℓ2 τ t) = substAt ℓ2 (fun i => substAt ℓ1 σ (τ i)) (substAt ℓ1 σ t) := by
+  induction t with
+  | var l i =>
+      by_cases h2 : l = ℓ2
+      · simp [substAt, h2, if_neg (Ne.symm hne)]
+      · by_cases h1 : l = ℓ1
+        · have hne2 : l ≠ ℓ2 := h1 ▸ hne
+          simp only [substAt, if_pos h1, if_neg hne2]
+          exact (substAt_eq_self_of_not_mem (fun j => hclean i j)).symm
+        · simp only [substAt, if_neg h1, if_neg h2]
+  | «fun» a e r iha ihe ihr => simp only [substAt, iha, ihe, ihr]
+  | list a ih => simp only [substAt, ih]
+  | record r ih => simp only [substAt, ih]
+  | union r ih => simp only [substAt, ih]
+  | promise a ih => simp only [substAt, ih]
+  | rowExtend l f t ihf iht => simp only [substAt, ihf, iht]
+  | effectExtend l a b t iha ihb iht => simp only [substAt, iha, ihb, iht]
+  | _ => rfl
+
+/-- A level occurring as a free-variable's level (at any index) is among `t`'s `levels`. -/
+theorem mem_levels_of_mem_freeVarsAt {t : Ty} {ℓ j : Nat} (hmem : j ∈ freeVarsAt ℓ t) :
+    ℓ ∈ t.levels := by
+  induction t with
+  | var l k =>
+      by_cases hlℓ : l = ℓ
+      · subst hlℓ; simp only [levels, List.mem_singleton]
+      · simp only [freeVarsAt, if_neg hlℓ] at hmem
+        exact absurd hmem (by simp)
+  | «fun» a e r iha ihe ihr =>
+      simp only [freeVarsAt, List.mem_append] at hmem
+      simp only [levels, List.mem_append]
+      rcases hmem with (hmem | hmem) | hmem
+      · exact Or.inl (Or.inl (iha hmem))
+      · exact Or.inl (Or.inr (ihe hmem))
+      · exact Or.inr (ihr hmem)
+  | list a ih => exact ih hmem
+  | record r ih => exact ih hmem
+  | union r ih => exact ih hmem
+  | promise a ih => exact ih hmem
+  | rowExtend l f t ihf iht =>
+      simp only [freeVarsAt, List.mem_append] at hmem
+      simp only [levels, List.mem_append]
+      rcases hmem with hmem | hmem
+      · exact Or.inl (ihf hmem)
+      · exact Or.inr (iht hmem)
+  | effectExtend l a b t iha ihb iht =>
+      simp only [freeVarsAt, List.mem_append] at hmem
+      simp only [levels, List.mem_append]
+      rcases hmem with (hmem | hmem) | hmem
+      · exact Or.inl (Or.inl (iha hmem))
+      · exact Or.inl (Or.inr (ihb hmem))
+      · exact Or.inr (iht hmem)
+  | _ => simp [freeVarsAt] at hmem
+
+/-- **A substitution whose levels all sit below `n` is `ℓ`-clean for every `ℓ ≥ n`.** The bridge from
+a `CtxWf`-style freshness bound to `substAt_substAt_comm`'s `hclean` hypothesis — the level-tag analog
+of `LevelMap`. -/
+theorem clean_of_levels_lt {σ : Nat → Ty} {n : Nat} (hlt : ∀ i, ∀ l ∈ (σ i).levels, l < n)
+    {ℓ : Nat} (hge : n ≤ ℓ) : ∀ i, ∀ j, j ∉ freeVarsAt ℓ (σ i) := by
+  intro i j hmem
+  exact absurd (hlt i ℓ (mem_levels_of_mem_freeVarsAt hmem)) (by omega)
+
 /-! ## Schemes & instantiation -/
 
 end Ty
