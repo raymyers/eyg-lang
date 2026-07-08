@@ -224,6 +224,39 @@ the datatype change itself.
       not exist (`noLambdaLet lbody` fails), so the value judgment can't express the closure typing until
       Phase 4 (drop `noLambdaLet` from `HasType.let_poly`) or Phase 5 (parallel `HasTypeVAt`/`EnvWfAt`).
       Both are anticipated judgment plumbing, not open mathematics.
+      **Progress 2026-07-08 (sixth follow-up session — obstruction (A) RESOLVED, the level-native
+      readiness keystone landed), see
+      `progress/2026-07-08-G1-phase3b-HasTypeAtV-instantiation-keystone-landed.md`:** one green
+      additive commit in a new file `Eyg/Types/TypingAtV.lean` — obstruction (A) is closed. (1)
+      **`HasTypeAtV lvl Γ e τ ε`** — the level-native sibling of `HasTypeAt`: `let_poly` generalizes at
+      exactly `lvl` via `Scheme.genAtV lvl` (not the magnitude `genAt`), records `CtxWfV lvl Γ`, types
+      its body at `lvl + 1`, no `noLambdaLet`; `lam`/`let_` store a sublevel `lvl'` with the
+      `Ty.levels`-shaped freshness `∀ l ∈ argTy.levels, l < lvl'`; `var`/`builtin` instantiate via
+      `Scheme.instantiateV`. (2) **`hasTypeAtV_substAt`** — the full **instantiation-direction** re-typing
+      induction (all ~21 arms): re-type under an *outer* `substAt ℓ` (`ℓ ≠ 0`, `ℓ < lvl`, `σ`'s levels
+      `≤ ℓ`, context poly-bindings above `ℓ` via the `PolyAbove` invariant). The `let_poly` arm
+      reconstructs level-natively via `substSchemeVAt_genAtV` (a new `genAtV`-arity-stability lemma built
+      on a level-`k`-occurrence *count-preservation* lemma `length_filter_levels_substAt` — the
+      unconditional-in-the-level-dimension analog of `genAt_substScheme`, needing only level-disjointness
+      + freshness, no `LevelMap`); the `var` arm via a new general `substAt_instantiateV_scheme` (covers
+      every mono/`genAtV`-at-a-distinct-level binding); the `builtin` arm via `substAt_instantiateV_closed`
+      + a closed-body commutation `substAt_substAt_comm_of_no_mem` (builtins are level-`0`-closed, proved
+      by `Builtins.scheme_levels_zero`/`scheme_no_level`). (3) **`genAtV_instantiate_lam_ready`** — the
+      level-native readiness keystone: for a let-bound lambda typed via its `lam` components at ambient
+      level `ℓ` (body strictly above `ℓ`, context below `ℓ`, args' levels `≤ ℓ`), **every** instantiation
+      of its scheme `genAtV ℓ defnTy` is a genuine `substAt ℓ` re-typing of the lambda's own
+      `HasTypeAtV` derivation (composing `genAtV_generalizesAtV` with `hasTypeAtV_substAt`, plus
+      `substCtxAt_fix` for the ambient context being fixed structurally). Does NOT wire in
+      `Value.Closure`/`HasTypeV`/`EnvWf` — that is obstruction (B), still a future session. (4) **Nested
+      non-vacuous demonstration** — `hInnerV`/`hOuterV_instantiate`/`hOuterV_typed_integer_arrow` type the
+      exact Caveat-5 term `\x. (let inner = \y.y in inner x)` (outer scheme at level `1`, nested inner at
+      the *distinct* level `2`) and run the keystone at `[integer]`, producing a genuine non-identity
+      re-typing `Integer → Integer` (outer `α ↦ integer`, inner re-generalized at level `2`) — the
+      level-native "wall falls" check, on a term the original chain reaches only vacuously. `lake build`
+      1776 jobs, spec 104/104 on all three lines, axioms `[propext, Classical.choice, Quot.sound]`, no
+      `sorry`. Purely additive (`HasType`, `HasTypeAt`, `Runtime.lean`, `Soundness.lean` untouched).
+      **Only obstruction (B) remains for the value-typing keystone**: `HasTypeVAt`/`EnvWfAt` (or Phase 4's
+      `noLambdaLet` drop) to turn this term-level re-typing into `HasTypeV (Value.Closure …)`.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
