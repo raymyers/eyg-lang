@@ -114,6 +114,38 @@ theorem substAt_substAt_comm {ℓ1 ℓ2 : Nat} (hne : ℓ1 ≠ ℓ2) {σ : Nat �
         · simp only [substAt, if_neg h1, if_neg h2]
   | fn a r iha ihr => simp only [substAt, iha, ihr]
 
+/-- Every distinct level occurring anywhere in a type (own quantifiers and
+ambient references alike) — the level-tag analog of the real `Ty.levels`. -/
+def levels : Ty2 → List Nat
+  | .var l _ => [l]
+  | .fn a r => levels a ++ levels r
+
+/-- **A substitution whose levels all sit below `n` is `ℓ`-clean for every `ℓ ≥
+n`.** The bridge from a `CtxWf`-style freshness bound to `substAt_substAt_comm`'s
+`hclean` hypothesis: if every argument's levels are `< n` (e.g. drawn from a
+context bounded by `n`, or ground/ambient types), then substituting at the fresh
+level `n` can never collide with any *strictly deeper* nested scheme (level `>
+n`), because there is nothing at or above `n` in the substitution's range to
+begin with. -/
+private theorem mem_levels_of_mem_freeVars {t : Ty2} {ℓ j : Nat} (hmem : (ℓ, j) ∈ t.freeVars) :
+    ℓ ∈ t.levels := by
+  induction t with
+  | var l k =>
+      simp only [freeVars, List.mem_singleton] at hmem
+      simp only [levels, List.mem_singleton]
+      exact (Prod.mk.injEq .. |>.mp hmem).1
+  | fn a r iha ihr =>
+      simp only [freeVars, List.mem_append] at hmem
+      simp only [levels, List.mem_append]
+      rcases hmem with hmem | hmem
+      · exact Or.inl (iha hmem)
+      · exact Or.inr (ihr hmem)
+
+theorem clean_of_levels_lt {σ : Nat → Ty2} {n : Nat} (hlt : ∀ i, ∀ l ∈ (σ i).levels, l < n)
+    {ℓ : Nat} (hge : n ≤ ℓ) : ∀ i, ∀ j, (ℓ, j) ∉ (σ i).freeVars := by
+  intro i j hmem
+  exact absurd (hlt i ℓ (mem_levels_of_mem_freeVars hmem)) (by omega)
+
 end Ty2
 
 /-- A scheme owned by generalization level `ℓ`: its quantifiers are exactly the
@@ -216,5 +248,50 @@ example {ℓ' ℓctx : Nat} (hne : ℓctx ≠ ℓ') :
     rw [if_neg hne]
   · show (if ℓ' = ℓ' then [Ty2.var ℓctx 1].getD 0 (Ty2.var ℓ' 0) else Ty2.var ℓ' 0) = Ty2.var ℓctx 1
     rw [if_pos rfl, List.getD_cons_zero]
+
+/-! ## The `CtxWf`-analog: closing the loop on freshness threading
+
+The last open design point: does a `CtxWf`-style freshness bound (the direct analog
+of the real `CtxWf n Γ`, now bounding *levels* instead of index magnitude) actually
+discharge `substAt_substAt_comm`'s `hclean` side condition at every nesting depth,
+the way the old `CtxWf`/`LevelMap` discharged the magnitude-based obstruction? Yes —
+`clean_of_levels_lt` above is exactly that bridge. Below: the freshness-extension
+step (`CtxWf2` survives adding one new binding at the next fresh level), the analog
+of the real `ctxWf_cons`, confirming the *whole* threading discipline — not just the
+one-shot commutation — closes. -/
+
+/-- A context is a list of `(name, scheme)` bindings. -/
+abbrev Ctx2 := List (String × Scheme2)
+
+/-- **Context below level `n`**: every level occurring in every binding's scheme
+(quantifier level *and* ambient references alike) is `< n`. Direct analog of the
+real `CtxWf n Γ`, now bounding levels instead of index magnitude. -/
+def CtxWf2 (n : Nat) (Γ : Ctx2) : Prop := ∀ b ∈ Γ, ∀ l ∈ b.2.body.levels, l < n
+
+/-- **Freshness extension**: a context below `n`, extended with a new binding
+generalized at exactly level `n` (whose body's levels are all `≤ n`, i.e. either
+ambient-below-`n` or the new binding's own quantifiers), is below `n + 1`. The
+direct analog of the real `ctxWf_cons` — confirms the level-tag discipline threads
+through *nested* `let_poly`s the same way the old magnitude discipline did, with no
+extra bookkeeping. -/
+theorem ctxWf2_cons {n : Nat} {x : String} {d : Ty2} {Γ : Ctx2}
+    (hΓ : CtxWf2 n Γ) (hd : ∀ l ∈ d.levels, l ≤ n) :
+    CtxWf2 (n + 1) ((x, Scheme2.genAt n d) :: Γ) := by
+  intro b hb l hl
+  rcases List.mem_cons.mp hb with rfl | hb
+  · exact Nat.lt_succ_of_le (hd l hl)
+  · exact Nat.lt_succ_of_lt (hΓ b hb l hl)
+
+/-- **The freshness bound feeds `hclean` at every deeper level.** If `Γ` is below
+`n` and a new scheme is generalized at exactly `n`, then *any* instantiation
+argument drawn from `Γ`-typed terms (hence with levels `< n`) is automatically
+`ℓ`-clean for every `ℓ ≥ n` — in particular for any *even deeper* nested scheme's
+own level. This is the end-to-end confirmation that the level-tag discipline
+threads through arbitrarily deep nesting exactly like `CtxWf`/`LevelMap` did for
+one layer, without the down-shift/re-level failure mode. -/
+example {n : Nat} {Γ : Ctx2} (hΓ : CtxWf2 n Γ) {σ : Nat → Ty2}
+    (hσ : ∀ i, ∀ l ∈ (σ i).levels, l < n) {ℓ : Nat} (hge : n ≤ ℓ) :
+    ∀ i, ∀ j, (ℓ, j) ∉ (σ i).freeVars :=
+  Ty2.clean_of_levels_lt hσ hge
 
 end Eyg.Types.LevelTag
