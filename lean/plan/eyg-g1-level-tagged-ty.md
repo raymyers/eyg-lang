@@ -59,16 +59,20 @@ that and is where a constructor-arity change costs the most just from re-elabora
 
 ## Phases
 
-- [ ] **Phase 1 (spike) — tagged core in isolation.** New file(s), touching nothing existing:
-      re-derive `Ty` (tagged `var`), `subst`, `subst_subst`, `subst_id`, `freeVars`,
-      `Scheme.instantiate`, `substScheme`, `genAt`. Do **not** wire into `Typing`/`Soundness`
-      yet.
-- [ ] **Phase 2 (spike, go/no-go) — re-prove `generalizesAt_subst`'s nested case.** This is
-      the entire bet: confirm the level tag actually discharges the substitution-stability
-      argument for a *second* generalization layer, where the untagged system provably
-      cannot (`generalizes_subst_false`). If this fails, the wall is still there under a new
-      name — stop, write a progress note, and do not proceed to Phase 3.
-      **Checkpoint: only continue past here if Phase 2 lands a green, sorry-free proof.**
+- [x] **Phase 1 (spike) — tagged core in isolation.** DONE (2026-07-08),
+      `Eyg/Types/LevelTagSpike.lean`: a minimal `var`/`fn`-only model with
+      `Ty2.var (level idx : Nat)`, `substAt`, `Scheme2`, `genAt`, `instantiate`,
+      `substScheme`. Touches nothing existing; wired into `Eyg.lean` only to be
+      build-checked. `lake build` 1774 jobs, axiom/`sorry`-clean.
+- [x] **Phase 2 (spike, go/no-go) — re-prove `generalizesAt_subst`'s nested case.**
+      **GO** (2026-07-08) — see `progress/2026-07-08-G1-level-tag-spike-GO.md`.
+      `substScheme_genAt` (the direct analog of `genAt_substScheme`) holds with **no
+      `LevelMap`-style hypothesis at all** — `simp only [Scheme2.substScheme,
+      Scheme2.genAt]`, essentially definitional. The original `generalizes_subst_false`
+      counterexample scenario, re-run tagged, no longer collides. The down-shift/
+      re-level problem that blocked the untagged system doesn't arise because
+      `genAt`/`substAt` never inspect index magnitude, only the level tag.
+      **Checkpoint passed — proceeding to Phase 3.**
 - [ ] **Phase 3 — `level = 0` collapse lemma.** The tagged system restricted to one level
       agrees with the current untagged system. This is what lets the existing fixture suite
       and every non-`let_poly` typing rule port by rewrite instead of re-proof.
