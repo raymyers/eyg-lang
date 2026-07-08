@@ -526,14 +526,21 @@ pub fn builtins() {
 
     // debug is an effect because the format is not fully specified
     // #("debug", pure1(q(0), t.String)),
-    // if the passed in constructor raises an effect then fix does too.
     // the fixpoint `self` is forced to be a *function* type (q0 -><q2> q3): a
     // base-type fixpoint such as `fix (\x. int_add x 1) : Integer` is unsound in
     // call-by-value (the internal `fixed` value is fed where a base value is
     // expected and the cast crashes), so it must not type-check.
+    //
+    // the builder's *construction* latent is pinned to Empty (pure builder): `fix`
+    // is eager, so `do_fixed` re-runs the builder on every recursive self-
+    // application. A free construction row lets a handler installed at
+    // `fix`-creation absorb the builder's effect once, while the runtime re-fires
+    // it outside that handler on every later recursive call -- an out-of-row
+    // effect at runtime for a program the checker accepted as pure. See
+    // eyg-lean/lean/plan/progress/2026-06-19-G2-effectful-fix-unsoundness.md.
     #("fix", {
       let self = t.Fun(q(0), q(2), q(3))
-      t.Fun(t.Fun(self, q(1), self), q(1), self)
+      t.Fun(t.Fun(self, t.Empty, self), t.Empty, self)
     }),
     // TODO do we want a never type
     #("never", pure1(t.Never, q(1))),

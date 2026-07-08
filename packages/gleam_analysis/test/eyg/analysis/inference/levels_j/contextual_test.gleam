@@ -560,3 +560,44 @@ pub fn poly_in_effect_test() {
     #(Ok(Nil), "Integer", ""),
   ])
 }
+
+// G2/Caveat 4 remedy: `fix`'s construction (builder) latent is pinned to `Empty`.
+// A builder that performs an effect while *constructing* the recursive function
+// must now be rejected -- the runtime re-runs the builder on every recursive
+// self-application (`do_fixed`), so a free construction row let the checker
+// absorb the effect once (at `fix`-creation, inside a handler) while the
+// runtime re-fires it on every later call, outside that handler. See
+// eyg-lean/lean/plan/progress/2026-06-19-G2-effectful-fix-unsoundness.md.
+pub fn fix_effectful_builder_rejected_test() {
+  "
+  let f = handle Log((value) -> { (k) -> { k({}) } })((_) -> {
+    !fix((self) -> {
+      let inner = (n) -> { !int_add(self(n), 1) }
+      let _ = perform Log(\"building\")
+      inner
+    })
+  })
+  f(5)
+  "
+  |> calc(t.Empty)
+  |> list.any(fn(triple) {
+    let #(error, _typed, _effect) = triple
+    error != Ok(Nil)
+  })
+  |> should.be_true()
+}
+
+// The pure-builder fixpoint (no effect during construction) still type-checks,
+// so real recursion is unaffected by the G2 remedy.
+pub fn fix_pure_builder_still_sound_test() {
+  "!fix((self) -> { (n) -> { !int_add(n, 1) } })"
+  |> calc(t.Empty)
+  |> list.first()
+  |> should.be_ok()
+  |> fn(triple) {
+    let #(error, typed, effect) = triple
+    error |> should.equal(Ok(Nil))
+    typed |> should.equal("(Integer) -> Integer")
+    effect |> should.equal("")
+  }
+}

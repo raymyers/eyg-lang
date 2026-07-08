@@ -58,16 +58,16 @@ originally specified is **not sound**. The remedy: `contextual.gleam:530` was ed
 the fixpoint to a *function* type (arrow-typed recursion still checks). So soundness holds
 for a **corrected** type system.
 
-## Caveat 4 — `fix` restricted to a *pure builder* — *and the reference was unsound here too*
+## Caveat 4 — `fix` restricted to a *pure builder* — *reference was unsound here too, now corrected*
 
 Beyond the arrow restriction, the Lean `fix` scheme is pinned to a `∅`-latent (pure) builder.
-This is **not merely an under-approximation**: effectful-builder `fix` (`q1 ≠ ∅`), which the
-reference analyzer accepts, is **genuinely unsound** under call-by-value (machine-checked,
-2026-06-19). The runtime re-runs the builder on every recursive self-application (`do_fixed`),
-so a builder's *construction* effects re-fire at each recursive call — outside any handler
-installed at `fix`-creation. A closed program the analyzer types as pure `Integer`
-(`#(Ok(Nil), "Integer", "")`) thus performs an **unhandled / out-of-row `Log`** under both the
-reference interpreter and the Lean `eval`/`evalR`:
+This was **not merely an under-approximation**: effectful-builder `fix` (`q1 ≠ ∅`), which the
+original reference analyzer accepted, was **genuinely unsound** under call-by-value
+(machine-checked, 2026-06-19). The runtime re-runs the builder on every recursive
+self-application (`do_fixed`), so a builder's *construction* effects re-fire at each recursive
+call — outside any handler installed at `fix`-creation. A closed program the original analyzer
+typed as pure `Integer` (`#(Ok(Nil), "Integer", "")`) thus performed an **unhandled / out-of-row
+`Log`** under both the reference interpreter and the Lean `eval`/`evalR`:
 
 ```
 let f = handle Log(...)((_) -> { !fix((self) -> {
@@ -77,11 +77,18 @@ let f = handle Log(...)((_) -> { !fix((self) -> {
 f(5)                                                    -- ⟶ UnhandledEffect("Log", "building")
 ```
 
-So the pure-builder pin is **load-bearing**, like the arrow restriction (Caveat 3) — soundness
-holds for a *corrected* `fix`. Proof: `Eyg/Types/CexEffectfulFix.lean` (`#guard` over `eval`
-and `evalR`) + `progress/2026-06-19-G2-effectful-fix-unsoundness.md` (reference-tool repro). A
-real remedy is source-language-side (pin `q1=∅` in `contextual.gleam`, or make the recursive
-binding lazy); general row subsumption would *not* recover soundness here.
+So the pure-builder pin is **load-bearing**, like the arrow restriction (Caveat 3). **Remedy
+applied (2026-07-08):** `contextual.gleam:534` now pins the builder's construction latent to
+`Empty` (`fix : ((q0→⟨q2⟩q3) →⟨∅⟩ (q0→⟨q2⟩q3)) →⟨∅⟩ (q0→⟨q2⟩q3)`), matching the Lean pin — the
+same remedy already applied for Caveat 3's arrow restriction. Verified by running the
+`gleam_analysis` suite (39/39, including a regression test asserting the witness program above
+is now rejected, and that pure-builder recursion still type-checks). So, like Caveat 3, soundness
+now holds for a *corrected* `fix` **and the reference type checker has been corrected to match**.
+Proof: `Eyg/Types/CexEffectfulFix.lean` (`#guard` over `eval` and `evalR`) +
+`progress/2026-06-19-G2-effectful-fix-unsoundness.md` (original counterexample) +
+`progress/2026-07-08-G2-effectful-fix-remedy-applied.md` (the applied fix). General row
+subsumption would *not* have recovered soundness here — the issue is a charge-once/fire-per-call
+mismatch, not a row-expressiveness gap.
 
 ## Caveat 5 — Let-polymorphism is restricted (value restriction + `noLambdaLet`)
 
@@ -141,10 +148,9 @@ assumption rather than a theorem.
 
 > For a declarative judgment transcribed from (and in **two** places **correcting**) the gleam
 > analyzer, a transparent reduction relation that **agrees with the interpreter on 104
-> fixtures** is type-sound — for the fragment excluding effectful-`fix` (shown unsound, #4),
-> nested let-generalization, and references — where "sound" still allows `Unrepresentable`
-> crashes, and the open-system (divergence/reply) guarantees assume the environment returns
-> well-typed replies.
+> fixtures** is type-sound — for the fragment excluding nested let-generalization and
+> references — where "sound" still allows `Unrepresentable` crashes, and the open-system
+> (divergence/reply) guarantees assume the environment returns well-typed replies.
 
 Most consequential gaps: **#1** (executable-only bridge to the real interpreter) and **#2**
 (no proof the checker matches the judgment). Most surprising: **#3 and #4** — the reference spec
