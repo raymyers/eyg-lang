@@ -28,5 +28,6 @@ import Eyg.Types.Runtime
 import Eyg.Types.Machine
 import Eyg.Types.Substitution
 import Eyg.Types.Generalization
+import Eyg.Types.TypingAt
 import Eyg.Types.CexEffectfulFix
 import Eyg.Types.LevelTagSpike

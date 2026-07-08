@@ -172,6 +172,32 @@ the datatype change itself.
       `lvl`) — the next concrete deliverable. The wall itself is now removed (the
       substitution-commutation is proved both magnitude-native *and* level-native); what
       remains is judgment-plumbing, not open mathematics.
+      **Progress 2026-07-08 (fourth follow-up session, WITH Lean tool access — the
+      deliverable landed), see
+      `progress/2026-07-08-G1-phase3b-HasTypeAt-nested-arm-landed.md`:** the level-tracking
+      judgment and its substitution lemma are DONE, one green additive commit in a new file
+      `Eyg/Types/TypingAt.lean`. (1) **`HasTypeAt (lvl) Γ e τ ε`** — the ~21-constructor
+      parallel of `HasType` threading the ambient level: `let_poly` generalizes at *exactly*
+      `lvl` (so `n_let = lvl` by construction — the `n ≤ n_let` gap is now `rfl`), records
+      `CtxWf lvl Γ`, types its body at `lvl + 1`, and carries **no `noLambdaLet`** (nested
+      `Let`-binds-`Lambda` genuinely accepted); `lam`/`let_` store an explicit sublevel
+      `lvl'` with `lvl ≤ lvl'` + `freeVars argTy < lvl'` rather than a *computed* bump (the
+      one non-mechanical subtlety: a computed `genArity 0` bump does not commute with a
+      `LevelMap lvl` substitution for `lvl > 0`; a stored `lvl'` reconstructs at the same
+      level, `freeVars (subst σ argTy) < lvl'` following structurally from `LevelMap`).
+      (2) **`hasTypeAt_subst`** — the level-parameterized `hasType_subst` analog, with a
+      **non-vacuous `let_poly` arm firing for arbitrarily deep nesting** (no `noLambdaLet`
+      on the term): reconstructs via `substCtx_cons_genAt`/`ctxWf_substCtx`/`genAt_substScheme`
+      (the `hasType_substLM_letPoly` pattern) on the magnitude machinery, plus one helper
+      `genAt_freeVars_lt`. (3) **The wall-falls check** — `hInner`/`hOuter` type the exact
+      Caveat-5 term `let outer = \x. (let inner = \y.y in inner x) in outer 1` (doubly
+      generalized) under `HasTypeAt`, and `hInner_subst` applies `hasTypeAt_subst` with a
+      genuine non-identity `α ↦ integer` (`LevelMap 1`) to re-type the nested `Let`-binds-
+      `Lambda` core at `integer` under `x : integer` — non-vacuous. `lake build` 1775, spec
+      104/104, axioms `[propext, Classical.choice, Quot.sound]`, no `sorry`. Purely additive.
+      Remaining Phase 3b-tail/Phase 4: migrate to the level-native
+      `genAtV`/`CtxWfV`/`GeneralizesAtV` (for the readiness keystone) and drop `noLambdaLet`
+      from `HasType.let_poly` itself in `Typing.lean`.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
