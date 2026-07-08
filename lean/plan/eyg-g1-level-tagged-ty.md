@@ -300,6 +300,22 @@ the datatype change itself.
       `HasTypeV → HasTypeVAt lvl` transliterations left for the Phase-5 `Machine`/`Runtime` re-green.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
+      **Scoped 2026-07-08 (no source edits, tree held green at `f33550e7`), see
+      `progress/2026-07-08-G1-phase4-scoped-multisession-not-landed.md`:** grounded blast-radius
+      measurement confirms Phase 4 is **inseparable from Phases 5-6** and not one-session-landable
+      without live LSP. The `noLambdaLet` field is load-bearing for *preservation*, not just typing:
+      `Soundness.lean:242`/`:2967` (the two `let_poly` preservation cases) literally call
+      `genAt_closure_ready … hnl …`, consuming the constructor's `noLambdaLet` field via `inv_let`.
+      Dropping it makes both cases unprovable with the magnitude machinery; the only replacement,
+      the level-native `genAtV_closure_ready_value` (`RuntimeAtV.lean`), concludes `HasTypeVAt`/
+      `instantiateV`, whose type cannot bridge `EnvWf.cons`'s fixed `HasTypeV`/`instantiate`
+      obligation — forcing `HasTypeV`→`HasTypeVAt` (**256 Soundness sites**) and `EnvWf`→`EnvWfAt`
+      (22) wholesale, plus `HasType`→level-parameterized (changing `lam`/`let_`/`let_poly` arities,
+      hence all 19 inversion lemmas + their consumers). No committable green intermediate exists
+      (`Eyg.*` glob builds `Soundness`). Recommended: Session A promotes `HasTypeAt`→`HasType` and
+      re-greens everything except Soundness (Phases 4-5); Session B/C re-greens `Soundness.lean`
+      (Phase 6). All required lemmas already exist axiom-clean (Phase 3b); the remainder is
+      re-elaboration-heavy editing safe only with interactive goal-state tooling.
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
       Mechanical but must land fully before Phase 6, since it's upstream of every
       preservation case.
