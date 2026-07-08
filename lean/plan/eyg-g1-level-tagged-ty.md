@@ -107,6 +107,26 @@ the datatype change itself.
       `Generalization.lean`'s `CtxWf`/freshness threading around the *level* dimension
       is real file-editing work but no longer open mathematical uncertainty. 7-step
       continuation spec is in the progress note.
+      **Progress 2026-07-08 (same day, follow-up session), commits `ea64f73c`/
+      `53300a81`, see `progress/2026-07-08-G1-phase3b-scheme-level-field-and-substAt-
+      ported.md`:** two green, mechanically-verified sub-steps landed —
+      (1) `Ty.substAt`/`Ty.levels`/`Ty.freeVarsAt` + `substAt_eq_self_of_not_mem`/
+      `substAt_substAt_comm` ported from the spike's toy `Ty2` onto the real 12-former
+      `Ty` (purely additive, retires the "audit the 12-former case" open item);
+      (2) `Scheme` now actually carries the `level : Nat` field (pinned to `0`
+      everywhere, `genAt`/`instantiate`/`substScheme` logic still the old magnitude
+      machinery — pure representation change, mirrors Phase 3a's playbook). Two
+      further design subtleties in the level-native flip itself were found and
+      resolved **by hand** (no live Lean session — this follow-up had no Lean LSP/
+      interactive goal-state tooling, only batch `lake build`): (a) `instantiate`
+      needs an explicit `arity = 0` short-circuit, not a bare level-tag substitution,
+      or `instantiate_mono` breaks for mono schemes whose body references *other*
+      ambient variables at whatever level they're tagged; (b) `substScheme`-after-
+      `genAt` should **not** be expected to equal `genAt` on the substituted body
+      (that only held in the spike because `Scheme2` has no `arity` field at all) —
+      target the `instantiate`-level commutation directly instead, which never reads
+      `.arity`. Sharper 5-step continuation spec, superseding the prior note's step 6,
+      is in the new progress note.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
