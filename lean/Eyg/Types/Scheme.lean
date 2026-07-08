@@ -756,6 +756,49 @@ theorem subst_instantiateV {ℓ : Nat} (hℓ : ℓ ≠ 0) {σ : Nat → Ty}
       rw [Ty.subst_eq_substAt_zero]
       simp only [Ty.substAt, if_neg hℓ]
 
+/-- Level-native ambient substitution **at an arbitrary level `ℓ`** (not just the level-`0`
+`substSchemeV`): apply `σ` at level `ℓ` structurally to the body, carrying `.arity`/`.level` through
+unchanged. This is the operator a *readiness*-keystone re-typing needs — the closure body is re-typed
+under the outer scheme's **instantiation** substitution, which acts at the outer scheme's own nonzero
+level `ℓ`, not at the ambient level `0` that `substSchemeV`/`subst` handle. -/
+def substSchemeVAt (ℓ : Nat) (σ : Nat → Ty) (s : Scheme) : Scheme :=
+  ⟨s.arity, s.level, Ty.substAt ℓ σ s.body⟩
+
+/-- **Substitution commutes with level-native instantiation, across two distinct levels.** The
+readiness-keystone generalization of `subst_instantiateV`: where `subst_instantiateV` pushes a
+*level-`0`* (ambient) substitution through `instantiateV`, this pushes an **arbitrary level-`ℓ'`**
+substitution through the instantiation of a scheme generalized at a *different* level `ℓ` (`ℓ' ≠ ℓ`,
+`ℓ ≠ 0`), provided `σ`'s range never mentions `ℓ` (`hclean` — discharged by a `CtxWfV`-style freshness
+bound via `Ty.clean_of_levels_lt`).
+
+This is precisely the `var`/`builtin`-arm commutation a level-native re-typing lemma under the **outer
+scheme's instantiation** (`substAt ℓ'`, `ℓ' ≠ 0`) would consume for a *nested* inner scheme at level
+`ℓ`: the outer instantiation substitution is "anti-`LevelMap`" (it moves the generalized region, fixes
+the ambient one), so `hasType_subst`/`hasTypeAt_subst` — which handle only `LevelMap`-class ambient
+substitutions — cannot discharge it. Here it is *unconditional in the level dimension* (only the
+level-disjointness `ℓ' ≠ ℓ` + the freshness `hclean`), confirming the down-shift wall does **not**
+reappear for the instantiation substitution once generalization levels are distinct. -/
+theorem substAt_instantiateV {ℓ ℓ' : Nat} (hne : ℓ' ≠ ℓ) {σ : Nat → Ty}
+    (hclean : ∀ i, ∀ j, j ∉ Ty.freeVarsAt ℓ (σ i)) (d : Ty) (args : List Ty) :
+    Ty.substAt ℓ' σ ((genAtV ℓ d).instantiateV args)
+      = (substSchemeVAt ℓ' σ (genAtV ℓ d)).instantiateV (args.map (Ty.substAt ℓ' σ)) := by
+  unfold instantiateV substSchemeVAt genAtV
+  by_cases harity : (d.levels.filter (· = ℓ)).length = 0
+  · simp only [harity, if_true]
+  · simp only [harity, if_false]
+    rw [Ty.substAt_substAt_comm hne _ hclean]
+    congr 1
+    funext i
+    by_cases hi : i < args.length
+    · rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_map,
+        List.getElem?_eq_getElem hi]
+      rfl
+    · have hmap : ¬ i < (args.map (Ty.substAt ℓ' σ)).length := by simpa using hi
+      rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+        List.getElem?_eq_none (by omega), List.getElem?_eq_none (by omega)]
+      show Ty.substAt ℓ' σ (Ty.var ℓ i) = Ty.var ℓ i
+      simp only [Ty.substAt, if_neg (Ne.symm hne)]
+
 end Scheme
 
 /-! ## Scheme builders (`contextual.q`/`pure1`/`pure2`/`pure3`) -/
