@@ -378,6 +378,14 @@ theorem subst_eq_substAt_zero (σ : Nat → Ty) (t : Ty) : subst σ t = substAt 
   | var l i => cases l <;> simp [subst, substAt]
   | _ => simp_all [subst, substAt]
 
+/-- **Substituting a level by its own variables is the identity.** `substAt ℓ (fun i => var ℓ i)`
+rewrites each `var ℓ i` leaf to `var ℓ i` (a no-op) and leaves every other leaf untouched. The
+level-native analog of `subst_id`; the `arity = 0` witness for `genAtV_generalizesAtV`. -/
+theorem substAt_var_self (ℓ : Nat) (t : Ty) : substAt ℓ (fun i => .var ℓ i) t = t := by
+  induction t with
+  | var l i => by_cases h : l = ℓ <;> simp [substAt, h]
+  | _ => simp_all [substAt]
+
 /-- `substAt ℓ σ` never removes a leaf at a level other than `ℓ`. -/
 theorem mem_freeVarsAt_substAt_of_ne {ℓ l' i : Nat} {σ : Nat → Ty} {t : Ty}
     (hl : l' ≠ ℓ) (h : i ∈ freeVarsAt l' t) : i ∈ freeVarsAt l' (substAt ℓ σ t) := by

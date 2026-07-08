@@ -521,6 +521,66 @@ example {ℓ : Nat} {Γ : Ctx} (_hΓ : CtxWfV ℓ Γ) {σ : Nat → Ty}
     ∀ i, ∀ j, j ∉ Ty.freeVarsAt ℓ' (σ i) :=
   Ty.clean_of_levels_lt hσ hge
 
+/-! ## Level-native `GeneralizesAtV` — the substitution-stable generalization predicate (G1 Phase 3b)
+
+The level-native mirror of `GeneralizesAt`. Where `GeneralizesAt n s d` says every instantiation is a
+level-`0` `subst σ' d` whose witness **fixes `[0,n)`** (a magnitude side-condition on the witness),
+`GeneralizesAtV ℓ s d` says every instantiation is a level-`ℓ` `substAt ℓ τ d`. The "fixes the ambient
+scope" clause is now **structural, not a side-condition**: `substAt ℓ` only ever rewrites `var ℓ _`
+leaves, so for `ℓ ≠ 0` it fixes the ambient level-`0` scope automatically (`substAt_fixes_zero`
+below) — this is exactly the property whose *failure* under the flat/magnitude encoding is
+`generalizes_subst_false`.
+
+**The payoff (`genAtV_substSchemeV_generalizesAtV`):** substitution-stability, which
+`generalizes_subst_false` proves is *false* for the declarative `Generalizes`, holds here **with no
+hypothesis at all** — no `LevelMap`, no `hclean`, no `ℓ ≠ 0`. An ambient (level-`0`) substitution `σ`
+cannot collide a generalized level-`ℓ` variable into the context, because it never touches level `ℓ`.
+This is the level-native removal of the `hasType_subst` `let_poly` wall for the substitution-
+commutation obligation, on the real 12-former `Ty`/`Scheme` (not the spike's toy model). -/
+
+/-- `GeneralizesAtV ℓ s d`: every instantiation of `s` (via the level-native `instantiateV`) is a
+level-`ℓ` substitution `substAt ℓ τ d` of `d`. The level-native analog of `GeneralizesAt`; the witness
+`τ` acts only at level `ℓ`, so (for `ℓ ≠ 0`) it fixes the ambient scope structurally. -/
+def GeneralizesAtV (ℓ : Nat) (s : Scheme) (d : Ty) : Prop :=
+  ∀ args, ∃ τ, s.instantiateV args = Ty.substAt ℓ τ d
+
+/-- **A level-`ℓ` substitution fixes every other level** (in particular the ambient level `0` when
+`ℓ ≠ 0`): `substAt ℓ τ` leaves every `var l _` leaf with `l ≠ ℓ` in place. So a `GeneralizesAtV ℓ`
+(with `ℓ ≠ 0`) witness never disturbs the ambient scope — the structural replacement for
+`GeneralizesAt`'s "fixes `[0,n)`" side-condition. -/
+theorem substAt_fixes_zero {ℓ : Nat} (hℓ : ℓ ≠ 0) (τ : Nat → Ty) (i : Nat) :
+    Ty.substAt ℓ τ (.var 0 i) = .var 0 i := by
+  simp only [Ty.substAt, if_neg (Ne.symm hℓ)]
+
+/-- **`genAtV` is a sound level-native generalization** — every instantiation of `genAtV ℓ d` is a
+level-`ℓ` substitution instance of `d`. The direct level-native analog of `genAt_generalizesAt`; the
+witness is the instantiation's own argument map (the `arity = 0` branch uses the identity witness
+`fun i => var ℓ i` via `Ty.substAt_var_self`). -/
+theorem genAtV_generalizesAtV (ℓ : Nat) (d : Ty) : GeneralizesAtV ℓ (Scheme.genAtV ℓ d) d := by
+  intro args
+  by_cases h0 : (Scheme.genAtV ℓ d).arity = 0
+  · exact ⟨fun i => .var ℓ i, by
+      rw [Scheme.instantiateV, if_pos h0]; exact (Ty.substAt_var_self ℓ d).symm⟩
+  · exact ⟨fun i => args.getD i (.var ℓ i), by
+      rw [Scheme.instantiateV, if_neg h0]; rfl⟩
+
+/-- **`GeneralizesAtV` is substitution-stable — unconditionally.** For an **arbitrary** ambient
+(level-`0`) substitution `σ`, the substituted scheme `substSchemeV σ (genAtV ℓ d)` still generalizes
+the substituted type `subst σ d` at level `ℓ`. This is the level-native counterpart of
+`generalizesAt_subst` — but with **no `LevelMap`/`hclean`/`ℓ ≠ 0` premise whatsoever**, precisely
+because `substSchemeV` only rewrites the body's level-`0` content while `genAtV`/`instantiateV`
+quantify at level `ℓ`. It is the direct refutation, on the real `Ty`/`Scheme`, of the wall
+`generalizes_subst_false` machine-checks for the flat encoding: the `let_poly` arm's substitution
+obligation, which was unprovable there, is *trivial* here. -/
+theorem genAtV_substSchemeV_generalizesAtV (ℓ : Nat) (σ : Nat → Ty) (d : Ty) :
+    GeneralizesAtV ℓ (Scheme.substSchemeV σ (Scheme.genAtV ℓ d)) (Ty.subst σ d) := by
+  intro args
+  by_cases h0 : (Scheme.substSchemeV σ (Scheme.genAtV ℓ d)).arity = 0
+  · exact ⟨fun i => .var ℓ i, by
+      rw [Scheme.instantiateV, if_pos h0]; exact (Ty.substAt_var_self ℓ _).symm⟩
+  · exact ⟨fun i => args.getD i (.var ℓ i), by
+      rw [Scheme.instantiateV, if_neg h0]; rfl⟩
+
 /-! ## `Generalizes` is NOT substitution-stable — the `hasType_subst` blocker, machine-checked
 
 The `let_poly` implementation attempt (2026-06-18) stalled because the term-level substitution
