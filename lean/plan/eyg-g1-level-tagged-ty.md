@@ -147,6 +147,31 @@ the datatype change itself.
       error-prone file-editing best done with live Lean LSP tool access (interactive
       goal-state inspection), not batch `lake build` iteration. Full detail and a
       sharpened continuation spec are in the progress note.
+      **Progress 2026-07-08 (third follow-up session, WITH Lean tool access), see
+      `progress/2026-07-08-G1-phase3b-hasType_substAt-nested-arm-grounded.md`:** two more
+      green additive commits landed, resolving the *substitution-commutation* half of the
+      wall and machine-grounding the exact residual gap. (1) **`GeneralizesAtV`**
+      (`Generalization.lean`) — the level-native mirror of `GeneralizesAt`, with
+      `genAtV_generalizesAtV` and the keystone **`genAtV_substSchemeV_generalizesAtV`**:
+      substitution-stability of a level-`ℓ` generalization under an *arbitrary* ambient
+      (level-`0`) `σ`, proved with **no `LevelMap`/`hclean`/`ℓ≠0` premise at all** (plus
+      `Ty.substAt_var_self`, `substAt_fixes_zero`). This is exactly the obligation
+      `generalizes_subst_false` proves *false* for the flat encoding — now trivial
+      level-natively, on the real 12-former `Ty`/`Scheme`. (2) **`hasType_substLM_letPoly`
+      + `substCtx_cons_genAt`** — the `hasType_subst` `let_poly` arm **fired non-vacuously**
+      on the existing `HasType`: given `LevelMap n σ` at the let's stored level `n`, the
+      `Let`-binds-a-`Lambda` node reconstructs via `HasType.let_poly` from the two
+      substituted sub-derivations, `noLambdaLet` required only on the inner lambda body
+      (not the whole term — so it fires on a term the general `hasType_subst` cannot reach).
+      **Exact residual gap, now machine-grounded (not hand-argued):** the *only* missing
+      hypothesis for a full `hasType_substAt` induction is `n ≤ n_let` — the ambient threaded
+      de-Bruijn level must be `≤` each `let_poly`'s stored generalization level, so
+      `LevelMap n σ` lifts (`LevelMap.mono`) to `LevelMap n_let σ`. `HasType.let_poly` does
+      not record the ambient level, so this needs a **level-tracking judgment**
+      (`HasTypeAt (lvl) Γ e τ ε`, `let_poly` generalizes at exactly `lvl`, binders bump
+      `lvl`) — the next concrete deliverable. The wall itself is now removed (the
+      substitution-commutation is proved both magnitude-native *and* level-native); what
+      remains is judgment-plumbing, not open mathematics.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
