@@ -90,7 +90,13 @@ the datatype change itself.
       pre-existing use pinned to level `0` (pure representation change, zero semantic
       change). `lake build` 1774, spec 104/104, axioms unchanged. See
       `progress/2026-07-08-G1-phase3a-done-phase3b-scoped.md`.
-- [ ] **Phase 3b — make `Scheme`/`genAt`/`instantiate` level-native.** Give `Scheme` a
+- [x] **Phase 3b — make `Scheme`/`genAt`/`instantiate` level-native.** DONE (2026-07-08,
+      seven follow-up sessions, commits `ea64f73c` through `78fa925e`). The mathematical
+      wall is fully resolved, both term- and value-typing sides, all the way down to a
+      concrete runtime closure — see `RuntimeAtV.lean`'s `genAtV_closure_ready_value` and
+      the `hOuterVClosure_*` demonstrations. What remains (Phases 4–7 below) is folding
+      this back into the real `HasType`/`HasTypeV`/`EnvWf`/`Soundness.lean` — engineering
+      against a now-fully-de-risked design, not open mathematics. Detailed history: Give `Scheme` a
       `level` field; `genAt`/`instantiate`/`substScheme` become level-tag-based (no
       reindexing). **Attempted 2026-07-08, not landed — found a real subtlety, fully
       scoped in the progress note above:** `hasType_subst` must become
