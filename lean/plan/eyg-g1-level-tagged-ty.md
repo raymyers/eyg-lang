@@ -198,6 +198,32 @@ the datatype change itself.
       Remaining Phase 3b-tail/Phase 4: migrate to the level-native
       `genAtV`/`CtxWfV`/`GeneralizesAtV` (for the readiness keystone) and drop `noLambdaLet`
       from `HasType.let_poly` itself in `Typing.lean`.
+      **Progress 2026-07-08 (fifth follow-up session — the readiness keystone examined; down-shift
+      wall confirmed removed at the mathematics level, two plumbing obstructions located), see
+      `progress/2026-07-08-G1-phase3b-readiness-keystone-two-obstructions-located.md`:** one green
+      additive commit (`substAt_instantiateV` + `substSchemeVAt` in `Scheme.lean`) — the readiness
+      keystone's **cross-level instantiation commutation**: it generalizes `subst_instantiateV` from a
+      level-`0` ambient substitution to an **arbitrary level-`ℓ'`** one (`ℓ' ≠` the inner scheme's
+      level `ℓ`, `σ` clean w.r.t. `ℓ`), the `var`/`builtin`-arm commutation a level-native re-typing
+      under the *outer scheme's instantiation* would consume for a nested inner scheme. With this the
+      **mathematics half of the readiness keystone is complete**: both commutations it rests on — the
+      stored-scheme one (`genAtV_substSchemeV_generalizesAtV`, unconditional) and the instantiated-type
+      one (`substAt_instantiateV`, level-disjoint + clean) — are proved level-natively on the real
+      `Ty`/`Scheme`. **The 2026-06-19 down-shift wall is confirmed removed level-natively** (the
+      instantiation substitution is "anti-`LevelMap`" — moves the generalized region, fixes the ambient
+      — which is why `hasType_subst`/`hasTypeAt_subst`, both `LevelMap`-only, cannot discharge it and
+      degenerate to `σ = id` at `lvl = 0`; distinct levels make the two motions orthogonal, no
+      down-shift). **But the readiness keystone does NOT close additively this session**, blocked by two
+      distinct, precisely-located obstructions, *neither of which is the down-shift wall*: **(A)** a full
+      `substAt ℓ` re-typing induction on a `genAtV`-storing judgment (`HasTypeAtV`) is not yet built —
+      the current `HasTypeAt` deliberately stores the magnitude `genAt`/level-`0` vars and re-types under
+      level-`0` `subst`, wrong for the instantiation motion; de-risked (every per-arm commutation is now
+      proved) but a multi-session parallel judgment; **(B)** `Runtime.lean`'s `HasTypeV.closure`/`EnvWf`
+      require a *magnitude* `HasType` closure-body derivation, which for a nested body of
+      generalization-depth ≥ 3 (a middle lambda whose body binds a polymorphically-used lambda-let) does
+      not exist (`noLambdaLet lbody` fails), so the value judgment can't express the closure typing until
+      Phase 4 (drop `noLambdaLet` from `HasType.let_poly`) or Phase 5 (parallel `HasTypeVAt`/`EnvWfAt`).
+      Both are anticipated judgment plumbing, not open mathematics.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
