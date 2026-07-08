@@ -34,7 +34,8 @@ namespace Ty
 /-- Apply a type-variable substitution `σ` structurally. No shifting is needed
 (`Ty` has no internal binders). -/
 def subst (σ : Nat → Ty) : Ty → Ty
-  | .var i => σ i
+  | .var 0 i => σ i
+  | .var (l+1) i => .var (l+1) i
   | .fun a e r => .fun (subst σ a) (subst σ e) (subst σ r)
   | .binary => .binary
   | .integer => .integer
@@ -48,19 +49,19 @@ def subst (σ : Nat → Ty) : Ty → Ty
   | .never => .never
   | .promise a => .promise (subst σ a)
 
-@[simp] theorem subst_var (σ : Nat → Ty) (i : Nat) : subst σ (.var i) = σ i := rfl
+@[simp] theorem subst_var (σ : Nat → Ty) (i : Nat) : subst σ (.var 0 i) = σ i := rfl
 
 /-- Composition of substitutions (`subst` is functorial in `σ`). -/
 theorem subst_subst (σ τ : Nat → Ty) (t : Ty) :
     subst σ (subst τ t) = subst (fun i => subst σ (τ i)) t := by
   induction t with
-  | var i => rfl
+  | var l i => cases l <;> simp_all [subst]
   | _ => simp_all [subst]
 
 /-- Identity substitution is the identity. -/
-theorem subst_id (t : Ty) : subst (fun i => .var i) t = t := by
+theorem subst_id (t : Ty) : subst (fun i => .var 0 i) t = t := by
   induction t with
-  | var i => rfl
+  | var l i => cases l <;> simp_all [subst]
   | _ => simp_all [subst]
 
 /-- **Substitution preserves row equivalence** (plan T2: `subst` commutes with
@@ -101,7 +102,7 @@ prefix: ambient var `j` lives at de Bruijn index `j + arity` inside the body, so
 substitute supplied for it must be shifted up by `arity`. -/
 
 /-- Shift every type variable up by `k` (`Ty` has no internal binders). -/
-def shift (k : Nat) (t : Ty) : Ty := subst (fun i => .var (i + k)) t
+def shift (k : Nat) (t : Ty) : Ty := subst (fun i => .var 0 (i + k)) t
 
 @[simp] theorem shift_zero (t : Ty) : shift 0 t = t := by
   unfold shift; simpa using subst_id t
@@ -121,7 +122,7 @@ lets `gen` conclude its generalizing substitution fixes the surrounding context
 /-- The list of type variables occurring in a type (with multiplicity; membership
 is what matters). -/
 def freeVars : Ty → List Nat
-  | .var i => [i]
+  | .var 0 i => [i]
   | .fun a e r => freeVars a ++ freeVars e ++ freeVars r
   | .list a => freeVars a
   | .record r => freeVars r
@@ -140,13 +141,16 @@ def genArity (n : Nat) (d : Ty) : Nat := (d.freeVars.map (fun v => v + 1 - n)).f
 /-- The re-indexing turning `d` into a level-`n` scheme body with `arity` quantifiers: ambient vars
 (`< n`) shift up past the prefix; generalized vars (`≥ n`) become quantifier `v - n`. -/
 def reindexGen (n arity : Nat) : Nat → Ty :=
-  fun v => if v < n then .var (v + arity) else .var (v - n)
+  fun v => if v < n then .var 0 (v + arity) else .var 0 (v - n)
 
 /-- **A substitution that fixes every free variable fixes the type.** -/
 theorem subst_eq_of_fixes_free {σ : Nat → Ty} {t : Ty}
-    (h : ∀ i ∈ freeVars t, σ i = .var i) : subst σ t = t := by
+    (h : ∀ i ∈ freeVars t, σ i = .var 0 i) : subst σ t = t := by
   induction t with
-  | var i => exact h i (by simp [freeVars])
+  | var l i =>
+      cases l with
+      | zero => exact h i (by simp [freeVars])
+      | succ n => rfl
   | «fun» a e r iha ihe ihr =>
       simp only [freeVars, List.mem_append] at h
       simp only [subst, iha (fun i hi => h i (Or.inl (Or.inl hi))),
@@ -170,11 +174,14 @@ type to match it must map to itself. The pair characterizes `subst σ t = t` exa
 is what `let_poly`'s `generalizes_ctxConv` needs (rewriting a context binding up to
 `TyEquiv` preserves the free-var set, so a context-fixing `σ` keeps fixing it). -/
 theorem fixes_free_of_subst_eq {σ : Nat → Ty} {t : Ty}
-    (h : subst σ t = t) : ∀ i ∈ freeVars t, σ i = .var i := by
+    (h : subst σ t = t) : ∀ i ∈ freeVars t, σ i = .var 0 i := by
   induction t with
-  | var j =>
-      intro i hi; simp only [freeVars, List.mem_singleton] at hi; subst hi
-      simpa only [subst] using h
+  | var l j =>
+      cases l with
+      | zero =>
+          intro i hi; simp only [freeVars, List.mem_singleton] at hi; subst hi
+          simpa only [subst] using h
+      | succ n => intro i hi; simp only [freeVars] at hi; nomatch hi
   | «fun» a e r iha ihe ihr =>
       simp only [subst, Ty.fun.injEq] at h
       intro i hi; simp only [freeVars, List.mem_append] at hi
@@ -231,7 +238,10 @@ The generalization of `subst_eq_of_fixes_free` (which is the `σ₂ = id` case).
 theorem subst_congr_free {σ₁ σ₂ : Nat → Ty} {t : Ty}
     (h : ∀ i ∈ freeVars t, σ₁ i = σ₂ i) : subst σ₁ t = subst σ₂ t := by
   induction t with
-  | var i => exact h i (by simp [freeVars])
+  | var l i =>
+      cases l with
+      | zero => exact h i (by simp [freeVars])
+      | succ n => rfl
   | «fun» a e r iha ihe ihr =>
       simp only [freeVars, List.mem_append] at h
       simp only [subst, iha (fun i hi => h i (Or.inl (Or.inl hi))),
@@ -256,9 +266,14 @@ arity's stability under level-map substitution). -/
 theorem mem_freeVars_subst {σ : Nat → Ty} {t : Ty} {i : Nat} :
     i ∈ freeVars (subst σ t) ↔ ∃ v ∈ freeVars t, i ∈ freeVars (σ v) := by
   induction t with
-  | var j => simp only [subst, freeVars, List.mem_singleton]; constructor
-             · intro h; exact ⟨j, rfl, h⟩
-             · rintro ⟨v, rfl, h⟩; exact h
+  | var l j =>
+      cases l with
+      | zero =>
+          simp only [subst, freeVars, List.mem_singleton]; constructor
+          · intro h; exact ⟨j, rfl, h⟩
+          · rintro ⟨v, rfl, h⟩; exact h
+      | succ n =>
+          simp [subst, freeVars]
   | «fun» a e r iha ihe ihr =>
       simp only [subst, freeVars, List.mem_append, iha, ihe, ihr]; constructor
       · rintro ((⟨v,hv,hi⟩|⟨v,hv,hi⟩)|⟨v,hv,hi⟩)
@@ -325,7 +340,7 @@ free ambient variables.) A *monomorphic* scheme (arity 0) is the identity on its
 body, ignoring `args` — the property `EnvWf`'s polymorphic-readiness clause relies
 on. The declarative typing rules pick `args` with `args.length = arity`. -/
 def instantiate (s : Scheme) (args : List Ty) : Ty :=
-  Ty.subst (fun i => if i < s.arity then args.getD i (.var i) else .var (i - s.arity)) s.body
+  Ty.subst (fun i => if i < s.arity then args.getD i (.var 0 i) else .var 0 (i - s.arity)) s.body
 
 /-- A monomorphic scheme instantiates to its body, ignoring `args`. -/
 @[simp] theorem instantiate_mono (t : Ty) (args : List Ty) :
@@ -340,7 +355,7 @@ at body-index `i ≥ arity`, is replaced by `σ (i - arity)` **shifted up by `ar
 (so its own variables land back above the quantifier prefix). This is exactly the
 map that makes substitution commute with instantiation (`subst_instantiate`). -/
 def substScheme (σ : Nat → Ty) (s : Scheme) : Scheme :=
-  ⟨s.arity, Ty.subst (fun i => if i < s.arity then .var i else Ty.shift s.arity (σ (i - s.arity)))
+  ⟨s.arity, Ty.subst (fun i => if i < s.arity then .var 0 i else Ty.shift s.arity (σ (i - s.arity)))
     s.body⟩
 
 @[simp] theorem substScheme_arity (σ : Nat → Ty) (s : Scheme) :
@@ -397,8 +412,8 @@ theorem subst_instantiate (σ : Nat → Ty) (s : Scheme) (args : List Ty)
     show σ (i - s.arity) = Ty.subst _ (Ty.shift s.arity (σ (i - s.arity)))
     rw [Ty.subst_shift]
     have hid : (fun j => (if j + s.arity < s.arity
-        then (args.map (Ty.subst σ)).getD (j + s.arity) (.var (j + s.arity))
-        else (.var (j + s.arity - s.arity) : Ty))) = (fun j => (.var j : Ty)) := by
+        then (args.map (Ty.subst σ)).getD (j + s.arity) (.var 0 (j + s.arity))
+        else (.var 0 (j + s.arity - s.arity) : Ty))) = (fun j => (.var 0 j : Ty)) := by
       funext j
       rw [if_neg (by omega), Nat.add_sub_cancel]
     rw [hid, Ty.subst_id]
@@ -410,7 +425,7 @@ its substitute `subst σ args[i]`; otherwise (an *under*-applied scheme leaves `
 i` in place) the ambient substitution would act on the leaked `var i`, so we feed
 `σ i` directly. -/
 def instArgs (σ : Nat → Ty) (s : Scheme) (args : List Ty) : List Ty :=
-  (List.range s.arity).map (fun i => if i < args.length then Ty.subst σ (args.getD i (.var i)) else σ i)
+  (List.range s.arity).map (fun i => if i < args.length then Ty.subst σ (args.getD i (.var 0 i)) else σ i)
 
 @[simp] theorem instArgs_length (σ : Nat → Ty) (s : Scheme) (args : List Ty) :
     (instArgs σ s args).length = s.arity := by simp [instArgs]
@@ -430,8 +445,8 @@ theorem subst_instantiate' (σ : Nat → Ty) (s : Scheme) (args : List Ty) :
   · -- quantified variable: read `instArgs` at index `i < arity`
     have hb : i < (List.range s.arity).length := by rw [List.length_range]; exact hi
     have hrng : ((List.range s.arity).map
-        (fun i => if i < args.length then Ty.subst σ (args.getD i (.var i)) else σ i)).getD i (.var i)
-        = if i < args.length then Ty.subst σ (args.getD i (.var i)) else σ i := by
+        (fun i => if i < args.length then Ty.subst σ (args.getD i (.var 0 i)) else σ i)).getD i (.var 0 i)
+        = if i < args.length then Ty.subst σ (args.getD i (.var 0 i)) else σ i := by
       rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hb]
       simp [List.getElem_range]
     simp only [hi, if_true, Ty.subst, instArgs, hrng]
@@ -446,8 +461,8 @@ theorem subst_instantiate' (σ : Nat → Ty) (s : Scheme) (args : List Ty) :
     show σ (i - s.arity) = Ty.subst _ (Ty.shift s.arity (σ (i - s.arity)))
     rw [Ty.subst_shift]
     have hid : (fun j => (if j + s.arity < s.arity
-        then (instArgs σ s args).getD (j + s.arity) (.var (j + s.arity))
-        else (.var (j + s.arity - s.arity) : Ty))) = (fun j => (.var j : Ty)) := by
+        then (instArgs σ s args).getD (j + s.arity) (.var 0 (j + s.arity))
+        else (.var 0 (j + s.arity - s.arity) : Ty))) = (fun j => (.var 0 j : Ty)) := by
       funext j
       rw [if_neg (by omega), Nat.add_sub_cancel]
     rw [hid, Ty.subst_id]
@@ -459,7 +474,7 @@ end Scheme
 namespace Ty
 
 /-- Quantified type variable `i` (`contextual.q`). -/
-abbrev q (i : Nat) : Ty := .var i
+abbrev q (i : Nat) : Ty := .var 0 i
 
 /-- A pure unary arrow `arg →⟨∅⟩ ret` (`contextual.pure1`). -/
 def pure1 (arg ret : Ty) : Ty := .fun arg .empty ret

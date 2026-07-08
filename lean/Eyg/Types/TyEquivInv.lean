@@ -28,7 +28,7 @@ inductive Shape where
 
 /-- The head shape of a type. -/
 def shape : Ty → Shape
-  | .var _ => .var
+  | .var _ _ => .var
   | .fun _ _ _ => .fn
   | .binary => .binary
   | .integer => .integer

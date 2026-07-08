@@ -40,11 +40,11 @@ variable {m : Type}
 /-- The identity ambient substitution leaves a scheme unchanged: the quantifier
 prefix shift cancels (`shift arity (var (i - arity)) = var i` for `i ≥ arity`). -/
 @[simp] theorem substScheme_id (s : Scheme) :
-    Scheme.substScheme (fun i => .var i) s = s := by
+    Scheme.substScheme (fun i => .var 0 i) s = s := by
   unfold Scheme.substScheme
-  have hfun : (fun i => if i < s.arity then (Ty.var i)
-        else Ty.shift s.arity (Ty.var (i - s.arity)))
-      = (fun i => (Ty.var i : Ty)) := by
+  have hfun : (fun i => if i < s.arity then (Ty.var 0 i)
+        else Ty.shift s.arity (Ty.var 0 (i - s.arity)))
+      = (fun i => (Ty.var 0 i : Ty)) := by
     funext i
     by_cases hi : i < s.arity
     · simp [hi]
@@ -54,7 +54,7 @@ prefix shift cancels (`shift arity (var (i - arity)) = var i` for `i ≥ arity`)
   rw [hfun, Ty.subst_id]
 
 /-- The identity ambient substitution leaves a typing context unchanged. -/
-@[simp] theorem substCtx_id (Γ : Ctx) : substCtx (fun i => .var i) Γ = Γ := by
+@[simp] theorem substCtx_id (Γ : Ctx) : substCtx (fun i => .var 0 i) Γ = Γ := by
   induction Γ with
   | nil => rfl
   | cons hd tl ih =>
@@ -78,7 +78,7 @@ the witnessing substitution is the identity, which fixes everything). So the
 monomorphic `let` is the `arity = 0` special case of a `let_poly`. -/
 theorem generalizes_mono (Γ : Ctx) (τ : Ty) : Generalizes (Scheme.mono τ) Γ τ := by
   intro args
-  refine ⟨fun i => .var i, ?_, substCtx_id Γ⟩
+  refine ⟨fun i => .var 0 i, ?_, substCtx_id Γ⟩
   rw [Scheme.instantiate_mono, Ty.subst_id]
 
 /-- `substCtx σ` fixes a context iff it fixes every binding's scheme. -/
@@ -158,13 +158,13 @@ instantiation args) is the remaining piece for the dedicated session. -/
 the ambient region `[0,n)`** — so `σ'` only moves the *generalized* variables, which live at indices
 `≥ n`. Strengthens `Generalizes` along the freshness axis it was missing. -/
 def GeneralizesAt (n : Nat) (s : Scheme) (d : Ty) : Prop :=
-  ∀ args, ∃ σ', s.instantiate args = Ty.subst σ' d ∧ ∀ i, i < n → σ' i = .var i
+  ∀ args, ∃ σ', s.instantiate args = Ty.subst σ' d ∧ ∀ i, i < n → σ' i = .var 0 i
 
 /-- **Bridge: `GeneralizesAt n` implies the keystone's `Generalizes`** when the context `Γ` is below
 level `n` (any `[0,n)`-fixing substitution fixes it). So the level-indexed predicate slots directly
 into `generalizes_closure_ready` — the keystone is unchanged; only the freshness premise sharpens. -/
 theorem generalizesAt_to_generalizes {n : Nat} {s : Scheme} {Γ : Ctx} {d : Ty}
-    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ)
+    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var 0 i) → substCtx σ' Γ = Γ)
     (hg : GeneralizesAt n s d) : Generalizes s Γ d := by
   intro args
   obtain ⟨σ', heq, hfix⟩ := hg args
@@ -174,7 +174,7 @@ theorem generalizesAt_to_generalizes {n : Nat} {s : Scheme} {Γ : Ctx} {d : Ty}
 identity `σ'` — which fixes `[0,n)` — witnesses every instantiation). The `arity = 0` base case. -/
 theorem generalizesAt_mono (n : Nat) (τ : Ty) : GeneralizesAt n (Scheme.mono τ) τ := by
   intro args
-  exact ⟨fun i => .var i, by rw [Scheme.instantiate_mono, Ty.subst_id], fun i _ => rfl⟩
+  exact ⟨fun i => .var 0 i, by rw [Scheme.instantiate_mono, Ty.subst_id], fun i _ => rfl⟩
 
 /-! ## Constructive generalization `genAt` — the substitution-stable witness (T6 gen, design fork)
 
@@ -216,7 +216,7 @@ variable `< n` to a type whose free variables stay `< n`. This is exactly the cl
 `hasType_subst` threads (the ambient-into-ambient condition pinned in the level-redesign note) — it
 keeps the generalized region untouched, so generalization is stable under it. -/
 def LevelMap (n : Nat) (σ : Nat → Ty) : Prop :=
-  (∀ i, n ≤ i → σ i = .var i) ∧ (∀ i, i < n → ∀ w ∈ (σ i).freeVars, w < n)
+  (∀ i, n ≤ i → σ i = .var 0 i) ∧ (∀ i, i < n → ∀ w ∈ (σ i).freeVars, w < n)
 
 /-- **A level map is a level map at every higher level.** A `LevelMap n` fixes `[n,∞)` and keeps
 `[0,n)` within `[0,n)`; raising the level to `n' ≥ n` still fixes `[n',∞)` (⊆ `[n,∞)`) and keeps
@@ -266,7 +266,7 @@ of `d` whose witnessing substitution fixes the ambient region `[0,n)`. (The witn
 theorem genAt_generalizesAt (n : Nat) (d : Ty) : GeneralizesAt n (Scheme.genAt n d) d := by
   intro args
   refine ⟨fun v => Ty.subst
-      (fun j => if j < d.genArity n then args.getD j (.var j) else .var (j - d.genArity n))
+      (fun j => if j < d.genArity n then args.getD j (.var 0 j) else .var 0 (j - d.genArity n))
       (Ty.reindexGen n (d.genArity n) v), ?_, ?_⟩
   · -- instantiate = subst (compose) d, definitionally (subst_subst)
     simp only [Scheme.instantiate, Scheme.genAt, Ty.subst_subst]
@@ -281,7 +281,7 @@ generalization satisfies the declarative `Generalizes` that `generalizes_closure
 the `let_poly` rule can store `genAt n defnTy` and discharge the `EnvWf.cons` readiness clause through
 the unchanged keystone. The rule-facing connective for the threading session. -/
 theorem genAt_generalizes {n : Nat} {Γ : Ctx} {d : Ty}
-    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ) :
+    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var 0 i) → substCtx σ' Γ = Γ) :
     Generalizes (Scheme.genAt n d) Γ d :=
   generalizesAt_to_generalizes hΓ (genAt_generalizesAt n d)
 
@@ -292,7 +292,7 @@ level `n`). This is the closed readiness `Rdy` the `Assign`-push computes once, 
 point, and carries across the lambda→closure step (the coupling design's `StackWfV`). -/
 theorem genAt_closure_ready {n : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
     {env : Env m} {defnTy ε : Ty}
-    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var i) → substCtx σ' Γ = Γ)
+    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var 0 i) → substCtx σ' Γ = Γ)
     (hnl : Tree.Node.noLambdaLet body)
     (henv : EnvWf env Γ)
     (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
@@ -359,7 +359,7 @@ theorem genAt_substScheme {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ) (
   · -- ambient var: reindexed to v + arity (≥ arity); LHS shifts σ v, reindexGen acts as shift on it
     push_neg at hvn
     have hvk : ¬ v + d.genArity n < d.genArity n := by omega
-    rw [show Ty.reindexGen n (d.genArity n) v = Ty.var (v + d.genArity n) from by
+    rw [show Ty.reindexGen n (d.genArity n) v = Ty.var 0 (v + d.genArity n) from by
       rw [Ty.reindexGen, if_pos hvn]]
     simp only [Ty.subst_var, if_neg hvk, Nat.add_sub_cancel]
     exact Ty.shift_eq_reindexGen (fun w hw => hamb v hvn w hw)
@@ -413,7 +413,7 @@ theorem Scheme.mem_freeVars {s : Scheme} {m : Nat} :
 untouched by `substScheme`; each ambient occurrence `i ≥ arity` maps to `shift arity (σ (i-arity))`,
 which collapses to `var i` exactly when `σ` fixes `i - arity`.) -/
 theorem Scheme.substScheme_eq_of_fixes_free {σ : Nat → Ty} {s : Scheme}
-    (h : ∀ i ∈ s.freeVars, σ i = .var i) : Scheme.substScheme σ s = s := by
+    (h : ∀ i ∈ s.freeVars, σ i = .var 0 i) : Scheme.substScheme σ s = s := by
   rw [Scheme.substScheme]
   refine Scheme.ext' rfl ?_
   apply Ty.subst_eq_of_fixes_free
@@ -480,7 +480,7 @@ theorem ctxWf_substCtx {n : Nat} {σ : Nat → Ty} {Γ : Ctx}
 fixes a context all of whose ambient free vars are `< n` (`substScheme_eq_of_fixes_free` per binding).
 This is the `hΓ` premise `genAt_generalizes`/`genAt_closure_ready` consume. -/
 theorem ctxWf_fixed {n : Nat} {Γ : Ctx} (hΓ : CtxWf n Γ)
-    {σ' : Nat → Ty} (hfix : ∀ i, i < n → σ' i = .var i) : substCtx σ' Γ = Γ := by
+    {σ' : Nat → Ty} (hfix : ∀ i, i < n → σ' i = .var 0 i) : substCtx σ' Γ = Γ := by
   rw [substCtx_eq_self_iff]
   intro b hb
   exact Scheme.substScheme_eq_of_fixes_free (fun i hi => hfix i (hΓ b hb i hi))
@@ -500,30 +500,30 @@ discipline (index `Generalizes` by a level `n`, constrain `σ` below `n`) thread
 
 /-- The witness scheme/context: `∀α. α` generalized away from a context whose only free variable is
 `var 1`, at let-site type `var 0`. -/
-private def cexΓ : Ctx := [("y", Scheme.mono (.var 1))]
+private def cexΓ : Ctx := [("y", Scheme.mono (.var 0 1))]
 
 /-- The generalization **holds** before substitution: every instance `t` of `⟨1, var 0⟩` is
 `subst [0↦t] (var 0)` with `[0↦t]` fixing `cexΓ` (it touches only `var 0`, and `FV(cexΓ) = {1}`). -/
-private theorem cex_pos : Generalizes ⟨1, .var 0⟩ cexΓ (.var 0) := by
+private theorem cex_pos : Generalizes ⟨1, .var 0 0⟩ cexΓ (.var 0 0) := by
   intro args
-  refine ⟨fun i => if i = 0 then args.getD 0 (.var 0) else .var i, ?_, ?_⟩
+  refine ⟨fun i => if i = 0 then args.getD 0 (.var 0 0) else .var 0 i, ?_, ?_⟩
   · simp [Scheme.instantiate, Ty.subst]
   · simp [cexΓ, substCtx, Scheme.substScheme_mono, Ty.subst]
 
 /-- The generalization **fails** at let-site type `var 1` (the same scheme, but the let-site type is
 now a context variable): instantiating to `var 0` would need a `σ'` with `σ' 1 = var 0` *and* (to fix
 `cexΓ`) `σ' 1 = var 1`. -/
-private theorem cex_neg : ¬ Generalizes ⟨1, .var 0⟩ cexΓ (.var 1) := by
+private theorem cex_neg : ¬ Generalizes ⟨1, .var 0 0⟩ cexΓ (.var 0 1) := by
   intro H
-  obtain ⟨σ', heq, hfix⟩ := H [.var 0]
+  obtain ⟨σ', heq, hfix⟩ := H [.var 0 0]
   -- hfix : substCtx σ' cexΓ = cexΓ  ⟹  subst σ' (var 1) = var 1
-  have hsub : Ty.subst σ' (.var 1) = .var 1 := by
+  have hsub : Ty.subst σ' (.var 0 1) = .var 0 1 := by
     have e := hfix
     unfold cexΓ substCtx at e
     simp only [List.map_cons, List.map_nil, Scheme.substScheme_mono, List.cons.injEq,
       Prod.mk.injEq, true_and, and_true] at e
     exact congrArg Scheme.body e
-  have hinst : Scheme.instantiate ⟨1, .var 0⟩ [Ty.var 0] = Ty.var 0 := by
+  have hinst : Scheme.instantiate ⟨1, .var 0 0⟩ [Ty.var 0 0] = Ty.var 0 0 := by
     simp [Scheme.instantiate, Ty.subst, List.getD_cons_zero]
   rw [hinst, hsub] at heq
   exact absurd heq (by decide)
@@ -538,14 +538,14 @@ theorem generalizes_subst_false :
         Generalizes s Γ d →
         Generalizes (Scheme.substScheme σ s) (substCtx σ Γ) (Ty.subst σ d) := by
   intro H
-  have h := H ⟨1, .var 0⟩ cexΓ (.var 0) (fun i => if i = 0 then .var 1 else .var i) cex_pos
+  have h := H ⟨1, .var 0 0⟩ cexΓ (.var 0 0) (fun i => if i = 0 then .var 0 1 else .var 0 i) cex_pos
   -- normalize the substituted witness back to the `cex_neg` shape, then contradict
-  have hs : Scheme.substScheme (fun i => if i = 0 then (.var 1 : Ty) else .var i) ⟨1, .var 0⟩
-      = ⟨1, .var 0⟩ := by
+  have hs : Scheme.substScheme (fun i => if i = 0 then (.var 0 1 : Ty) else .var 0 i) ⟨1, .var 0 0⟩
+      = ⟨1, .var 0 0⟩ := by
     simp [Scheme.substScheme, Ty.subst]
-  have hc : substCtx (fun i => if i = 0 then (.var 1 : Ty) else .var i) cexΓ = cexΓ := by
+  have hc : substCtx (fun i => if i = 0 then (.var 0 1 : Ty) else .var 0 i) cexΓ = cexΓ := by
     simp [cexΓ, substCtx, Scheme.substScheme_mono, Ty.subst]
-  have hd : Ty.subst (fun i => if i = 0 then (.var 1 : Ty) else .var i) (.var 0) = .var 1 := rfl
+  have hd : Ty.subst (fun i => if i = 0 then (.var 0 1 : Ty) else .var 0 i) (.var 0 0) = .var 0 1 := rfl
   rw [hs, hc, hd] at h
   exact cex_neg h
 
@@ -559,12 +559,12 @@ open Eyg.Ir.Tree
 example : HasType (m := Unit) []
     (let_ "id" (lambda "y" (variable_ "y")) (apply (variable_ "id") (integer 1)))
     .integer .empty := by
-  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0) .empty (.var 0)) ?_ ?_ ?_ ?_
-  · exact HasType.lam (HasType.var (s := .mono (.var 0)) (args := []) rfl)
+  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0 0) .empty (.var 0 0)) ?_ ?_ ?_ ?_
+  · exact HasType.lam (HasType.var (s := .mono (.var 0 0)) (args := []) rfl)
   · intro b hb; cases hb
   · trivial
   · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
-    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0) .empty (.var 0)))
+    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0 0) .empty (.var 0 0)))
       (args := [.integer]) rfl
 
 /-- **Nested-`let` polymorphism (the `noLambdaLet` relaxation).** The generalized lambda's body
@@ -576,14 +576,14 @@ example : HasType (m := Unit) []
     (let_ "id'" (lambda "x" (let_ "y" (variable_ "x") (variable_ "y")))
       (apply (variable_ "id'") (integer 1)))
     .integer .empty := by
-  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0) .empty (.var 0)) ?_ ?_ ?_ ?_
+  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0 0) .empty (.var 0 0)) ?_ ?_ ?_ ?_
   · exact HasType.lam (HasType.let_
-      (HasType.var (s := .mono (.var 0)) (args := []) rfl)
-      (HasType.var (s := .mono (.var 0)) (args := []) rfl))
+      (HasType.var (s := .mono (.var 0 0)) (args := []) rfl)
+      (HasType.var (s := .mono (.var 0 0)) (args := []) rfl))
   · intro b hb; cases hb
   · trivial
   · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
-    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0) .empty (.var 0)))
+    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0 0) .empty (.var 0 0)))
       (args := [.integer]) rfl
 
 end

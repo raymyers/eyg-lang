@@ -2014,8 +2014,8 @@ theorem fixPreserves [BEq m] : FixPreserves m := by
       obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
       have harg' : HasTypeV arg a' := harg.conv ha.symm
       -- pin the narrowed fix scheme
-      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
-          (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ := by
+      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+          (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ := by
         rcases scheme_cases hs with ⟨h,_⟩|⟨_,h⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|
           ⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩
         all_goals first | exact h | exact absurd h (by decide)
@@ -2031,11 +2031,11 @@ theorem fixPreserves [BEq m] : FixPreserves m := by
         · simp at hlt
       subst happ
       -- compute the (narrowed) instantiated base; `cons` peels nothing (`applied = []`)
-      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
-            (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ args
-          = .fun (.fun (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3)))
-              .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))))
-            .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))) := by
+      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+            (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ args
+          = .fun (.fun (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3)))
+              .empty (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3))))
+            .empty (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3))) := by
         simp [Scheme.instantiate, Ty.subst]
       rw [hB] at hpw
       cases hpw
@@ -2072,8 +2072,8 @@ theorem builtinAppPreserves [BEq m] (hfix : FixPreserves m) : BuiltinAppPreserve
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
     · -- equal : ∀α. α → α → boolean
-      exact builtinApp_arity2 (sargs := args) (D1 := args.getD 0 (Ty.var 0))
-        (D2 := args.getD 0 (Ty.var 0))
+      exact builtinApp_arity2 (sargs := args) (D1 := args.getD 0 (Ty.var 0 0))
+        (D2 := args.getD 0 (Ty.var 0 0))
         (R := Ty.boolean) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by intro a e r h; cases h) hs
         (by simp [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q, Ty.boolean, Ty.union', Ty.rows,
@@ -2256,7 +2256,7 @@ theorem builtinAppNoBadCrash [BEq m] (hfix : FixNoBadCrash m) : BuiltinAppNoBadC
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
     · -- equal (never errors)
-      exact builtinNoBad_arity2 (D1 := args.getD 0 (Ty.var 0)) (D2 := args.getD 0 (Ty.var 0))
+      exact builtinNoBad_arity2 (D1 := args.getD 0 (Ty.var 0 0)) (D2 := args.getD 0 (Ty.var 0 0))
         (R := Ty.boolean) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by simpa [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q] using hpw) harg' hcrash
         (by intro a e r h; cases h) (fun _ _ herr => by simp [Builtin.run] at herr)
@@ -3830,8 +3830,8 @@ theorem fixPreservesB [BEq m] : FixPreservesB m := by
       obtain ⟨hs, n, harity, hlt⟩ := hwf
       obtain ⟨ha, _, hr⟩ := Ty.tyEquiv_fun_components he
       have harg' : HasTypeV arg a' := harg.conv ha.symm
-      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
-          (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ := by
+      have hsfix : s = ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+          (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ := by
         rcases scheme_cases hs with ⟨h,_⟩|⟨_,h⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|
           ⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩|⟨h,_⟩
         all_goals first | exact h | exact absurd h (by decide)
@@ -3845,11 +3845,11 @@ theorem fixPreservesB [BEq m] : FixPreservesB m := by
         · rfl
         · simp at hlt
       subst happ
-      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0) (.var 2) (.var 3)) .empty
-            (.fun (.var 0) (.var 2) (.var 3))) .empty (.fun (.var 0) (.var 2) (.var 3))⟩ args
-          = .fun (.fun (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3)))
-              .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))))
-            .empty (.fun (args.getD 0 (.var 0)) (args.getD 2 (.var 2)) (args.getD 3 (.var 3))) := by
+      have hB : Scheme.instantiate ⟨4, .fun (.fun (.fun (.var 0 0) (.var 0 2) (.var 0 3)) .empty
+            (.fun (.var 0 0) (.var 0 2) (.var 0 3))) .empty (.fun (.var 0 0) (.var 0 2) (.var 0 3))⟩ args
+          = .fun (.fun (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3)))
+              .empty (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3))))
+            .empty (.fun (args.getD 0 (.var 0 0)) (args.getD 2 (.var 0 2)) (args.getD 3 (.var 0 3))) := by
         simp [Scheme.instantiate, Ty.subst]
       rw [hB] at hpw
       cases hpw
@@ -3877,8 +3877,8 @@ theorem builtinAppPreservesB [BEq m] (hfixB : FixPreservesB m) : BuiltinAppPrese
     rcases scheme_cases hs with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · exact builtinApp_arity2_B (sargs := args) (D1 := args.getD 0 (Ty.var 0))
-        (D2 := args.getD 0 (Ty.var 0))
+    · exact builtinApp_arity2_B (sargs := args) (D1 := args.getD 0 (Ty.var 0 0))
+        (D2 := args.getD 0 (Ty.var 0 0))
         (R := Ty.boolean) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by intro a e r h; cases h) hs
         (by simp [Scheme.instantiate, Ty.subst, Ty.pure2, Ty.q, Ty.boolean, Ty.union', Ty.rows,

@@ -34,9 +34,19 @@ namespace Eyg.Types
 /-- EYG types, mirroring `isomorphic.Type(var)` with de Bruijn type variables.
 
 `fun arg eff ret` carries an **effect row** in its middle slot. Records, unions,
-and effects are rows built from `empty`/`rowExtend`/`effectExtend`. -/
+and effects are rows built from `empty`/`rowExtend`/`effectExtend`.
+
+**`var` carries a generalization *level* tag** (`plan/eyg-g1-level-tagged-ty.md`):
+`var level idx` — `level` names which generalization layer this variable belongs to
+(`0` = the ambient/global scope, matching every pre-existing use of `Ty`; `k > 0` =
+`k`-deep inside nested `let`-polymorphism), `idx` is its position within that level.
+This resolves the nested-`let_poly` substitution-stability wall
+(`Generalization.lean`'s `generalizes_subst_false`): a level-scoped ambient
+substitution can only ever rewrite its own level's `var` leaves, so it structurally
+cannot reach a *different* scheme's quantifiers, regardless of index magnitude — no
+shifting/reindexing is needed the way the old single-index-space design required. -/
 inductive Ty where
-  | var (idx : Nat)
+  | var (level idx : Nat)
   | fun (arg : Ty) (eff : Ty) (ret : Ty)
   | binary
   | integer
