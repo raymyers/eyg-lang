@@ -57,6 +57,18 @@ no down-shift/`LevelMap` mismatch.
 ~7,600 lines across 13 files touch `Ty`/`HasType`/`Scheme`; `Soundness.lean` is ~60% of
 that and is where a constructor-arity change costs the most just from re-elaboration.
 
+**Correction from Phase 3a (2026-07-08):** this table overstated the blast radius for
+the *representation* change specifically. `Typing.lean`, `Machine.lean`, `Runtime.lean`,
+`Substitution.lean`, `Generation.lean` needed **zero changes** for the `Ty.var` arity
+change — their `.var`/`HasType.var` hits were all the unrelated `HasType.var` *judgment*
+constructor, not `Ty.var`. Only `Scheme.lean` (real proof changes: totality + level
+case-splits) and `Generalization.lean`/`Soundness.lean` (mechanical `.var i → .var 0 i`
+transliteration, zero manual fixes needed in Generalization.lean beyond the mechanical
+pass) were touched — see `progress/2026-07-08-G1-phase3a-done-phase3b-scoped.md` for the
+exact diff shape. The *capability* work (Phase 3b onward — giving `Scheme` a real level
+field and level-parameterizing `hasType_subst`) is where the real remaining cost is, not
+the datatype change itself.
+
 ## Phases
 
 - [x] **Phase 1 (spike) — tagged core in isolation.** DONE (2026-07-08),
@@ -119,6 +131,17 @@ did, and the caveat stays open and honestly documented.
 
 ## Estimate
 
-Phases 1–2 are a genuine research spike (go/no-go checkpoint). Phases 3–7 are large but
-mechanical-plus-known-shape, assuming no second wall is hit. Rough sizing: 1–2 sessions for
-the spike, 3–5 more for the rest. Total 4–7 sessions.
+Phases 1–2 (spike) and 3a (real datatype port) are **done** (2026-07-08, one session,
+three commits: `406061c1` spike, `8108591a` Phase 3a, plus two further spike commits
+`c2db9272`/`a3e448f7` that fully validate Phase 3b's remaining math — the conditional
+`hasType_subst`-var/builtin commutation and the `CtxWf`/freshness-threading discipline,
+both with zero open uncertainty left). Phase 3b's *math* is settled; what's left is
+porting it onto the real `Ty`/`Scheme`/`Generalization.lean` (including a full redesign
+of `CtxWf` and every lemma downstream of it — `ctxWf_fixed`, `ctxWf_substCtx`,
+`genAt_generalizes`, `genAt_closure_ready`, `generalizes_closure_ready` — around levels
+instead of magnitude) plus level-parameterizing `hasType_subst` across all ~15 rule
+cases in `Substitution.lean` — genuinely substantial file-editing even with the design
+fully de-risked. Then Phases 4–7 (re-thread `Typing.lean`, re-green `Machine`/`Runtime`,
+re-green `Soundness.lean`, sanity example + report). Revised rough sizing: Phase 3b
+1–2 more sessions (now low-risk, not open-ended), Phases 4–7 2–3 more. Total from here:
+3–5 sessions.
