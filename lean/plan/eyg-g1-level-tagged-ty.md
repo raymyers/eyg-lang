@@ -87,8 +87,14 @@ that and is where a constructor-arity change costs the most just from re-elabora
       `var`/`builtin` rule arms) need a genuine side-condition on the ambient
       substitution's range (distinct from — but analogous in spirit to — the old
       `LevelMap`), unlike the *stored-scheme* commutation (`substScheme_genAt`-shape),
-      which the spike already confirmed is unconditional. Continuation spec with 7
-      concrete steps is in the progress note.
+      which the spike already confirmed is unconditional. **Both commutation facts are
+      now mechanically validated in isolation** (`LevelTagSpike.lean`, commit
+      `c2db9272`): `substScheme_genAt` (unconditional) and `substAt_substAt_comm` +
+      `substAt_eq_self_of_not_mem` (the conditional one, with its exact side condition
+      `hclean`). Porting these onto the real `Ty`/`Scheme` and re-deriving
+      `Generalization.lean`'s `CtxWf`/freshness threading around the *level* dimension
+      is real file-editing work but no longer open mathematical uncertainty. 7-step
+      continuation spec is in the progress note.
 - [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
 - [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).

@@ -114,6 +114,34 @@ through what Phase 3b's `subst_instantiate` proof obligation would actually requ
 once `Scheme` gains a real level field. Better to stop and record both findings
 precisely than attempt a second live rewrite under time pressure.
 
+## Update (same session): the side-condition is now validated, not just hand-derived
+
+`LevelTagSpike.lean` was extended and built green to test finding 2 precisely,
+before touching any real file again:
+
+- **`substAt_eq_self_of_not_mem`**: a level absent from a type is untouched by
+  substitution at that level (`∀ i, (ℓ, i) ∉ t.freeVars → substAt ℓ σ t = t`).
+- **`substAt_substAt_comm`**: the conditional cross-level commutation itself —
+  `substAt ℓ1 σ (substAt ℓ2 τ t) = substAt ℓ2 τ' (substAt ℓ1 σ t)` for `ℓ1 ≠ ℓ2`,
+  **given** `∀ i j, (ℓ2, j) ∉ (σ i).freeVars` (`hclean`). Both proved by plain
+  structural induction + case splits on the level, no `sorry`, no new axioms.
+
+This is exactly `Scheme.subst_instantiate`'s missing piece, mechanically confirmed
+rather than only hand-derived. `lake build` 1774, spec 104/104, no regressions
+(commit `c2db9272`). The natural reading of `hclean` in the real system: `σ`'s
+range (the let_poly's own instantiation args) never mentions a *deeper, not-yet-
+introduced* level — satisfied by construction under a monotone level-freshness
+discipline (the direct analog of the old `n`/`CtxWf` threading, just bounding
+levels instead of index magnitude).
+
+**Net effect:** both commutation facts Phase 3b's wiring needs are now proven in
+isolation (unconditional `substScheme_genAt`-shape, and conditional
+`substAt_substAt_comm`-shape). The remaining work is porting them onto the real
+`Ty`/`Scheme` and re-deriving `Generalization.lean`'s `CtxWf`/freshness threading
+around the *level* dimension instead of magnitude — real, substantial file-editing
+work, but no longer open mathematical uncertainty. A continuation can port
+`LevelTagSpike.lean`'s two lemmas close to verbatim.
+
 ## Continuation spec for Phase 3b (concrete, so a future session can start immediately)
 
 1. Add `level : Nat` to `Scheme` (alongside the existing `arity`, kept for
