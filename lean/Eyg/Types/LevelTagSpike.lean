@@ -74,6 +74,46 @@ theorem mem_freeVars_substAt_of_ne {ℓ l i : Nat} {σ : Nat → Ty2} {t : Ty2}
       · exact Or.inl (iha h)
       · exact Or.inr (ihr h)
 
+/-- **A level with no occurrence in `t` is untouched by a substitution at that
+level.** The converse-shaped fact to `mem_freeVars_substAt_of_ne`, and the key step
+in the cross-level commutation below: if `σ`'s output at some index happens to be
+`ℓ`-clean, substituting at `ℓ` into it is a no-op. -/
+theorem substAt_eq_self_of_not_mem {ℓ : Nat} {σ : Nat → Ty2} {t : Ty2}
+    (h : ∀ i, (ℓ, i) ∉ t.freeVars) : substAt ℓ σ t = t := by
+  induction t with
+  | var l i =>
+      by_cases hl : l = ℓ
+      · exact absurd (hl ▸ freeVars.eq_1 l i ▸ List.mem_singleton_self _) (hl ▸ h i)
+      · simp only [substAt, if_neg hl]
+  | fn a r iha ihr =>
+      simp only [freeVars, List.mem_append] at h
+      simp only [substAt, iha (fun i hi => h i (Or.inl hi)), ihr (fun i hi => h i (Or.inr hi))]
+
+/-- **Cross-level commutation, conditionally.** Substituting at `ℓ1` and at `ℓ2`
+commute — for `ℓ1 ≠ ℓ2` — *provided* `σ`'s range never mentions level `ℓ2` (the
+`hclean` hypothesis). This is the fact `Scheme.subst_instantiate` (the real
+codebase's `var`/`builtin` `hasType_subst` arms) needs, and it is **not free** the
+way `substScheme_genAt` is: the `var ℓ1 i` leaf case reduces to `substAt ℓ2 τ' (σ i)
+= σ i`, which needs `σ i` to be `ℓ2`-clean. In the intended use (`hasType_subst`
+opening a let_poly's own level `ℓ1` with `σ` = concrete/already-typed args, and
+`ℓ2` = some *nested*, strictly-fresher let_poly's level), this holds by the
+level-monotonicity discipline (nested levels are always chosen deeper/fresher than
+anything already in scope) — so `hclean` is satisfiable by construction, not vacuous
+work. -/
+theorem substAt_substAt_comm {ℓ1 ℓ2 : Nat} (hne : ℓ1 ≠ ℓ2) {σ : Nat → Ty2} (τ : Nat → Ty2)
+    (hclean : ∀ i, ∀ j, (ℓ2, j) ∉ (σ i).freeVars) (t : Ty2) :
+    substAt ℓ1 σ (substAt ℓ2 τ t) = substAt ℓ2 (fun i => substAt ℓ1 σ (τ i)) (substAt ℓ1 σ t) := by
+  induction t with
+  | var l i =>
+      by_cases h2 : l = ℓ2
+      · simp [substAt, h2, if_neg (Ne.symm hne)]
+      · by_cases h1 : l = ℓ1
+        · have hne2 : l ≠ ℓ2 := h1 ▸ hne
+          simp only [substAt, if_pos h1, if_neg hne2]
+          exact (substAt_eq_self_of_not_mem (fun j => hclean i j)).symm
+        · simp only [substAt, if_neg h1, if_neg h2]
+  | fn a r iha ihr => simp only [substAt, iha, ihr]
+
 end Ty2
 
 /-- A scheme owned by generalization level `ℓ`: its quantifiers are exactly the
