@@ -486,6 +486,41 @@ theorem ctxWf_fixed {n : Nat} {Γ : Ctx} (hΓ : CtxWf n Γ)
   intro b hb
   exact Scheme.substScheme_eq_of_fixes_free (fun i hi => hfix i (hΓ b hb i hi))
 
+/-! ## Level-native `CtxWfV` (Phase 3b prototype, not yet wired in)
+
+The level-tag analog of `CtxWf` above, bounding a context's bindings' `Ty.levels` instead of
+magnitude-based ambient free vars — ported from `LevelTagSpike.lean`'s `CtxWf2`/`ctxWf2_cons` onto the
+real `Ctx`/`Scheme`. Confirms the *whole* freshness-threading discipline (not just the one-shot
+`subst_instantiateV` commutation) survives on the real system, the same way the spike validated it on
+the toy model. Not yet consumed by any rule — `Typing.lean`'s `let_poly` still allocates the old
+magnitude-based `n`, not a level counter; that rewiring is Phase 4. -/
+
+/-- **Context below level `ℓ`**: every level occurring in every binding's scheme body (quantifier
+level *and* ambient references alike, via `Ty.levels`) is `< ℓ`. -/
+def CtxWfV (ℓ : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ l ∈ b.2.body.levels, l < ℓ
+
+/-- **Freshness extension**: a context below `ℓ`, extended with a new binding generalized (via
+`Scheme.genAtV`) at exactly the fresh level `ℓ` (whose body's levels are all `≤ ℓ`, i.e. either
+ambient-below-`ℓ` or the new binding's own quantifiers), is below `ℓ + 1`. `genAtV`'s body is `d`
+itself (no reindexing), so this ports verbatim from the spike's `ctxWf2_cons`. -/
+theorem ctxWfV_cons {ℓ : Nat} {x : String} {d : Ty} {Γ : Ctx}
+    (hΓ : CtxWfV ℓ Γ) (hd : ∀ l ∈ d.levels, l ≤ ℓ) :
+    CtxWfV (ℓ + 1) ((x, Scheme.genAtV ℓ d) :: Γ) := by
+  intro b hb l hl
+  rcases List.mem_cons.mp hb with rfl | hb
+  · exact Nat.lt_succ_of_le (hd l hl)
+  · exact Nat.lt_succ_of_lt (hΓ b hb l hl)
+
+/-- **The freshness bound feeds `subst_instantiateV`'s `hclean` at every deeper level.** If `Γ` is
+below `ℓ` and an ambient substitution `σ`'s range only ever uses levels `< ℓ` (e.g. drawn from
+`Γ`-typed terms), then `σ` is automatically clean for every level `ℓ' ≥ ℓ` — in particular for any
+*even deeper* nested scheme's own level. End-to-end confirmation that the level-tag discipline threads
+through arbitrarily deep nesting, ported from the spike's closing example. -/
+example {ℓ : Nat} {Γ : Ctx} (_hΓ : CtxWfV ℓ Γ) {σ : Nat → Ty}
+    (hσ : ∀ i, ∀ l ∈ (σ i).levels, l < ℓ) {ℓ' : Nat} (hge : ℓ ≤ ℓ') :
+    ∀ i, ∀ j, j ∉ Ty.freeVarsAt ℓ' (σ i) :=
+  Ty.clean_of_levels_lt hσ hge
+
 /-! ## `Generalizes` is NOT substitution-stable — the `hasType_subst` blocker, machine-checked
 
 The `let_poly` implementation attempt (2026-06-18) stalled because the term-level substitution
