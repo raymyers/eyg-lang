@@ -2,9 +2,21 @@
 name: eyg-g1-level-tagged-ty-plan
 description: Close Caveat 5 (nested let-polymorphism) by giving Ty a level-tagged variable representation, so nested generalization is structurally distinguishable instead of relying on a derivation-side de-Bruijn level. Multi-session; hard go/no-go checkpoint after the spike.
 date: 2026-07-08
+status: PAUSED 2026-07-09 by explicit user decision after ~42 sessions on Phase 6 — see "Decision to
+  pause" section near the end of this document. Phases 1–5 done; Phase 6 (Soundness.lean re-green) and
+  Phase 7 (sanity example + report) intentionally deferred, not abandoned. This is not a failure state:
+  Phase 3b's mathematical wall is fully resolved and the actual let_poly preservation case (Caveat 5's
+  core obligation) is mechanically proven — what remains is one narrow, precisely-characterized runtime-
+  invariant design question that has resisted several careful, honestly-refuted attempts. Resume by
+  reading the "Decision to pause" section first, then the most recent progress/ notes it references.
 ---
 
 # G1 — nested let-polymorphism via a level-tagged `Ty`
+
+**⏸ PAUSED (2026-07-09) — see "Decision to pause" near the end of this file before resuming or reading
+further. Short version: the hard mathematics is done (Phase 3b), the actual soundness-critical proof
+obligation for Caveat 5 is done (the `let_poly` preservation case in `Soundness.lean`), and what
+remains is a narrow runtime-invariant design question deliberately left open rather than forced.**
 
 ## Background (do not re-derive)
 
@@ -1515,6 +1527,90 @@ the datatype change itself.
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
       (mirroring how Caveats 3/4 record corrected restrictions).
+      **NOT STARTED — blocked on Phase 6. See "Decision to pause" below.**
+
+## Decision to pause (2026-07-09)
+
+After ~42 dedicated sessions on Phase 6 alone (part of a much longer multi-day, ~50-session-total
+effort on this plan), the user was asked directly whether to (a) authorize further open-ended
+architectural changes, (b) continue narrowly-scoped attempts, or (c) stop and mark Caveat 5
+documented-open. **The user chose (c).** This section records that decision and the exact state left
+behind, so a future session (or a future version of this assistant) can resume cleanly without
+re-deriving 42 sessions of hard-won context, or — just as validly — can decide the juice isn't worth
+the squeeze and leave Caveat 5 open indefinitely.
+
+### What is actually DONE, unconditionally
+
+- **Phase 3b (the core mathematical wall) is fully resolved and committed**, both for term-typing and
+  value-typing, all the way down to a concrete runtime closure — see `Eyg/Types/TypingAtV.lean`/
+  `RuntimeAtV.lean`'s history (later promoted into the real judgment) and the dozens of `progress/`
+  notes from 2026-07-08 documenting each piece (`substAt`/`levels` ported onto the real `Ty`,
+  `genAtV`/`instantiateV`/`substSchemeV`, `CtxWfV`, the readiness keystone, etc.).
+- **`HasType`/`HasTypeV`/`EnvWf` were successfully promoted to be level-native** (Phases 4–5, commits
+  `e8a99f74` through `6deadc54` and follow-ups) — the OLD magnitude-based judgment is gone; the real
+  judgment now natively supports nested generalization. Every file except `Soundness.lean` builds
+  clean, always has since Session A.
+- **`HasType.let_poly` now requires a fresh-level generalization discipline** (`lvl < lvl'`, inlined
+  into the constructor, commit `e9c867ad`) — an explicitly user-authorized core-judgment change,
+  verified to reject nothing previously valid, that dissolved a 20-session-long obstruction
+  (`NoGenAt`-provenance / the "type-fixed raise" wall) essentially for free.
+- **The `let_poly` preservation case itself — the literal soundness-critical obligation Caveat 5 is
+  about — is mechanically proven** in the current (uncommitted, see below) `Soundness.lean`, using
+  `genAtV_closure_ready_value_node` discharged via `noGenAt_letpoly_defn` + `CtxPolyBd`/
+  `polyAboveFV_of_ctxPolyBd`. This is not hypothetical — it type-checks in the working tree.
+
+### What remains open, precisely
+
+`Soundness.lean`'s **A-engine** (`MStateWf`, `~lines 30-2444`) is fully green **except exactly two
+closure-application sites** (`~868-882`, `~1030-1044` as of the last session — will drift). Both need
+`HasTypeRT`/a runtime-groundness fact for an applied closure's body, and every design tried for
+supplying that fact has been refuted by a machine-checked counterexample:
+
+1. `HasTypeRT hbody` directly on `HasTypeV.closure` + an `EnvWf`-groundness invariant — refuted (a
+   fully-ground env doesn't prevent the body's *static* instantiation levels from escaping the
+   `{0, s.level}` bound `HasTypeRT.var` demands).
+2. A single-level `RTSubstReady ℓ hbody` field — refuted (a closure can have **multiple independent**
+   escaping free levels simultaneously, e.g. `let a = \x.\y.x in (\w. a w)` where `a`'s two
+   quantifiers get instantiated at two *different* free levels in the body; no single `ℓ` covers both).
+
+The genuine open question (see `progress/2026-07-09-G1-phase6-sessionG31-rtsubstready-single-level-refuted.md`
+for the full machine-checked writeup): either (a) a **multi-level** readiness predicate generalizing
+`RTSubstReady` to a *set* of admissible levels, paired with relaxing `MStateWf.E`'s `HasTypeRT`
+requirement and `EnvWf.cons`'s readiness bound to match, or (b) a genuinely different runtime invariant
+architecture — possibly not level-bounding instantiation args at all, but something else that still
+lets preservation reconstruct a typed closure application. **This is real, open proof-engineering
+design, not a known-shape gap** — it may take several more sessions with live Lean LSP access (which
+no session in this entire ~50-session effort has had) to resolve, or it may reveal a second, deeper
+structural issue the way the `let_poly`-level wall did. Budget accordingly if resuming.
+
+The **B-engine** (`MStateWfB`, `~lines 2460-4278`, a structural mirror of the A-engine) is essentially
+untouched — still on much of the old pre-migration API — and will need the same migration the A-engine
+just went through, plus whatever the closure-RT fix turns out to be, once that's settled.
+
+### Tree state at the pause point
+
+- `Eyg/Types/Soundness.lean` is **uncommitted** in the working tree — real, substantial, validated
+  A-engine progress (the poly-let case working, most of the file re-green'd) that cannot be committed
+  under this plan's "never commit a red build" rule, since the file still doesn't fully compile (the
+  two closure-apply sites + the whole B-engine). **Do not discard this working-tree diff** — it
+  represents dozens of hours of careful work and is the correct starting point for a resumed session.
+  If disk/environment state is ever at risk of losing it, consider `git stash` (not `reset`/`checkout`)
+  to preserve it explicitly, or copy it aside, before any operation that could touch the working tree.
+- Every other file (`Scheme.lean`, `Typing.lean`, `Generation.lean`, `Substitution.lean`,
+  `Generalization.lean`, `Runtime.lean`, `Machine.lean`) is fully committed and green.
+- No `sorry` anywhere, no custom axioms introduced at any point across the whole ~50-session effort,
+  no soundness statement ever weakened. Every refuted design was caught *before* being committed,
+  with a machine-checked counterexample, not just abandoned on suspicion.
+
+### If resuming
+
+Read, in order: this section, then `progress/2026-07-09-G1-phase6-sessionG31-rtsubstready-single-level-refuted.md`
+(the sharpest, most recent characterization of the open question), then work backward through the
+`progress/2026-07-09-G1-phase6-session*` notes as needed for context on what's already been tried and
+ruled out — there are ~30 of them, spanning the whole Phase 6 arc; do not re-attempt a design one of
+them already machine-refuted. A session with live Lean LSP/interactive goal-state access would very
+likely make much faster progress on the remaining design question than the batch-`lake-build`-only
+sessions this whole effort has had to rely on throughout.
 
 ## Definition of done (per phase, and overall)
 
