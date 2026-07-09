@@ -1101,6 +1101,54 @@ the datatype change itself.
       `polyAboveFV_of_ctxWfV_nonzeroPoly`), then (2) grind the A-engine `MStateWf` mechanically
       (`lvl`+`HasTypeRT` threading via the existing `_rt` inversions), then (3) the B-engine mirror. Caveat
       5 OPEN.
+
+      **Progress 2026-07-09 (Session G22 — bridge lemma LANDED + full threading design finalized; the
+      gap confirmed architectural, not "small additive").** No LSP (canary failed). HEAD `095f51ad`.
+      **Landed & committed (`8110c393`, green in `Typing.lean`, independent of the Soundness grind):**
+      the carried-invariant infrastructure the poly-let case needs — (i) `CtxPolyBd Γ := ∀ b ∈ Γ,
+      b.2.arity ≠ 0 → b.2.level ≠ 0 ∧ b.2.level ∈ b.2.body.levels` (every polymorphic binding sits at a
+      nonzero level occurring among its body levels); (ii) the **bridge**
+      `polyAboveFV_of_ctxPolyBd : CtxPolyBd Γ → CtxWfV ℓ Γ → PolyAboveFV ℓ Γ e` (a looked-up poly
+      binding's level is `≠ 0` from `CtxPolyBd` and `< ℓ` hence `≠ ℓ` from `CtxWfV` at that level — this
+      is the previously-flagged-but-unbuilt `polyAboveFV_of_ctxWfV_nonzeroPoly`, now built and named);
+      (iii) preservation lemmas `ctxPolyBd_cons_genAtV` (needs `lvl ≠ 0`) / `ctxPolyBd_cons_mono`
+      (vacuous). This is the conceptual keystone and is correct *independent of how the runtime threads
+      the invariant*, so it is landed now.
+      **Finding (revises this task's premise that the fix is "small/additive, no auth needed"):** closing
+      the gap end-to-end is **NOT** just a context predicate — it also requires a **nonzero-ambient-level
+      lower bound carried through `HasTypeV.closure` (and the `assign`/`arg` stack frames)**, because
+      `genAtV_closure_ready_value_node` has `hℓ : lvl ≠ 0` as a *hard* precondition of the substitution
+      machinery (`hasType_subst`/`hasType_substAt_le` both take `ℓ ≠ 0`), and that `lvl` is the closure
+      body's / frame's ambient level, not the state's. The `lvl = 0` branch cannot be discharged
+      separately: at `lvl = 0`, args carrying level-0 variables (permitted by `EnvWf`'s readiness clause
+      `∀ l ∈ t.levels, l = 0 ∨ l = s.level`) make `0 ∈ defnTy.levels` possible, so `genAtV 0 defnTy` can
+      have `arity ≠ 0` — exactly the `CtxPolyBd`-violating poly-binding-at-level-0. Avoiding it needs
+      "no level-0 type variable is ever reachable," which is itself a carried invariant bottoming out at
+      a nonzero top-level ambient. So the previous session's "architectural strengthening of the runtime
+      typing judgments" diagnosis stands and is now made precise.
+      **Finalized threading design (for the next session — deterministic, no re-derivation needed):**
+      add four fields and discharge at construction sites:
+      (a) `EnvWf.cons`: `(hpoly : s.arity ≠ 0 → s.level ≠ 0 ∧ s.level ∈ s.body.levels)` — i.e.
+      `EnvWf env Γ → CtxPolyBd Γ` becomes a derived projection; mono cons trivial, `genAtV lvl` cons via
+      `ctxPolyBd_cons_genAtV` (needs the frame's `1 ≤ lvl`);
+      (b) `HasTypeV.closure`: `(hlvl' : 1 ≤ lvl')` — so an applied closure's body runs at nonzero ambient;
+      created closures get it from the ambient `1 ≤ lvl ≤ lvl'`;
+      (c) `StackWf.assign` / `StackWf.arg` (and the `StackSegWf` mirrors): `(hlvl : 1 ≤ lvl)`;
+      (d) `MStateWf.E`/`.V`/`wait`: carry `1 ≤ lvl` (E-case) so preservation has it at each step —
+      successors keep it (same `lvl`, `lvl+1` via `let_poly` body, or a closure's `lvl' ≥ 1`).
+      `mStateWf_initial` then takes `1 ≤ lvl`; `soundness`/`soundness_evalR` fix the top ambient to `1`
+      and re-type the closed program at level `1` (level-raise; every closed program typable at `0` is
+      typable at `1`). Green-file blast radius: `EnvWf`/`HasTypeV.closure`/`StackWf.assign`/`arg`
+      definitions in `Runtime.lean` (few sanity examples bump `lvl' 0 → 1`), the `stackWf_assign_inv`/
+      `stackWf_arg_inv` inversions in `Machine.lean` (expose the new field), and `MStateWf`/
+      `mStateWf_initial` in `Machine.lean`. Heavy re-proof is all in `Soundness.lean` (already red).
+      Then the poly-let case: `inv_let` gives `CtxWfV lvl Γ`; `EnvWf env Γ` gives `CtxPolyBd Γ`; bridge →
+      `PolyAboveFV lvl Γ`; `1 ≤ lvl` gives `lvl ≠ 0`; feed `genAtV_closure_ready_value_node`. **Decision:**
+      did NOT begin the four-field threading — it ramifies across two inductive-definition files and both
+      engines and cannot be validated end-to-end (Soundness stays red until the whole ~103-error two-engine
+      grind lands), so a committed half-shaped strengthening would risk churn; committed only the
+      validated, shape-independent bridge lemma. `Soundness.lean` left EXACTLY as found (uncommitted
+      partial migration, 103 errors, unchanged). Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
