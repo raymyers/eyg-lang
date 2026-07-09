@@ -892,4 +892,229 @@ example :
 
 end Builtins
 
+/-! ## Level-native substitution helpers (relocated upstream for the level-native `HasType` promotion)
+
+These `Ty`/`Scheme`/`Builtins`-level lemmas were first proven in `TypingAtV.lean`/`RuntimeAtV.lean`;
+they are relocated here (upstream of `Typing.lean`) so the level-native `HasType`/`hasType_subst` can
+consume them. Purely additive — verbatim ports of the proven statements. -/
+
+/-- Componentwise scheme equality (the `body` field is non-dependent). -/
+theorem Scheme.ext' {s t : Scheme} (ha : s.arity = t.arity) (hc : s.level = t.level)
+    (hb : s.body = t.body) : s = t := by
+  cases s; cases t; cases ha; cases hc; cases hb; rfl
+
+namespace Ty
+
+/-- **`substAt` preserves row equivalence** (level-native analog of `subst_tyEquiv`). -/
+theorem substAt_tyEquiv (ℓ : Nat) (σ : Nat → Ty) {s t : Ty} (h : TyEquiv s t) :
+    TyEquiv (substAt ℓ σ s) (substAt ℓ σ t) := by
+  induction h with
+  | refl _ => exact .refl _
+  | symm _ ih => exact .symm ih
+  | trans _ _ ih₁ ih₂ => exact .trans ih₁ ih₂
+  | congrFun _ _ _ iha ihe ihr => exact .congrFun iha ihe ihr
+  | congrList _ ih => exact .congrList ih
+  | congrRecord _ ih => exact .congrRecord ih
+  | congrUnion _ ih => exact .congrUnion ih
+  | congrPromise _ ih => exact .congrPromise ih
+  | congrRow _ _ ihf iht => exact .congrRow ihf iht
+  | congrEff _ _ _ iha ihb iht => exact .congrEff iha ihb iht
+  | swapRow hne => simp only [substAt]; exact .swapRow hne
+  | swapEff hne => simp only [substAt]; exact .swapEff hne
+
+/-- **`EffWeaken` is `substAt`-stable** (level-native analog of `subst_effWeaken`). -/
+theorem substAt_effWeaken (ℓ : Nat) (σ : Nat → Ty) {e₁ e₂ : Ty} (h : EffWeaken e₁ e₂) :
+    EffWeaken (substAt ℓ σ e₁) (substAt ℓ σ e₂) := by
+  rcases h with h | h
+  · exact .inl (substAt_tyEquiv ℓ σ h)
+  · exact .inr (substAt_tyEquiv ℓ σ h)
+
+/-- **Where a level in a substituted type comes from.** Every level occurring in `substAt ℓ σ t`
+either already occurred in `t` or is introduced by `σ`'s range. -/
+theorem mem_levels_substAt {ℓ l : Nat} {σ : Nat → Ty} {t : Ty}
+    (h : l ∈ (substAt ℓ σ t).levels) : l ∈ t.levels ∨ ∃ i, l ∈ (σ i).levels := by
+  induction t with
+  | var l' i =>
+      by_cases hl' : l' = ℓ
+      · subst hl'; simp only [substAt] at h; exact Or.inr ⟨i, h⟩
+      · simp only [substAt, if_neg hl', levels, List.mem_singleton] at h
+        subst h; exact Or.inl (by simp [levels])
+  | «fun» a e r iha ihe ihr =>
+      simp only [substAt, levels, List.mem_append] at h ⊢
+      rcases h with (h | h) | h
+      · rcases iha h with h' | h'
+        · exact Or.inl (Or.inl (Or.inl h'))
+        · exact Or.inr h'
+      · rcases ihe h with h' | h'
+        · exact Or.inl (Or.inl (Or.inr h'))
+        · exact Or.inr h'
+      · rcases ihr h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  | list a ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | record r ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | union r ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | promise a ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | rowExtend l' f t ihf iht =>
+      simp only [substAt, levels, List.mem_append] at h ⊢
+      rcases h with h | h
+      · rcases ihf h with h' | h'
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr h'
+      · rcases iht h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  | effectExtend l' a b t iha ihb iht =>
+      simp only [substAt, levels, List.mem_append] at h ⊢
+      rcases h with (h | h) | h
+      · rcases iha h with h' | h'
+        · exact Or.inl (Or.inl (Or.inl h'))
+        · exact Or.inr h'
+      · rcases ihb h with h' | h'
+        · exact Or.inl (Or.inl (Or.inr h'))
+        · exact Or.inr h'
+      · rcases iht h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  | _ => simp only [substAt, levels] at h; exact absurd h (by simp)
+
+/-- **Cross-level commutation for a body with no occurrence at the outer level.** -/
+theorem substAt_substAt_comm_of_no_mem {ℓ1 ℓ2 : Nat} (hne : ℓ1 ≠ ℓ2) {σ τ : Nat → Ty} {t : Ty}
+    (hclosed : ∀ j, j ∉ freeVarsAt ℓ1 t) :
+    substAt ℓ1 σ (substAt ℓ2 τ t)
+      = substAt ℓ2 (fun i => substAt ℓ1 σ (τ i)) (substAt ℓ1 σ t) := by
+  induction t with
+  | var l i =>
+      by_cases h2 : l = ℓ2
+      · simp [substAt, h2, if_neg (Ne.symm hne)]
+      · by_cases h1 : l = ℓ1
+        · exact absurd (by simp [freeVarsAt, h1] : i ∈ freeVarsAt ℓ1 (Ty.var l i)) (hclosed i)
+        · simp only [substAt, if_neg h1, if_neg h2]
+  | «fun» a e r iha ihe ihr =>
+      simp only [freeVarsAt, List.mem_append] at hclosed
+      simp only [substAt, iha (fun j hj => hclosed j (Or.inl (Or.inl hj))),
+        ihe (fun j hj => hclosed j (Or.inl (Or.inr hj))), ihr (fun j hj => hclosed j (Or.inr hj))]
+  | list a ih => simp only [substAt, ih (fun j hj => hclosed j hj)]
+  | record r ih => simp only [substAt, ih (fun j hj => hclosed j hj)]
+  | union r ih => simp only [substAt, ih (fun j hj => hclosed j hj)]
+  | promise a ih => simp only [substAt, ih (fun j hj => hclosed j hj)]
+  | rowExtend l f t ihf iht =>
+      simp only [freeVarsAt, List.mem_append] at hclosed
+      simp only [substAt, ihf (fun j hj => hclosed j (Or.inl hj)),
+        iht (fun j hj => hclosed j (Or.inr hj))]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [freeVarsAt, List.mem_append] at hclosed
+      simp only [substAt, iha (fun j hj => hclosed j (Or.inl (Or.inl hj))),
+        ihb (fun j hj => hclosed j (Or.inl (Or.inr hj))), iht (fun j hj => hclosed j (Or.inr hj))]
+  | _ => rfl
+
+/-- **`substAt ℓ σ` (with `ℓ ≠ k`, `σ` clean w.r.t. `k`) preserves the count of level-`k`
+occurrences** — the `genAtV`-arity-stability core. -/
+theorem length_filter_levels_substAt {ℓ k : Nat} (hne : ℓ ≠ k) {σ : Nat → Ty}
+    (hclean : ∀ i, k ∉ (σ i).levels) (t : Ty) :
+    ((substAt ℓ σ t).levels.filter (· = k)).length = (t.levels.filter (· = k)).length := by
+  induction t with
+  | var l i =>
+      by_cases hl : l = ℓ
+      · simp only [substAt, if_pos hl, levels]
+        have hnil : (σ i).levels.filter (· = k) = [] := by
+          rw [List.filter_eq_nil_iff]
+          intro a ha hak
+          simp only [decide_eq_true_eq] at hak; subst hak
+          exact hclean i ha
+        rw [hnil]
+        simp [(by rw [hl]; exact hne : l ≠ k)]
+      · simp only [substAt, if_neg hl]
+  | «fun» a e r iha ihe ihr =>
+      simp only [substAt, levels, List.filter_append, List.length_append, iha, ihe, ihr]
+  | list a ih => simp only [substAt, levels, ih]
+  | record r ih => simp only [substAt, levels, ih]
+  | union r ih => simp only [substAt, levels, ih]
+  | promise a ih => simp only [substAt, levels, ih]
+  | rowExtend l f t ihf iht =>
+      simp only [substAt, levels, List.filter_append, List.length_append, ihf, iht]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [substAt, levels, List.filter_append, List.length_append, iha, ihb, iht]
+  | _ => rfl
+
+end Ty
+
+/-- `substSchemeVAt` on a monomorphic scheme is `substAt` on its body. -/
+@[simp] theorem substSchemeVAt_mono (ℓ : Nat) (σ : Nat → Ty) (t : Ty) :
+    Scheme.substSchemeVAt ℓ σ (Scheme.mono t) = Scheme.mono (Ty.substAt ℓ σ t) := rfl
+
+/-- **`genAtV` commutes with an outer level-`ℓ` substitution** (`ℓ ≠ k`, `σ` clean w.r.t. `k`). -/
+theorem substSchemeVAt_genAtV {ℓ k : Nat} (hne : ℓ ≠ k) {σ : Nat → Ty}
+    (hclean : ∀ i, k ∉ (σ i).levels) (d : Ty) :
+    Scheme.substSchemeVAt ℓ σ (Scheme.genAtV k d) = Scheme.genAtV k (Ty.substAt ℓ σ d) := by
+  refine Scheme.ext' ?_ rfl rfl
+  simp only [Scheme.substSchemeVAt, Scheme.genAtV]
+  exact (Ty.length_filter_levels_substAt hne hclean d).symm
+
+/-- **General scheme-instantiation commutation under an outer level-`ℓ` substitution.** -/
+theorem substAt_instantiateV_scheme {ℓ : Nat} {σ : Nat → Ty} {s : Scheme}
+    (h : s.arity = 0 ∨ (ℓ ≠ s.level ∧ ∀ i, ∀ j, j ∉ Ty.freeVarsAt s.level (σ i))) (args : List Ty) :
+    Ty.substAt ℓ σ (s.instantiateV args)
+      = (Scheme.substSchemeVAt ℓ σ s).instantiateV (args.map (Ty.substAt ℓ σ)) := by
+  by_cases h0 : s.arity = 0
+  · simp only [Scheme.instantiateV, Scheme.substSchemeVAt, h0, if_true]
+  · obtain ⟨hne, hclean⟩ := h.resolve_left h0
+    simp only [Scheme.instantiateV, Scheme.substSchemeVAt, h0, if_false]
+    rw [Ty.substAt_substAt_comm hne _ hclean]
+    congr 1
+    funext i
+    by_cases hi : i < args.length
+    · rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_map,
+        List.getElem?_eq_getElem hi]; rfl
+    · rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+        List.getElem?_eq_none (by omega), List.getElem?_eq_none (by simpa using hi)]
+      show Ty.substAt ℓ σ (Ty.var s.level i) = Ty.var s.level i
+      simp only [Ty.substAt, if_neg (Ne.symm hne)]
+
+/-- **Scheme-instantiation commutation for a closed body** (e.g. a builtin scheme). -/
+theorem substAt_instantiateV_closed {ℓ : Nat} {σ : Nat → Ty} {s : Scheme}
+    (hne : ℓ ≠ s.level) (hbody : ∀ j, j ∉ Ty.freeVarsAt ℓ s.body) (args : List Ty) :
+    Ty.substAt ℓ σ (s.instantiateV args)
+      = (Scheme.substSchemeVAt ℓ σ s).instantiateV (args.map (Ty.substAt ℓ σ)) := by
+  have hbodyeq : Ty.substAt ℓ σ s.body = s.body := Ty.substAt_eq_self_of_not_mem hbody
+  by_cases h0 : s.arity = 0
+  · simp only [Scheme.instantiateV, Scheme.substSchemeVAt, h0, if_true, hbodyeq]
+  · simp only [Scheme.instantiateV, Scheme.substSchemeVAt, h0, if_false, hbodyeq]
+    rw [Ty.substAt_substAt_comm_of_no_mem hne hbody, hbodyeq]
+    congr 1
+    funext i
+    by_cases hi : i < args.length
+    · rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_map,
+        List.getElem?_eq_getElem hi]; rfl
+    · rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+        List.getElem?_eq_none (by omega), List.getElem?_eq_none (by simpa using hi)]
+      show Ty.substAt ℓ σ (Ty.var s.level i) = Ty.var s.level i
+      simp only [Ty.substAt, if_neg (Ne.symm hne)]
+
+namespace Builtins
+
+/-- Every builtin scheme carries `level = 0`. -/
+theorem scheme_level {id : String} {s : Scheme} (h : scheme id = some s) : s.level = 0 := by
+  unfold scheme at h
+  split at h <;> first | (cases h; rfl) | cases h
+
+/-- Every level occurring in a builtin scheme's body is `0`. -/
+theorem scheme_levels_zero {id : String} {s : Scheme} (h : scheme id = some s) :
+    ∀ l ∈ s.body.levels, l = 0 := by
+  unfold scheme at h
+  split at h <;> first | (cases h; decide) | cases h
+
+/-- A builtin scheme's body has no occurrence at any nonzero level `ℓ`. -/
+theorem scheme_no_level {ℓ : Nat} (hℓ : ℓ ≠ 0) {id : String} {s : Scheme}
+    (h : scheme id = some s) : ∀ j, j ∉ Ty.freeVarsAt ℓ s.body := by
+  intro j hj
+  exact hℓ (scheme_levels_zero h ℓ (Ty.mem_levels_of_mem_freeVarsAt hj))
+
+/-- **A builtin scheme is fixed by any nonzero-level substitution.** -/
+theorem scheme_substSchemeVAt {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty) {id : String} {s : Scheme}
+    (h : scheme id = some s) : Scheme.substSchemeVAt ℓ σ s = s :=
+  Scheme.ext' rfl rfl (Ty.substAt_eq_self_of_not_mem (scheme_no_level hℓ h))
+
+end Builtins
+
 end Eyg.Types

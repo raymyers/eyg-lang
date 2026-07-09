@@ -255,11 +255,6 @@ theorem genArity_spec {n v : Nat} {d : Ty} (hv : v ∈ d.freeVars) (hn : n ≤ v
 
 end Ty
 
-/-- Componentwise scheme equality (the `body` field is non-dependent). -/
-theorem Scheme.ext' {s t : Scheme} (ha : s.arity = t.arity) (hc : s.level = t.level)
-    (hb : s.body = t.body) : s = t := by
-  cases s; cases t; cases ha; cases hc; cases hb; rfl
-
 /-- **`genAt` is a sound generalization** — every instantiation of `genAt n d` is a `subst`-instance
 of `d` whose witnessing substitution fixes the ambient region `[0,n)`. (The witness fixes `[0,n)`
 *regardless* of the arity: an ambient var `i < n` is reindexed to `i + arity ≥ arity`, which
