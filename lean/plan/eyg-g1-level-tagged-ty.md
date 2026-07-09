@@ -1031,6 +1031,39 @@ the datatype change itself.
       pre-existing partial migration untouched); no `sorry`, axioms unchanged. **Recommended next
       (WITH LSP):** execute the inline-strict reshape per the note's 5-step recipe, then the two-engine
       grind + Phase 7. Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G20 — the authorized inline-strict `let_poly` reshape LANDED across
+      the whole non-Soundness `HasType` cone; committed).** No LSP (canary failed). Executed the G19
+      corrected design. **Shipped (commit after `f1156078`):** (1) `HasType.let_poly` reshaped — the
+      opaque defn-lambda-node premise replaced by the inlined pieces `lvl'`,`argTy`,`εb`,`retTy`,
+      `hstrict : lvl < lvl'` (STRICT), `hfv`, `hbodydefn : HasType lvl' ((lx,.mono argTy)::Γ) lbody
+      retTy εb`; `defnTy := .fun argTy εb retTy`. (2) Two helpers: `HasType.letpoly_defn` (rebuilds the
+      lam-node derivation `HasType.lam (le_of_lt hstrict) hfv hbodydefn`) and `noGenAt_letpoly_defn`
+      (`NoGenAt lvl` of that node **for free** = `NoGenAt.lam _ _ (noGenAt_of_lt hbodydefn hstrict)`).
+      (3) Companion inductives `NoGenAt`/`HasTypeRT`/`LevelsBelow` `let_poly` arms reshaped (needed
+      `(la := la)` to pin the now-unconstrained Lambda annotation). (4) Every consumer updated:
+      `hasType_subst`, `hasType_substAt_le`, `noGenAt_of_lt`, `inv_let_rt`, `hasType_ctxConv`,
+      `hasTypeRT_ctxConv`, `LevelsBelow.mono`, `exists_levelsBelow`, `hasType_fullRaise`. (5) `inv_let`
+      (Generation) and `inv_let_rt` now additionally hand `NoGenAt lvl hdefn` for free — exactly the
+      closure-readiness wrapper's premise. (6) Examples: real whole-programs reconstructed (all descend
+      strictly, `lvl'=lvl+1`); the obsolete residual-corner witnesses (`advPerf_*`, `lvl'=lvl`) REMOVED
+      as unconstructable **by design** (private, unreferenced; the reshape's whole point is to forbid
+      the same-level nested `let_poly`); the `esc*` witnesses reconstructed via the already-strict
+      `escH_defn`. **Green + committed per-file:** Typing, Generation, Generalization, Machine, Runtime,
+      Substitution — all build, no `sorry`. The key confirmation: `noGenAt_letpoly_defn` discharges the
+      wrapper's `NoGenAt lvl h` premise with **no** external witness, exactly as the corrected design
+      predicted; the reshape rejected **nothing** currently valid (verified every real construction site
+      already descended strictly). **Not done (Caveat 5 still OPEN):** the `Soundness.lean` grind. Found
+      it is NOT merely a `let_poly` adaptation — it is in a **broad partial level-native + RT migration**
+      (103 errors; lines 34–247 byte-identical to the pre-reshape state, all `MStateWf.run`/`hvty.conv`/
+      effWeaken/level-signature debt **unrelated** to `let_poly`). Completing it = finishing that whole
+      migration (the ~10-session LSP wall), orthogonal to and larger than the authorized reshape. Per the
+      task's "leave Soundness.lean exactly as found unless the grind completes," Soundness.lean was **not
+      edited** (its pre-existing 27/26 partial-migration diff is untouched, still uncommitted, still red —
+      as it was at HEAD `f1156078`, which itself does not build Soundness). **Recommended next:** wire the
+      new `inv_let`/`inv_let_rt` NoGenAt output + reshaped `HasType.let_poly` into Soundness's `let_poly`
+      preservation (sites `:72`,`:226`,`:243`,`:2953`) as part of completing the level-native Soundness
+      migration; that migration — not the reshape — is now the sole remaining blocker. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
