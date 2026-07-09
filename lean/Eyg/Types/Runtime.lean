@@ -64,6 +64,7 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   is the level-native replacement of the old magnitude closure premise: it exists for arbitrarily
   nested generalization (no `noLambdaLet`). -/
   | closure {lvl' x body env argTy εb retTy Γ τ} :
+      1 ≤ lvl' →
       EnvWf env Γ →
       (∀ l ∈ argTy.levels, l < lvl') →
       HasType lvl' ((x, .mono argTy) :: Γ) body retTy εb →
@@ -216,6 +217,7 @@ inductive EnvWf {m : Type} : Env m → Ctx → Prop where
   | nil : EnvWf [] []
   | cons {y v s env Γ} :
       (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) → HasTypeV v (s.instantiateV args)) →
+      (s.arity ≠ 0 → s.level ≠ 0 ∧ s.level ∈ s.body.levels) →
       EnvWf env Γ →
       EnvWf ((y, v) :: env) ((y, s) :: Γ)
 
@@ -243,12 +245,14 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
       StackSegWf rest σin εin σout εout →
       StackSegWf ((Kontinue.Trace w, a) :: rest) σin εin σout εout
   | assign {a x body fenv Γ defnTy bodyTy εin σout εout rest lvl} :
+      1 ≤ lvl →
       EnvWf fenv Γ →
       (hbody : HasType lvl ((x, .mono defnTy) :: Γ) body bodyTy εin) →
       HasTypeRT hbody →
       StackSegWf rest bodyTy εin σout εout →
       StackSegWf ((Kontinue.Assign x body fenv, a) :: rest) defnTy εin σout εout
   | arg {a arg fenv Γ argTy εf retTy εin σout εout rest lvl} :
+      1 ≤ lvl →
       EnvWf fenv Γ →
       (harg : HasType lvl Γ arg argTy εin) →
       HasTypeRT harg →
@@ -291,7 +295,7 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | int he => exact .int (he.trans heq)
   | str he => exact .str (he.trans heq)
   | bin he => exact .bin (he.trans heq)
-  | closure henv hfv hbody he => exact .closure henv hfv hbody (he.trans heq)
+  | closure hlvl henv hfv hbody he => exact .closure hlvl henv hfv hbody (he.trans heq)
   | partialBuiltin hs hp he => exact .partialBuiltin hs hp (he.trans heq)
   | listNil he => exact .listNil (he.trans heq)
   | listCons hh ht he => exact .listCons hh ht (he.trans heq)
@@ -331,8 +335,8 @@ theorem stackSeg_conv_output {m : Type} {seg : Stack m} :
       obtain ⟨kont, ann⟩ := hd
       cases h with
       | trace h' => exact .trace (ih h' hσ hε)
-      | assign henv hbody hrt h' => exact .assign henv hbody hrt (ih h' hσ hε)
-      | arg henv harg hrt hw h' => exact .arg henv harg hrt hw (ih h' hσ hε)
+      | assign hlvl henv hbody hrt h' => exact .assign hlvl henv hbody hrt (ih h' hσ hε)
+      | arg hlvl henv harg hrt hw h' => exact .arg hlvl henv harg hrt hw (ih h' hσ hε)
       | applyf hf hw h' => exact .applyf hf hw (ih h' hσ hε)
       | callwith harg hw h' => exact .callwith harg hw (ih h' hσ hε)
       | delimit hh he hweak h' => exact .delimit hh he hweak (ih h' hσ hε)
@@ -353,17 +357,17 @@ theorem stackSeg_conv_input {m : Type} {seg : Stack m} :
       obtain ⟨kont, ann⟩ := hd
       cases h with
       | trace h' => exact .trace (ih h' hσ hε)
-      | assign henv hbody hrt h' =>
+      | assign hlvl henv hbody hrt h' =>
           obtain ⟨hbody', hrt'⟩ := hasTypeRT_ctxHead_conv hrt hσ
-          exact .assign henv (hbody'.conv (.refl _) hε.symm)
+          exact .assign hlvl henv (hbody'.conv (.refl _) hε.symm)
             (hrt'.conv (.refl _) hε.symm) (ih h' (.refl _) hε)
-      | @arg _ arg fenv Γ argTy εf retTy εin₀ _ _ rest' _ henv harg hrt hw h' =>
+      | @arg _ arg fenv Γ argTy εf retTy εin₀ _ _ rest' _ hlvl henv harg hrt hw h' =>
           obtain ⟨a', e', r', rfl, ha', he', hr'⟩ := Ty.tyEquiv_fun_inv' hσ
           have hw' : Ty.EffWeaken e' εin' := by
             rcases Ty.effWeaken_tyEquiv_right hw hε.symm with h | h
             · exact .inl (he'.trans h)
             · exact .inr (he'.trans h)
-          exact .arg henv (harg.conv ha'.symm hε.symm) (hrt.conv ha'.symm hε.symm) hw'
+          exact .arg hlvl henv (harg.conv ha'.symm hε.symm) (hrt.conv ha'.symm hε.symm) hw'
             (ih h' hr' hε)
       | @applyf _ f fenv argTy εf retTy εin₀ _ _ rest' hf hw h' =>
           have hf' : HasTypeV f (.fun σin' εf retTy) :=
@@ -395,8 +399,8 @@ theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σou
       obtain ⟨kont, ann⟩ := hd
       cases hseg with
       | trace h => exact .trace (ih h)
-      | assign henv hbody hrt h => exact .assign henv hbody hrt (ih h)
-      | arg henv harg hrt hw h => exact .arg henv harg hrt hw (ih h)
+      | assign hlvl henv hbody hrt h => exact .assign hlvl henv hbody hrt (ih h)
+      | arg hlvl henv harg hrt hw h => exact .arg hlvl henv harg hrt hw (ih h)
       | applyf hf hw h => exact .applyf hf hw (ih h)
       | callwith harg hw h => exact .callwith harg hw (ih h)
       | delimit hh he hweak h => exact .delimit hh he hweak (ih h)
@@ -416,7 +420,7 @@ theorem envwf_lookup {m : Type} {env : Env m} {Γ : Ctx} {x : String} {s : Schem
   | cons hd tl ih =>
       obtain ⟨y, v⟩ := hd
       cases h with
-      | @cons _ _ s' _ Γ₀ hv henv =>
+      | @cons _ _ s' _ Γ₀ hv _ henv =>
           simp only [List.lookup_cons] at hl ⊢
           by_cases hxy : (x == y) = true
           · simp only [hxy] at hl ⊢
@@ -425,6 +429,22 @@ theorem envwf_lookup {m : Type} {env : Env m} {Γ : Ctx} {x : String} {s : Schem
           · simp only [hxy] at hl ⊢
             exact ih henv hl
 
+
+/-- **`CtxPolyBd` is a projection of `EnvWf`.** Every `EnvWf.cons` carries the per-binding
+`hpoly` clause (a poly binding sits at a nonzero level occurring among its body levels), so an
+`EnvWf env Γ` witnesses `CtxPolyBd Γ` — the runtime nonzero-poly-level invariant the `let_poly`
+preservation case feeds to `polyAboveFV_of_ctxPolyBd`. -/
+theorem ctxPolyBd_of_envWf {m : Type} {env : Env m} {Γ : Ctx} (h : EnvWf env Γ) : CtxPolyBd Γ := by
+  induction env generalizing Γ with
+  | nil => cases h; intro b hb; exact absurd hb (by simp)
+  | cons hd tl ih =>
+      obtain ⟨y, v⟩ := hd
+      cases h with
+      | @cons _ _ s' _ Γ₀ _ hpoly henv =>
+          intro b hb harity
+          rcases List.mem_cons.mp hb with h | h
+          · subst h; exact hpoly harity
+          · exact ih henv b h harity
 
 /-! ## Canonical forms
 
@@ -531,7 +551,7 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
     (∃ x body env, v = .Closure x body env) ∨
     (∃ sw applied, v = .Partial sw applied) := by
   cases h with
-  | closure _ _ _ _ => exact Or.inl ⟨_, _, _, rfl⟩
+  | closure _ _ _ _ _ => exact Or.inl ⟨_, _, _, rfl⟩
   | partialBuiltin _ _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialConsNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialConsOne _ _ => exact Or.inr ⟨_, _, rfl⟩
@@ -577,7 +597,7 @@ example : HasTypeV (.Partial (.Builtin "int_add") [.Integer 2] : Value Unit)
 -- A closure over the empty env inhabits `integer → integer`.
 example : HasTypeV (.Closure "x" (Eyg.Ir.Tree.variable_ "x") [] : Value Unit)
     (.fun .integer .empty .integer) :=
-  HasTypeV.closure EnvWf.nil (lvl' := 0)
+  HasTypeV.closure (lvl' := 1) (le_refl 1) EnvWf.nil
     (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
     (HasType.var (s := .mono .integer) (args := []) rfl)
     (Ty.TyEquiv.refl _)
@@ -588,7 +608,7 @@ example : HasTypeV (.Partial (.Builtin "fixed")
     [.Closure "f" (Eyg.Ir.Tree.variable_ "f") []] : Value Unit)
     (.fun .integer .empty .integer) :=
   HasTypeV.partialFixed
-    (HasTypeV.closure EnvWf.nil (lvl' := 0)
+    (HasTypeV.closure (lvl' := 1) (le_refl 1) EnvWf.nil
       (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
       (HasType.var (s := .mono (.fun .integer .empty .integer)) (args := []) rfl)
       (Ty.TyEquiv.refl _))

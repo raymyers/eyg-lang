@@ -83,12 +83,13 @@ needing the (false-for-open-rows) value substitution lemma. -/
 /-- A lambda's runtime closure is typed at the lambda term's type, with the closure's context taken to
 be the evaluation context `Γ` (no existential). Level-native: inverts the lambda node via `inv_lambda`
 and feeds the arrow-component `HasTypeV.closure`. -/
-theorem closure_typed_of_lambda {lvl : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
+theorem closure_typed_of_lambda {lvl : Nat} (hlvl : 1 ≤ lvl) {Γ : Ctx} {x : String}
+    {body : Tree.Node m} {a : m}
     {env : Env m} {τ ε : Ty} (henv : EnvWf env Γ)
     (h : HasType lvl Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) :
     HasTypeV (.Closure x body env) τ := by
   obtain ⟨lvl', argTy, εb, retTy, hle, hfv, hbody, heq⟩ := inv_lambda h
-  exact HasTypeV.closure henv hfv hbody heq
+  exact HasTypeV.closure (Nat.le_trans hlvl hle) henv hfv hbody heq
 
 /-- **The value-level readiness keystone (level-native `generalizes_closure_ready`).** For a let-bound
 lambda presented via its `lam` components at ambient level `ℓ` — body at a strictly higher level `lvl'`,
@@ -116,7 +117,7 @@ theorem genAtV_closure_ready_value {ℓ : Nat} (hℓ : ℓ ≠ 0)
   have hlam := genAtV_instantiate_lam_ready (m := m) (la := la) (ε := .empty)
     hℓ hlt hfv hbody hΓpa hΓwf args hargs
   obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heq⟩ := inv_lambda hlam
-  exact HasTypeV.closure henv hfv' hbody' heq
+  exact HasTypeV.closure (Nat.le_trans (Nat.one_le_iff_ne_zero.mpr hℓ) hle') henv hfv' hbody' heq
 
 /-- **TyEquiv bridge for level-native instantiation.** `instantiateV` of a level-`ℓ` generalization
 respects `TyEquiv` of the generalized body: if the bodies `d₁ ≈ d₂`, then instantiating
@@ -179,7 +180,7 @@ theorem genAtV_closure_ready_value_node {lvl : Nat} (hℓ : lvl ≠ 0)
   have hlam := genAtV_instantiate_lam_ready_le (m := m) (la := la) (ε := ε)
     hℓ hlelvl' hfv nghbody hΓpa hΓwf args hargs
   obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heqarr⟩ := inv_lambda hlam
-  exact HasTypeV.closure henv hfv' hbody'
+  exact HasTypeV.closure (Nat.le_trans (Nat.one_le_iff_ne_zero.mpr hℓ) hle') henv hfv' hbody'
     (heqarr.trans (instantiateV_genAtV_tyEquiv lvl heq args))
 
 end Eyg.Types

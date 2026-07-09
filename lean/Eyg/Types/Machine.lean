@@ -45,6 +45,7 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
   /-- `Assign` (the `let` continuation): the incoming value is the definition; the
   body is run in the captured env extended with it. -/
   | assign {a x body fenv Γ defnTy bodyTy ε τout rest lvl} :
+      1 ≤ lvl →
       EnvWf fenv Γ →
       (hbody : HasType lvl ((x, .mono defnTy) :: Γ) body bodyTy ε) →
       HasTypeRT hbody →
@@ -55,6 +56,7 @@ inductive StackWf {m : Type} : Stack m → Ty → Ty → Ty → Prop where
   weakened to the ambient `ε` (`EffWeaken εf ε` — a pure function applied in an
   effectful ambient; exact match for T3–T5). -/
   | arg {a arg fenv Γ argTy εf retTy ε τout rest lvl} :
+      1 ≤ lvl →
       EnvWf fenv Γ →
       (harg : HasType lvl Γ arg argTy ε) →
       HasTypeRT harg →
@@ -122,8 +124,8 @@ theorem stackSeg_toStackWf {m : Type} {seg k : Stack m} {σin εin σmid εmid �
       obtain ⟨kont, ann⟩ := hd
       cases hseg with
       | trace h => exact .trace (ih h)
-      | assign henv hbody hrt h => exact .assign henv hbody hrt (ih h)
-      | arg henv harg hrt hw h => exact .arg henv harg hrt hw (ih h)
+      | assign hlvl henv hbody hrt h => exact .assign hlvl henv hbody hrt (ih h)
+      | arg hlvl henv harg hrt hw h => exact .arg hlvl henv harg hrt hw (ih h)
       | applyf hf hw h => exact .applyf hf hw (ih h)
       | callwith harg hw h => exact .callwith harg hw (ih h)
       | delimit hh he hweak h => exact StackWf.conv (.delimit hh hweak (ih h)) (.refl _) he.symm
@@ -157,31 +159,31 @@ theorem stackWf_trace_inv {m : Type} {w : Value m} {a : m} {rest : Stack m} {σ 
 theorem stackWf_assign_inv {m : Type} {x : String} {body : Tree.Node m} {fenv : Env m}
     {a : m} {rest : Stack m} {σ ε τ : Ty}
     (h : StackWf ((Kontinue.Assign x body fenv, a) :: rest) σ ε τ) :
-    ∃ Γ defnTy bodyTy ε0 lvl, Ty.TyEquiv σ defnTy ∧ Ty.TyEquiv ε ε0 ∧ EnvWf fenv Γ ∧
+    ∃ Γ defnTy bodyTy ε0 lvl, 1 ≤ lvl ∧ Ty.TyEquiv σ defnTy ∧ Ty.TyEquiv ε ε0 ∧ EnvWf fenv Γ ∧
       ∃ hbody : HasType lvl ((x, .mono defnTy) :: Γ) body bodyTy ε0,
         HasTypeRT hbody ∧ StackWf rest bodyTy ε0 τ := by
   generalize hs : ((Kontinue.Assign x body fenv, a) :: rest) = s at h
   induction h with
-  | assign henv hbody hrt hrest =>
-      cases hs; exact ⟨_, _, _, _, _, .refl _, .refl _, henv, hbody, hrt, hrest⟩
+  | assign hlvl henv hbody hrt hrest =>
+      cases hs; exact ⟨_, _, _, _, _, hlvl, .refl _, .refl _, henv, hbody, hrt, hrest⟩
   | conv _ hσ hε ih =>
-      obtain ⟨Γ, dT, bT, ε0, lvl, hσ', hε', henv, hbody, hrt, hrest⟩ := ih hs
-      exact ⟨Γ, dT, bT, ε0, lvl, hσ.symm.trans hσ', hε.symm.trans hε', henv, hbody, hrt, hrest⟩
+      obtain ⟨Γ, dT, bT, ε0, lvl, hlvl, hσ', hε', henv, hbody, hrt, hrest⟩ := ih hs
+      exact ⟨Γ, dT, bT, ε0, lvl, hlvl, hσ.symm.trans hσ', hε.symm.trans hε', henv, hbody, hrt, hrest⟩
   | _ => simp at hs
 
 theorem stackWf_arg_inv {m : Type} {arg : Tree.Node m} {fenv : Env m} {a : m}
     {rest : Stack m} {σ ε τ : Ty}
     (h : StackWf ((Kontinue.Arg arg fenv, a) :: rest) σ ε τ) :
-    ∃ Γ argTy εf retTy ε0 lvl, Ty.TyEquiv σ (.fun argTy εf retTy) ∧ Ty.TyEquiv ε ε0 ∧
+    ∃ Γ argTy εf retTy ε0 lvl, 1 ≤ lvl ∧ Ty.TyEquiv σ (.fun argTy εf retTy) ∧ Ty.TyEquiv ε ε0 ∧
       EnvWf fenv Γ ∧ ∃ harg : HasType lvl Γ arg argTy ε0,
         HasTypeRT harg ∧ Ty.EffWeaken εf ε0 ∧ StackWf rest retTy ε0 τ := by
   generalize hs : ((Kontinue.Arg arg fenv, a) :: rest) = s at h
   induction h with
-  | arg henv harg hrt hw hrest =>
-      cases hs; exact ⟨_, _, _, _, _, _, .refl _, .refl _, henv, harg, hrt, hw, hrest⟩
+  | arg hlvl henv harg hrt hw hrest =>
+      cases hs; exact ⟨_, _, _, _, _, _, hlvl, .refl _, .refl _, henv, harg, hrt, hw, hrest⟩
   | conv _ hσ hε ih =>
-      obtain ⟨Γ, aT, εf, rT, ε0, lvl, hσ', hε', henv, harg, hrt, hw, hrest⟩ := ih hs
-      exact ⟨Γ, aT, εf, rT, ε0, lvl, hσ.symm.trans hσ', hε.symm.trans hε', henv, harg, hrt, hw,
+      obtain ⟨Γ, aT, εf, rT, ε0, lvl, hlvl, hσ', hε', henv, harg, hrt, hw, hrest⟩ := ih hs
+      exact ⟨Γ, aT, εf, rT, ε0, lvl, hlvl, hσ.symm.trans hσ', hε.symm.trans hε', henv, harg, hrt, hw,
         hrest⟩
   | _ => simp at hs
 
@@ -255,7 +257,7 @@ binding **readiness** about `v`; `Trace` passes `v` through; every other head co
 def StackWfV {m : Type} (v : Value m) : Stack m → Ty → Ty → Ty → Prop
   | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfV v rest σ ε τ
   | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
-      ∃ Γ sc defnTy bodyTy lvl, Ty.TyEquiv σ defnTy ∧
+      ∃ Γ sc defnTy bodyTy lvl, 1 ≤ lvl ∧ Ty.TyEquiv σ defnTy ∧
         (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = sc.level) →
             HasTypeV v (sc.instantiateV args)) ∧
         EnvWf fenv Γ ∧ ∃ hbody : HasType lvl ((x, sc) :: Γ) body bodyTy ε,
@@ -271,7 +273,7 @@ poly binding (false readiness, but semantically impossible). `Trace` passes thro
 def StackWfE {m : Type} (e : Tree.Node m) (env : Env m) : Stack m → Ty → Ty → Ty → Prop
   | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfE e env rest σ ε τ
   | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
-      ∃ Γ sc defnTy bodyTy lvl, Ty.TyEquiv σ defnTy ∧ EnvWf fenv Γ ∧
+      ∃ Γ sc defnTy bodyTy lvl, 1 ≤ lvl ∧ Ty.TyEquiv σ defnTy ∧ EnvWf fenv Γ ∧
         ∃ hbody : HasType lvl ((x, sc) :: Γ) body bodyTy ε,
         HasTypeRT hbody ∧ StackWf rest bodyTy ε τ ∧
         (∀ lx lbody la, e = ⟨.Lambda lx lbody, la⟩ →
@@ -295,9 +297,9 @@ theorem stackWf_toStackWfV {m : Type} {v : Value m} {k : Stack m} {σ ε τ : Ty
       cases kont with
       | Trace w => exact ih (stackWf_trace_inv h)
       | Assign x body fenv =>
-          obtain ⟨Γ, defnTy, bodyTy, ε0, lvl, hσ, hε, henv, hbody, hrt, hrest⟩ :=
+          obtain ⟨Γ, defnTy, bodyTy, ε0, lvl, hlvl, hσ, hε, henv, hbody, hrt, hrest⟩ :=
             stackWf_assign_inv h
-          exact ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hσ,
+          exact ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hlvl, hσ,
             fun args _ => by rw [Scheme.instantiateV_mono]; exact hv.conv hσ, henv,
             HasType.conv hbody (.refl _) hε.symm, hrt.conv (.refl _) hε.symm,
             StackWf.conv hrest (.refl _) hε.symm⟩
@@ -319,9 +321,9 @@ theorem stackWf_toStackWfE {m : Type} {e : Tree.Node m} {env : Env m} {k : Stack
       cases kont with
       | Trace w => exact ih (stackWf_trace_inv h)
       | Assign x body fenv =>
-          obtain ⟨Γ, defnTy, bodyTy, ε0, lvl, hσ, hε, henv, hbody, hrt, hrest⟩ :=
+          obtain ⟨Γ, defnTy, bodyTy, ε0, lvl, hlvl, hσ, hε, henv, hbody, hrt, hrest⟩ :=
             stackWf_assign_inv h
-          refine ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hσ, henv,
+          refine ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hlvl, hσ, henv,
             HasType.conv hbody (.refl _) hε.symm, hrt.conv (.refl _) hε.symm,
             StackWf.conv hrest (.refl _) hε.symm, ?_, Or.inl rfl⟩
           intro lx lb la hlam args _
@@ -340,9 +342,9 @@ theorem stackWfE_toStackWf {m : Type} {e : Tree.Node m} {env : Env m}
   | [], _, _, _, h => h
   | (Kontinue.Trace _, _) :: rest, _, _, _, h => StackWf.trace (stackWfE_toStackWf hne h)
   | (Kontinue.Assign _ _ _, _) :: _, _, _, _, h => by
-      obtain ⟨Γ, sc, defnTy, bodyTy, lvl, hσ, henv, hbody, hrt, hrest, _, hmono⟩ := h
+      obtain ⟨Γ, sc, defnTy, bodyTy, lvl, hlvl, hσ, henv, hbody, hrt, hrest, _, hmono⟩ := h
       rcases hmono with rfl | ⟨lx, lb, la, he⟩
-      · exact StackWf.conv (StackWf.assign henv hbody hrt hrest) hσ.symm (.refl _)
+      · exact StackWf.conv (StackWf.assign hlvl henv hbody hrt hrest) hσ.symm (.refl _)
       · exact absurd he (hne lx lb la)
   | (Kontinue.Arg _ _, _) :: _, _, _, _, h => h
   | (Kontinue.Apply _ _, _) :: _, _, _, _, h => h
@@ -362,8 +364,8 @@ theorem stackWfE_lambda_step {m : Type} {lx : String} {lbody : Tree.Node m} {la 
       cases kont with
       | Trace w => exact ih h
       | Assign x body fenv =>
-          obtain ⟨Γ, sc, defnTy, bodyTy, lvl, hσ, henv, hbody, hrt, hrest, hclo, _⟩ := h
-          exact ⟨Γ, sc, defnTy, bodyTy, lvl, hσ, hclo lx lbody la rfl, henv, hbody, hrt,
+          obtain ⟨Γ, sc, defnTy, bodyTy, lvl, hlvl, hσ, henv, hbody, hrt, hrest, hclo, _⟩ := h
+          exact ⟨Γ, sc, defnTy, bodyTy, lvl, hlvl, hσ, hclo lx lbody la rfl, henv, hbody, hrt,
             hrest⟩
       | Arg _ _ => exact h
       | Apply _ _ => exact h
@@ -383,10 +385,10 @@ theorem stackWfE_value_step {m : Type} {e : Tree.Node m} {env : Env m} {v : Valu
       cases kont with
       | Trace w => exact ih h
       | Assign x body fenv =>
-          obtain ⟨Γ, sc, defnTy, bodyTy, lvl, hσ, henv, hbody, hrt, hrest, _, hmono⟩ := h
+          obtain ⟨Γ, sc, defnTy, bodyTy, lvl, hlvl, hσ, henv, hbody, hrt, hrest, _, hmono⟩ := h
           rcases hmono with hsc | ⟨lx, lbody, la, he⟩
           · subst hsc
-            exact ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hσ,
+            exact ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hlvl, hσ,
               fun args _ => by rw [Scheme.instantiateV_mono]; exact hv.conv hσ, henv, hbody, hrt,
                 hrest⟩
           · exact absurd he (hne lx lbody la)
@@ -405,7 +407,7 @@ expected input need only be equivalent to the declared reply type) to the answer
 discharged in `preservation`'s `reply` case. -/
 def MStateWf {m : Type} : MState m → Ty → Ty → Prop
   | .run (.E e, env, k), τ, ε =>
-      ∃ Γ τin lvl, EnvWf env Γ ∧ ∃ hty : HasType lvl Γ e τin ε,
+      ∃ Γ τin lvl, 1 ≤ lvl ∧ EnvWf env Γ ∧ ∃ hty : HasType lvl Γ e τin ε,
         HasTypeRT hty ∧ StackWfE e env k τin ε τ
   | .run (.V v, _, k), τ, ε => ∃ τin, HasTypeV v τin ∧ StackWfV v k τin ε τ
   | .wait op _ k, τ, ε =>
@@ -422,9 +424,9 @@ threaded forward by preservation. This is the entry point the soundness theorem 
 starts from. -/
 
 theorem mStateWf_initial {m : Type} {lvl : Nat} {prog : Tree.Node m} {τ ε : Ty}
-    (h : HasType lvl [] prog τ ε) (hrt : HasTypeRT h) :
+    (hlvl : 1 ≤ lvl) (h : HasType lvl [] prog τ ε) (hrt : HasTypeRT h) :
     MStateWf (.run (Config.initial prog)) τ ε :=
-  ⟨[], τ, lvl, EnvWf.nil, h, hrt, StackWf.nil⟩
+  ⟨[], τ, lvl, hlvl, EnvWf.nil, h, hrt, StackWf.nil⟩
 
 /-! ## Sanity checks -/
 
@@ -436,15 +438,15 @@ open Eyg.Ir.Tree
 -- literal is a leaf).
 example : MStateWf (.run (Config.initial
     (apply (lambda "x" (variable_ "x")) (integer 1)))) .integer .empty := by
-  have hlam : HasType (m := Unit) 0 [] (lambda "x" (variable_ "x"))
+  have hlam : HasType (m := Unit) 1 [] (lambda "x" (variable_ "x"))
       (.fun .integer .empty .integer) .empty :=
-    HasType.lam (lvl' := 0) (le_refl _)
+    HasType.lam (lvl' := 1) (le_refl _)
       (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
       (HasType.var (s := .mono .integer) (args := []) rfl)
-  have happ : HasType (m := Unit) 0 []
+  have happ : HasType (m := Unit) 1 []
       (apply (lambda "x" (variable_ "x")) (integer 1)) .integer .empty :=
     HasType.app (argTy := .integer) hlam (Ty.effWeaken_refl _) HasType.int
-  exact mStateWf_initial happ
+  exact mStateWf_initial (le_refl 1) happ
     (HasTypeRT.app (hw := Ty.effWeaken_refl _) (hasTypeRT_lambda hlam) HasTypeRT.int)
 
 -- A non-empty stack: applying the argument frame to a function value flows
@@ -452,7 +454,7 @@ example : MStateWf (.run (Config.initial
 example : StackWf [(Kontinue.Apply (.Closure "x" (variable_ "x") []) ([] : Env Unit), ())]
     .integer .empty .integer :=
   StackWf.applyf
-    (HasTypeV.closure EnvWf.nil (lvl' := 0)
+    (HasTypeV.closure (lvl' := 1) (le_refl 1) EnvWf.nil
       (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
       (HasType.var (s := .mono .integer) (args := []) rfl)
       (Ty.TyEquiv.refl _))
