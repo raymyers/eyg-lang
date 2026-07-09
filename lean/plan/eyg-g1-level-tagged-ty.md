@@ -891,6 +891,46 @@ the datatype change itself.
       `let_poly` arm of (b) calling (a) on the defn — OR fold the whole re-instantiation into
       `genAtV_closure_ready_value_node` per the G6 shape so the defn is re-derived fresh at the fresh
       level rather than transformed. Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G16 — the FIRST working derivation-level generalization-level
+      raise LANDED, in the *uniform* mode; two-modes conflict decoupled and pinned; two green additive
+      commits `09472c84`/`2271a256`; see
+      `progress/2026-07-09-G1-phase6-sessionG16-uniform-fullraise-landed-two-modes-decoupled.md`):**
+      No LSP. Re-derived the obstruction independently and found a cleaner single-theorem route the
+      whole G7–G15 arc missed. **Key reframing:** prior sessions pursued a *type-fixed* raise (hold the
+      conclusion type/context literally fixed), which is intrinsically **two-moded** and walls at
+      nesting depth ≥ 2 (a `let_poly`'s `defnTy` carries a foreign `≥ t` gen level, at which the
+      single-level `raiseScheme` and the defn's needed relabel diverge — defn and body sub-derivations
+      need the shared ambient context transformed incompatibly; the task's single-target
+      `hasType_relabelFree` cannot handle the accumulation, which converges to a full `raiseTy`). The
+      **uniform** raise collapses the two modes into one by giving up "type-fixed": relabel *every*
+      level `≥ t` by `o` uniformly (types, effects, context, gen levels), so the `let_poly` arm's defn
+      is handled by the SAME theorem (`genAtV (k+o) (raiseTy t o defnTy)` matches the defn's raised
+      type). **Landed:** (1) `09472c84` — pure-equality core in Scheme.lean (`levels_raiseTy`,
+      `length_filter_levels_raiseTy` [arity preservation, NO freshness needed], `raiseTy_substAt_comm`
+      [unconditional, no `hclean`/coverage], `instantiateV_genAtV_raiseTy` [uniform instantiation
+      commutation via `args.map (raiseTy t o)`, NO padding/coverage/freshness]). (2) `2271a256` —
+      `raiseTy_tyEquiv`/`raiseTy_effWeaken` (Scheme.lean) + `raiseScheme_U`/`raiseCtx_U` + helpers,
+      `instantiateV_raiseScheme_U` (any scheme, no canonicity), `ctxWfV_raiseCtx_U`, and
+      **`hasType_fullRaise`** itself (~21-arm structural induction, NO mutual recursion, NO
+      freshness/coverage/padding) in Typing.lean. Axioms `[propext, Quot.sound]`, per-file green
+      (Scheme+Typing+Substitution), no `sorry`. **The first machine-checked derivation-level raise in
+      the whole arc** — proves the machinery works end to end. **Confirmed limitation (now with the mode
+      built, not sketched):** the uniform raise raises the outer scheme's OWN to-be-generalized
+      level-`lvl` vars (they surface in `retTy ⊆ defnTy` as escapes `genAtV lvl` quantifies),
+      collapsing `genAtV lvl defnTy` to arity 0 — a DIFFERENT judgment, so proof irrelevance cannot
+      transport `NoGenAt lvl` to the wrapper's `hdefn`. Inner-`let_poly`-at-`lvl` (must move) and outer
+      escaped level-`lvl` in `retTy` (must stay) are the identical tag `lvl`; no threshold separates
+      them, so no uniform raise closes the wrapper. **Sharpest next route (needs LSP + a soundness-
+      critical decision):** `instantiateV_genAtV_raiseTy` shows the raised scheme's instantiation at
+      `args.map (raiseTy lvl o)` equals `raiseTy lvl o` of the original's; for **ground** `args` (levels
+      ⊆ {0}) and `defnTy` with no level `> lvl`, `raiseTy lvl o` fixes the target, so `hasType_fullRaise`
+      (closure *value* unchanged) yields `HasTypeV (Closure …) target` with NO `NoGenAt`. The gap: the
+      wrapper quantifies over all level-bounded args, but at RUNTIME args are ground (gap-1
+      `HasTypeRT`). So: restrict the closure-readiness obligation to ground/runtime args (sound — only
+      consumed at ground runtime args, `inv_var_rt` supplies them), discharge via
+      `hasType_fullRaise` + `instantiateV_genAtV_raiseTy`, drop `NoGenAt` from the wrapper. A soundness-
+      critical `EnvWf.cons`/`StackWfV`-Assign refactor, first route the arc has that a *built* raise
+      feeds. Soundness.lean left EXACTLY as found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
