@@ -1349,6 +1349,37 @@ the datatype change itself.
       sites (+ `hasTypeRT_weakenEff`, a `weakenEffAux`-mirror needed in Soundness.lean). This threading is
       multi-file (Runtime+Machine+both Soundness engines), validatable only at full green — hence not
       landed this session. Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G28 — attempted the G27 applyf-frame threading; MACHINE-CHECKED
+      REFUTATION of the leading packaging mechanism + a newly-surfaced source-of-readiness gap). See
+      `progress/2026-07-09-G1-phase6-sessionG28-closureReady-propirrelevance-refutation.md`.** No LSP
+      (canary failed). HEAD `0c0b6951`; NO source edits — G26 near-green `Soundness.lean` preserved
+      byte-identical (backed up + `diff`-verified), `grep -rn sorry` empty. Re-confirmed the exact error
+      state (`-DmaxErrors=40`): A-engine errors ONLY at 874-877/1036-1039 (3-of-5 `cases` binders +
+      missing `HasTypeRT` slot, as G27 diagnosed) + the un-migrated B-engine at 2460/2501/2573.
+      **RESULT 1 (machine-checked, scratch-validated): the natural vehicle for carrying (C1)-(C3) —
+      a `def HasTypeV.closureReady (hf : HasTypeV f (.fun …)) : Prop := match hf with | .closure … => (C1)∧(C2)∧(C3) | _ => True`
+      threaded as an `applyf` field — DOES NOT WORK.** The `def` itself compiles, but at the apply site
+      `cases hf` cannot reduce a hypothesis `hcr : hf.closureReady` into the closure-branch content:
+      `HasTypeV : Prop`, so its matcher can only large-eliminate into `Prop`, and reverting the
+      hf-dependent `hcr` forces a `Sort`-polymorphic motive → `casesOn can only eliminate into Prop`.
+      Proof-irrelevance blocks extracting the closure existentials (`lvl'`, `hbody`) from the *proof*
+      `hf` in a `cases`-alignable way. So (C1)-(C3) cannot be packaged as a match-def over the closure
+      derivation. **RESULT 2 (design gap G27 glossed): even a two-constructor frame inductive
+      (`closureApplied`-with-(C1)-(C3) / `partialApplied`-with-`HasTypeV`) still needs (C3)
+      `RTSubstReady lvl' hbody` SUPPLIED at the Arg→`applyf` creation site (Soundness 862), where only
+      the function VALUE `hv : HasTypeV v (.fun …)` and the ARGUMENT's typing/RT are in scope — the
+      function control's `rf : HasTypeRT hf` was consumed during `f`'s evaluation and HasTypeV carries no
+      RT. So readiness must be threaded forward from the Apply-node's `rf` onto the persistent `StackWf.arg`
+      frame as a forward obligation about the eventual function value (a StackWfE-`Assign`-style
+      "future-closure readiness", but over the arg frame's function slot), discharged at value-production.
+      This is materially larger than G27's "add 3 fields to applyf + EnvWf.cons ground clause" and is the
+      genuinely-open piece. Everything is entangled in the red `Soundness.lean` (no independently-committable
+      increment: any `applyf`/`arg`/`EnvWf.cons` field change breaks Runtime+Machine+Soundness at once, and
+      the no-red-commit rule bars landing until full green), which is why speculative half-threading was
+      NOT attempted — it would only deepen the near-green tree's breakage. Caveat 5 OPEN; substitution
+      infra (G25 `hasTypeRT_subst`) still complete and correct; the discharge recipe (single grounding at
+      `lvl'`) unchanged — only the CARRIER + readiness SOURCE remain to be built.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
