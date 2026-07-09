@@ -796,6 +796,37 @@ the datatype change itself.
       keystone) + the Soundness grind + Phase 7. All statements + arm recipes recorded in the note. Wants
       live LSP. Per-file green (Typing), axioms unchanged, no `sorry`. Soundness.lean left as found.
       Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G13 — the G12 single-relabel-level blueprint found INSUFFICIENT;
+      uniform `raiseTy` + bridge landed, commit `ddaf2e35`, Scheme.lean; see
+      `progress/2026-07-09-G1-phase6-sessionG13-raiseTy-two-modes-need-distinct-context-raise.md`):** No
+      LSP/MCP (canary failed). Attempting to build the two mutually-recursive raise inductions surfaced a
+      genuine architectural subtlety G12's single-level-`k` `hasType_relabel_raise` does not resolve.
+      **(1)** `raiseCtx`/`raiseScheme` is **mode-independent and single-level-per-binding**
+      (`raiseScheme t o (genAtV k' d) = genAtV (k'+o) (substAt k' (·↦var(k'+o)) d)` relabels the body
+      only at that binding's *own* gen level `k'`), and both modes must share it. **(2)** A relabel-`k`
+      descent past an inner binding at `k' ≠ k` (both `≥ t`) whose stored body carries **foreign level-`k`
+      content** (outer relabel-`k` gens instantiated into the inner defn) needs a **double** relabel
+      `substAt k' (substAt k d)` of that body, but the shared `raiseCtx` supplies only the `k'` half — so
+      a var-use looking it up produces un-relabeled level-`k` content, contradicting the relabel-`k`
+      conclusion. **(3)** This is inherited by the *type-fixed* main raise via its `let_poly` arm (which
+      delegates the defn re-typing to the relabel companion at the node's gen level `j`). **(4)** There is
+      **no pure type-function** formulation: at one level `ℓ ≥ t` a tag is either a bound-gen (MOVES) or
+      an escaped-arg (STAYS), indistinguishable by tag; the type-fixed raise's conclusion keeps all `≥ t`
+      tags (all escaped-free there) while the relabel companion's conclusion moves all `≥ t` tags — so the
+      relabel conclusion is really `raiseTy t o τ` (uniform, all `≥ t` move), **not** single-level
+      `substAt k`, and the two modes need **different context-raise ops** (raise = single-level padding;
+      relabel = `raiseTy` per binding). **(5)** The wrapper is not *immediately* broken (`CtxWfV lvl Γ`
+      forces top-level context `< t`, so both ops = identity there); the conflict can only surface at
+      nesting depth `≥ 2`. **Banked green (`ddaf2e35`):** `Ty.raiseTy t o` (uniform relabel of every
+      `≥ t` level), `raiseTy_eq_self_of_levels_lt` (identity below threshold), and the crux
+      `raiseTy_eq_substAt_of_single` (single-level `substAt k` = uniform `raiseTy t o` exactly when the
+      type's only `≥ t` level is `k`). **Recommended next step:** migrate the relabel companion to the
+      `raiseTy`-uniform form (its var-arm commutation needs no arg-padding — getD defaults match
+      automatically since `raiseTy t o (var k i) = var (k+o) i`), then resolve the shared-context fork
+      (prove the residual bodies never nest a foreign-cross-level `let_poly`, so single = uniform via
+      `raiseTy_eq_substAt_of_single`; the two modes stay irreducibly distinct because the residual case's
+      `lvl ∈ retTy.levels` — level exactly `t` — WOULD move under `raiseTy`). Per-file green (Scheme),
+      axioms unchanged, no `sorry`. Soundness.lean left as found. Caveat 5 OPEN. Wants live LSP.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
