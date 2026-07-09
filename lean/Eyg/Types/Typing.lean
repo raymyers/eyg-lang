@@ -756,6 +756,145 @@ theorem inv_lambda_noGenAt {ℓ lvl : Nat} {Γ : Ctx} {x : String} {body : Tree.
       exact ⟨lvl', argTy, εb, retTy, hbody, hle, hfv, nghbody, heq.trans hτ⟩
   | _ => intro he; exact absurd he (by simp)
 
+/-! ## The runtime-restricted judgment `HasTypeRT` (gap 1: var-preservation groundness)
+
+At the var-preservation site (`Soundness.lean`, both engines), the control is a **bare** variable
+node `⟨.Variable x⟩` with `hty : HasType lvl Γ ⟨.Variable x⟩ (s.instantiateV args) ε`; and
+`envwf_lookup` supplies `hvty : ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) →
+HasTypeV v (s.instantiateV args)`. Preservation needs `hvty args` for the **specific** `args` the
+derivation chose — i.e. the args side-condition `∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level`.
+`HasType.var` records **no** constraint on `args`, and one **must not** be added there (it would
+reject legitimate *typing-time* instantiations — see `hbody_ref` in `section Examples`, whose
+non-ground arg `[.var 2 0]` at level 2 is a perfectly valid static subderivation).
+
+The fix is a **runtime-restricted** predicate `HasTypeRT h` (indexed by the `HasType` derivation
+`h`, mirroring `NoGenAt`) that a running well-typed machine state carries for its *control*
+derivation. Its `var`/`builtin` arms additionally record the args side-condition; the
+var-preservation site then discharges `hvty args` directly (`inv_var_rt`).
+
+**Design correction over the Session-D sketch ("every other arm is a verbatim structural copy"):**
+the `lam` arm must **not** recurse into the lambda body, and `let_poly` must **not** recurse into
+its lambda-defn. A lambda's body is never evaluated *as a control* until its closure is applied, at
+which point the keystone (`genAtV_instantiate_lam_ready`/`..._le`) re-types it via `substAt` with
+**ground** args — re-establishing `HasTypeRT` there. Recursing into lambda bodies would make even
+the legitimate whole referencing program (`section Examples`, `let a = \x.x in let c = \w. a w in
+c`) fail to be `HasTypeRT`, because its `\w. a w` body carries the non-ground arg `[.var 2 0]`
+(level 2 ≠ `a.level`=1). By stopping at lambda bodies, `HasTypeRT` (a) admits that whole program and
+(b) still forces every var node that is *actually reachable as a control* (never under an
+un-applied lambda) to have bounded args. `app`/`let_` recurse (both sub-terms become controls);
+`conv` recurses; literals/atomics are leaves. -/
+
+/-- **Runtime-restricted typing** (indexed by a `HasType` derivation). `var`/`builtin` arms carry
+the args side-condition `∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level`; `lam`/`let_poly` do
+**not** recurse into the (un-applied) lambda body; `app`/`let_`/`conv` recurse. Carried on the
+control derivation of a running machine state (`MStateWf`) so var-preservation can discharge the
+readiness side-condition it needs. -/
+inductive HasTypeRT {m : Type} :
+    {lvl : Nat} → {Γ : Ctx} → {e : Tree.Node m} → {τ ε : Ty} →
+    HasType lvl Γ e τ ε → Prop where
+  | var {lvl Γ x s args ε a} (hl : Γ.lookup x = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) :
+      HasTypeRT (HasType.var (lvl := lvl) (Γ := Γ) (x := x) (s := s) (args := args)
+        (ε := ε) (a := a) hl)
+  | lam {lvl lvl' Γ x body argTy εb retTy ε a}
+      (hle : lvl ≤ lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono argTy) :: Γ) body retTy εb} :
+      HasTypeRT (HasType.lam (ε := ε) (a := a) hle hfv hbody)
+  | app {lvl Γ f arg argTy εf retTy ε a}
+      {hf : HasType lvl Γ f (.fun argTy εf retTy) ε} {hw : Ty.EffWeaken εf ε}
+      {harg : HasType lvl Γ arg argTy ε} :
+      HasTypeRT hf → HasTypeRT harg → HasTypeRT (HasType.app (a := a) hf hw harg)
+  | let_ {lvl lvl' Γ x defn body defnTy bodyTy ε a}
+      {hdefn : HasType lvl Γ defn defnTy ε} (hle : lvl ≤ lvl')
+      (hfv : ∀ l ∈ defnTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body bodyTy ε} :
+      HasTypeRT hdefn → HasTypeRT hbody →
+      HasTypeRT (HasType.let_ (a := a) hdefn hle hfv hbody)
+  | let_poly {lvl Γ x lx lbody la body defnTy bodyTy ε a}
+      {hdefn : HasType lvl Γ ⟨.Lambda lx lbody, la⟩ defnTy ε} {hcw : CtxWfV lvl Γ}
+      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body bodyTy ε} :
+      HasTypeRT hbody →
+      HasTypeRT (HasType.let_poly (a := a) hdefn hcw hbody)
+  | int {lvl Γ n ε a} :
+      HasTypeRT (HasType.int (m := m) (lvl := lvl) (Γ := Γ) (n := n) (ε := ε) (a := a))
+  | str {lvl Γ s ε a} :
+      HasTypeRT (HasType.str (m := m) (lvl := lvl) (Γ := Γ) (s := s) (ε := ε) (a := a))
+  | bin {lvl Γ b ε a} :
+      HasTypeRT (HasType.bin (m := m) (lvl := lvl) (Γ := Γ) (b := b) (ε := ε) (a := a))
+  | builtin {lvl Γ id s args ε a} (hs : Builtins.scheme id = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) :
+      HasTypeRT (HasType.builtin (lvl := lvl) (Γ := Γ) (args := args) (ε := ε) (a := a) hs)
+  | tail {lvl Γ elem ε a} :
+      HasTypeRT (HasType.tail (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | cons {lvl Γ elem ε a} :
+      HasTypeRT (HasType.cons (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | tag {lvl Γ l elem tail ε a} :
+      HasTypeRT (HasType.tag (m := m) (lvl := lvl) (Γ := Γ) (l := l) (elem := elem)
+        (tail := tail) (ε := ε) (a := a))
+  | nocases {lvl Γ ret ε a} :
+      HasTypeRT (HasType.nocases (m := m) (lvl := lvl) (Γ := Γ) (ret := ret) (ε := ε)
+        (a := a))
+  | case_ {lvl Γ l inner eff ret tail ε a} :
+      HasTypeRT (HasType.case_ (m := m) (lvl := lvl) (Γ := Γ) (l := l) (inner := inner)
+        (eff := eff) (ret := ret) (tail := tail) (ε := ε) (a := a))
+  | select {lvl Γ l fieldTy tail ε a} :
+      HasTypeRT (HasType.select (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (tail := tail) (ε := ε) (a := a))
+  | extend {lvl Γ l fieldTy row ε a} :
+      HasTypeRT (HasType.extend (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (row := row) (ε := ε) (a := a))
+  | overwrite {lvl Γ l newTy oldTy tail ε a} :
+      HasTypeRT (HasType.overwrite (m := m) (lvl := lvl) (Γ := Γ) (l := l) (newTy := newTy)
+        (oldTy := oldTy) (tail := tail) (ε := ε) (a := a))
+  | empty {lvl Γ ε a} :
+      HasTypeRT (HasType.empty (m := m) (lvl := lvl) (Γ := Γ) (ε := ε) (a := a))
+  | perform {lvl Γ l aa b μ ε ann} :
+      HasTypeRT (HasType.perform (m := m) (lvl := lvl) (Γ := Γ) (l := l) (a := aa) (b := b)
+        (μ := μ) (ε := ε) (ann := ann))
+  | handle {lvl Γ l lift reply tail ret ε ann} :
+      HasTypeRT (HasType.handle (m := m) (lvl := lvl) (Γ := Γ) (l := l) (lift := lift)
+        (reply := reply) (tail := tail) (ret := ret) (ε := ε) (ann := ann))
+  | conv {lvl Γ e τ τ' ε ε'} {h : HasType lvl Γ e τ ε}
+      (hτ : Ty.TyEquiv τ τ') (hε : Ty.TyEquiv ε ε') :
+      HasTypeRT h → HasTypeRT (HasType.conv h hτ hε)
+
+/-- **The var-preservation discharge lemma.** From a `HasTypeRT` control derivation on a bare
+variable node, recover the looked-up scheme, its instantiation args, the lookup, the equivalence (as
+`inv_var`) **and** the args side-condition needed to apply `envwf_lookup`'s conditional readiness
+`hvty`. This is the single fact gap 1 was missing: it replaces `inv_var` at the RT var-preservation
+site. -/
+theorem inv_var_rt {lvl : Nat} {Γ : Ctx} {x : String} {a : m} {τ ε : Ty}
+    {h : HasType lvl Γ (⟨.Variable x, a⟩ : Tree.Node m) τ ε} (hrt : HasTypeRT h) :
+    ∃ s args, Γ.lookup x = some s ∧ Ty.TyEquiv (s.instantiateV args) τ ∧
+      (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) := by
+  generalize he : (⟨.Variable x, a⟩ : Tree.Node m) = enode at h
+  revert he
+  induction hrt with
+  | @var lvl Γ x' s args ε a hl hargs =>
+      intro he; cases he; exact ⟨s, args, hl, .refl _, hargs⟩
+  | @conv lvl Γ e τ' τ'' ε' ε'' hh hτ hε rh ih =>
+      intro he
+      obtain ⟨s, args, hl, heq, hargs⟩ := ih he
+      exact ⟨s, args, hl, heq.trans hτ, hargs⟩
+  | _ => intro he; exact absurd he (by simp)
+
+/-- **The builtin analog of `inv_var_rt`.** Recovers the builtin scheme, args, the type equivalence
+(as `inv_builtin`) and the args side-condition. -/
+theorem inv_builtin_rt {lvl : Nat} {Γ : Ctx} {id : String} {a : m} {τ ε : Ty}
+    {h : HasType lvl Γ (⟨.Builtin id, a⟩ : Tree.Node m) τ ε} (hrt : HasTypeRT h) :
+    ∃ s args, Builtins.scheme id = some s ∧ Ty.TyEquiv (s.instantiateV args) τ ∧
+      (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) := by
+  generalize he : (⟨.Builtin id, a⟩ : Tree.Node m) = enode at h
+  revert he
+  induction hrt with
+  | @builtin lvl Γ id' s args ε a hs hargs =>
+      intro he; cases he; exact ⟨s, args, hs, .refl _, hargs⟩
+  | @conv lvl Γ e τ' τ'' ε' ε'' hh hτ hε rh ih =>
+      intro he
+      obtain ⟨s, args, hs, heq, hargs⟩ := ih he
+      exact ⟨s, args, hs, heq.trans hτ, hargs⟩
+  | _ => intro he; exact absurd he (by simp)
+
 /-! ## Context-binding conversion -/
 
 /-- **`CtxWfV` survives a `TyEquiv` context-binding rewrite** (level-native; `TyEquiv` preserves the
@@ -1017,6 +1156,21 @@ example : HasType (m := Unit) 1 []
     case hcwC => exact ctxWfV_Γseq
     case hbodyC =>
       exact HasType.var (s := Scheme.genAtV 2 defnC) (args := [.integer]) rfl
+
+-- **The design correction, non-vacuously validated.** The lambda `\w. a w` — whose body `hbody_ref`
+-- carries the **non-ground** instantiation arg `[.var 2 0]` (level 2 ≠ `a.level` = 1) — is `HasTypeRT`
+-- **regardless** of that body: `HasTypeRT.lam` takes no premise on `hbody`. This is exactly why the
+-- `lam` arm must not recurse: a legitimately-typed lambda with a non-ground body var arg is still a
+-- valid runtime control (it becomes a closure; its body is re-typed with ground args only when
+-- applied). Had `lam` recursed into `hbody`, this — and hence the whole referencing program above —
+-- would fail to be `HasTypeRT`.
+example : HasTypeRT
+    (@HasType.lam Unit 2 3 Γseq "w" cRefBody (.var 2 0) .empty (.var 2 0) .empty ()
+      (by decide) (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+      hbody_ref) :=
+  @HasTypeRT.lam Unit 2 3 Γseq "w" cRefBody (.var 2 0) .empty (.var 2 0) .empty ()
+    (by decide) (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbody_ref
 
 /-! ### G1 Session F witness: the `genAtV_closure_ready_value` strictness gap is NOT the
 runtime-groundness obstruction
