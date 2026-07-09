@@ -1149,6 +1149,50 @@ the datatype change itself.
       grind lands), so a committed half-shaped strengthening would risk churn; committed only the
       validated, shape-independent bridge lemma. `Soundness.lean` left EXACTLY as found (uncommitted
       partial migration, 103 errors, unchanged). Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G23 — four-field threading LANDED (green-committed); FIRST ENGINE
+      Soundness migration COMPLETE except a newly-surfaced closure-body-`HasTypeRT` gap).** No LSP
+      (canary failed). HEAD `d86e253c`. **Committed (two green per-file increments):**
+      (1) the finalized four-field threading — `HasTypeV.closure` gains `1 ≤ lvl'`; `EnvWf.cons` gains
+      `hpoly (s.arity ≠ 0 → s.level ≠ 0 ∧ s.level ∈ s.body.levels)` with `ctxPolyBd_of_envWf` as the
+      derived projection; `StackSegWf.assign/.arg`, `StackWf.assign/.arg` gain `1 ≤ lvl` (inversions
+      expose it); `StackWfV/StackWfE` Assign clauses + `MStateWf.E` + `mStateWf_initial` carry `1 ≤ lvl`;
+      `closure_typed_of_lambda`/`genAtV_closure_ready_value(_node)` derive `1 ≤ lvl'` from the ambient.
+      (2) a needed FIFTH carried field discovered mid-grind: the `hpoly` obligation must also ride in the
+      `StackWfV/StackWfE` Assign clauses (the Assign-pop reconstructs `EnvWf.cons`, so it needs `hpoly`
+      there and it is NOT derivable from readiness) — plus helpers `schemePolyBd_genAtV`/`schemePolyBd_mono`
+      in `Typing.lean`; and `HasTypeV.partialBuiltin` moved to `s.instantiateV args` (matches `inv_builtin`;
+      base type is not inspected by `BuiltinAppPreserves`). Green per-file: Typing/Runtime/Substitution/
+      Machine (+ transitive); no `sorry`.
+      **Soundness.lean (uncommitted, red — advanced from the pre-existing partial migration):** the
+      **entire first engine is now green** — `weakenEffAux` (fixed the mis-binder'd `app`/`conv`/`let_poly`
+      induction arms), `preservation_E` (rewritten to consume `inv_var_rt`/`inv_app_rt`/`inv_let_rt` and
+      `builtin_instantiate_arrow`→`instantiateV`; both `let` cases discharge via
+      `genAtV_closure_ready_value_node (Nat.one_le_iff_ne_zero.mp hlvl) hng (polyAboveFV_of_ctxPolyBd
+      (ctxPolyBd_of_envWf henv) hcw) hcw henv` — **the Caveat-5 poly-let preservation obligation is
+      MECHANICALLY DISCHARGED, exactly as the G22 design predicted**), `progress` (stale `mStateWf_E`
+      destructure fixed — collapsed a 76-error cascade), `perform_walk` Assign/Arg, `preservation_V`
+      Assign/Arg. Remaining first-engine errors: **only the 2 closure-application cases** (`preservation_V`
+      lines ~874 & ~1036).
+      **NEWLY SURFACED GAP (not covered by the "finalized design"; blocks BOTH engines' closure-apply
+      case):** `MStateWf.E` requires `HasTypeRT` of the *control* derivation, but on a `reduceCall`
+      closure step the new control is the closure **body** `hbody`, and `HasTypeV.closure` carries **no**
+      `HasTypeRT` witness for it — and cannot: a closure is created at lambda-eval where only
+      `HasTypeRT.lam` (which by design carries **no** body premise — else the legit referencing example
+      `\w. a w` with its non-ground `[.var 2 0]` arg would be rejected) is available. The `HasTypeRT`
+      design note (`Typing.lean` ~950) already stipulates the intended mechanism — "the closure body is
+      re-typed via `substAt` with **ground** args at application, re-establishing `HasTypeRT` there" — but
+      that **infrastructure is not built**: there is no `HasTypeRT`-tracking companion of
+      `hasType_subst`/`hasType_substAt_le`, and the environment machine's closure-apply currently uses
+      `hbody` **directly** (env-extension, not type substitution), so wiring in a re-typing is itself
+      non-trivial. Building `hasTypeRT_subst` (mirror ~100-line induction, RT-tracking on the var arm via
+      the ground-`σ` hypothesis) + rewriting the 4 closure-apply sites (2 engines × 2 cases) to re-type is
+      the true remaining work — NOT mechanical, and arguably a runtime-judgment strengthening needing
+      sign-off. The **second engine** (`MStateWfB`/`StackWfB`/`StackWfEB`/`preservation_VB`/`_EB`/`progressB`,
+      Soundness ~2400-3993) is otherwise a straight mechanical repeat of the first-engine threading, blocked
+      by the same closure-body-RT gap. **Decision:** committed the two validated green-cone increments;
+      left `Soundness.lean` uncommitted (red, first engine complete-bar-closure-RT). Caveat 5 OPEN
+      (poly-let preservation itself DISCHARGED; closure-body-RT is now the sole remaining soundness gap).
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
