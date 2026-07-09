@@ -991,6 +991,46 @@ the datatype change itself.
       document Caveat 5 OPEN with this route recorded as the recommended resolution rather than budgeting
       further sessions against the type-fixed strictify wall. Soundness.lean left EXACTLY as found.
       Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G19 — EXECUTION session for the G18 authorized route; the LITERAL
+      authorized `NoGenAt`-field design is machine-checked INFEASIBLE (induction-induction); corrected to
+      the expressible strict-sublevel form, same intent; no code change, tree left as found; see
+      `progress/2026-07-09-G1-phase6-sessionG19-noGenAt-field-infeasible-induction-induction-inline-strict-corrected-design.md`):**
+      No LSP. **Had explicit user authorization** for the `HasType.let_poly` change (tradeoff signed off:
+      refine to canonical Rémy/OCaml fresh-level generalization; reject same-level nested `let_poly`;
+      conjecturally-unchanged typable-PROGRAM set; soundness fully proved for the refined relation; spec
+      104/104 unaffected). **(1) The authorized field is not expressible in Lean 4.** `HasType.let_poly`
+      carrying `NoGenAt lvl hdefn` requires `HasType`/`NoGenAt` to be mutually inductive with `NoGenAt`
+      indexed by `HasType` proofs = **induction-induction**, which Lean 4 core does not support. Two
+      independent machine-checked minimal repros: indexing one mutual inductive by another ⇒ `Unknown
+      identifier 'HasType'`; and `NoGenAt (ℓ)`'s parameter vs parameterless `HasType` ⇒ `All inductive
+      types declared in the same 'mutual' block must have the same parameters`. A `NoGenAt`-as-recursive-
+      `Prop`-function has the same circularity; a manual induction-induction encoding is a from-scratch
+      re-encoding of all 24 `HasType` constructors, far beyond the authorized "field addition". The G18
+      pivot asserted the route "threadable/self-consistent" but never checked this type-theoretic
+      feasibility; it does not hold. **(2) Corrected feasible design (same authorized intent): strict
+      sublevel on the defn lambda.** The wrapper `genAtV_closure_ready_value_node` (Substitution.lean:167)
+      already takes `NoGenAt lvl h` as a plain premise (unchanged). `NoGenAt lvl hdefn` reduces via
+      `inv_lambda_noGenAt` to `NoGenAt lvl hbody` at the defn lambda's body sublevel `lvl'`, which
+      `noGenAt_of_lt` supplies FOR FREE when `lvl < lvl'` (strict) — no mutual induction. So the
+      self-enforcing constraint is exactly **`lvl < lvl'` on the defn lambda** (the Rémy discipline the
+      G18 note itself cites), expressible by **inlining the defn lambda's `lam`-structure into `let_poly`**
+      (store `lvl'/argTy/εb/retTy/hstrict:lvl<lvl'/hfvdefn/hbodydefn`, `defnTy := .fun argTy εb retTy`,
+      opaque `hdefn` reconstructed as `HasType.lam (le_of_lt hstrict) hfvdefn hbodydefn`); `inv_let` then
+      hands `NoGenAt lvl hdefn := NoGenAt.lam _ _ (noGenAt_of_lt hbodydefn hstrict)` to the Soundness site
+      for free. **(3) Verified non-narrowing beyond the authorized refinement:** every EXISTING fresh
+      construction site already descends strictly (`HasType.lam (lvl' := 2)` under ambient `1`:
+      Typing.lean:1735/1742/1815/1822, Generalization.lean:652/668); `HasType.lam`'s existing
+      `argTy.levels < lvl'` already forces strict whenever the arg carries a generalizable level-`lvl`
+      var; result/effect-only generalizations (`defnPerf`) re-type freely at `lvl'=lvl+1`; the
+      reconstruction arms (subst/ctxConv/hasTypeRT_ctxConv/fullRaise/effWeaken) PRESERVE the stored
+      components. No existing construction genuinely needs `lvl'=lvl`. **(4) Why nothing shipped / no
+      blind reshape:** the constructor-arity change is all-or-nothing across ~8 files with NO committable
+      per-file-green checkpoint short of the full Soundness re-green (the ~90-error grind that needs live
+      LSP); starting blind would leave a large red uncommitted diff with no checkpoint, violating the "not
+      landable partially" discipline. Tree left EXACTLY as found (HEAD `459d5179`; Soundness.lean
+      pre-existing partial migration untouched); no `sorry`, axioms unchanged. **Recommended next
+      (WITH LSP):** execute the inline-strict reshape per the note's 5-step recipe, then the two-engine
+      grind + Phase 7. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
