@@ -578,6 +578,39 @@ the datatype change itself.
       (`~2694–3862`) is still on old non-level-tagged `HasType`, and `soundness_evalR` still carries the
       old statement (needs `HasTypeRT` premise + nonzero ambient level). Soundness.lean left as found.
       Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G6 — `NoGenAt` shown to be a JUDGMENT-level property (proof
+      irrelevance), correcting the G5 framing; residual-corner witness shown to satisfy `NoGenAt` via
+      normalization; one green additive commit `865d8ac0` to `Typing.lean`; see
+      `progress/2026-07-09-G1-phase6-sessionG6-noGenAt-proof-irrelevant-normalization.md`):** No LSP.
+      (1) **Structural correction.** `NoGenAt ℓ` is a `Prop` indexed by a `HasType` *proof*, and
+      `HasType` is a `Prop`, so definitional proof irrelevance makes `NoGenAt ℓ h₁ ≡ NoGenAt ℓ h₂`
+      whenever `h₁,h₂` type the same judgment. Hence `NoGenAt ℓ h` means "the *judgment* admits SOME
+      derivation with no reachable `let_poly` generalizing at `ℓ`" — NOT a fact about the specific
+      runtime derivation. The G5 note's residual-corner analysis (which treated `NoGenAt` as derivation-
+      specific and concluded an external witness is required) is thereby **superseded**: the wrapper's
+      `NoGenAt lvl hdefn` premise only needs *a* good derivation of the same lambda judgment, e.g. one
+      typing the body at a higher sublevel. A blocking `cases`/inversion on `NoGenAt` is impossible for
+      the same reason, so the "route-a-literal is false" ¬`NoGenAt` claim is itself false. (2)
+      **Machine-checked on the hardest known residual-corner witness** `\x.(let h=\y.y in perform "op"
+      x)` (types at `defnPerf`: `arity≠0` via the effect tail `μ=var 1 0`, inner `let_poly` present):
+      it ALSO types with `lvl'=2` (inner `let_poly` at level `2 > 1`), giving `NoGenAt 1` via
+      `noGenAt_of_lt`; by proof irrelevance this *also* proves `NoGenAt 1` of the un-normalized `lvl'=1`
+      derivation the runtime hands us (`advPerf_lvl1_noGenAt := advPerf_lvl2_noGenAt` type-checks). So
+      **route (a) HOLDS for this witness** — the supposed adversary is not adversarial. (3) **Open
+      frontier pinned precisely.** The witness's inner `let_poly` (`h : int→int`, ground) is *vacuous*
+      (`genAtV n (int→int)` is `arity 0` ∀`n`), so bumping `lvl'` is a free renaming. The genuinely
+      general theorem needs level **RENAMING** (a `≥ℓ`-level shift on the whole derivation), NOT mere
+      weakening — `HasType n Γ e τ ε → HasType (n+1) Γ e τ ε` (fixed `Γ,τ,ε`) is FALSE once an inner
+      `let_poly` generalizes real level-`n` vars, since `genAtV n d ≠ genAtV (n+1) d`. The argument that
+      renaming preserves observable types (inner generalization vars are bound-and-gone; instantiation
+      results depend on args, not gen levels; the outer fixed `defnTy` occurrences are separate free
+      occurrences the inner shift never touches) strongly indicates route (a)-via-renaming is TRUE in
+      general, but the metatheorem itself (21-arm shift induction + `genAtV`/`instantiateV`-shift
+      commutation) is multi-session and wants live LSP. The right integration is to fold that
+      normalization *into* `genAtV_closure_ready_value_node`, dropping its `NoGenAt lvl h` premise so the
+      Soundness site never supplies it. `Typing.lean` per-file green, no `sorry`, no new axioms.
+      Soundness.lean left as found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
