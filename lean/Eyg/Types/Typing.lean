@@ -1416,6 +1416,131 @@ example : HasType (m := Unit) 1 []
 -- reaches its arity≠0 branch with `lvl' = ℓ = 1`, where the strict `ℓ < lvl'` is unavailable.
 example : (Scheme.genAtV 1 defnPerf).arity ≠ 0 := by decide
 
+/-! ### G1 Session G6: `NoGenAt` is a *judgment*-level property (proof irrelevance); route (a) holds
+for the residual-corner witness via level-normalization
+
+Session G5 decomposed the closure-readiness wrapper's residual `NoGenAt lvl hbody` need to exactly the
+corner `arity ≠ 0 ∧ lvl' = lvl`, and asked (route (a)) whether that `NoGenAt` is derivable. Two findings
+this session, one structural, one machine-checked on the hardest known witness.
+
+**(1) `NoGenAt` is proof-irrelevant — it is a property of the *judgment*, not the specific derivation.**
+`NoGenAt ℓ` is a `Prop` indexed by a `HasType` *proof*, and `HasType` is itself a `Prop`; Lean's
+definitional proof irrelevance makes any two proofs of the same judgment defeq, so `NoGenAt ℓ h₁` and
+`NoGenAt ℓ h₂` are the *same type* whenever `h₁`, `h₂` type the same judgment. Consequently `NoGenAt ℓ h`
+means exactly "the judgment `h` proves admits *some* derivation none of whose reachable `let_poly` nodes
+generalize at `ℓ`". This **corrects the G5 note's framing** (which treated `NoGenAt` as derivation-
+specific and concluded the corner needs an external witness): one only has to exhibit *a* good
+derivation of the *same judgment*, e.g. one typing the body at a higher sublevel. A blocking
+`cases`/inversion on `NoGenAt` is impossible for the same reason (the proof-term index is irrelevant), so
+`¬ NoGenAt` of a self-level `let_poly` derivation is *not* provable and is in fact *false* whenever the
+judgment admits any generalization-free (or higher-level) re-derivation.
+
+**(2) The hardest known residual-corner witness satisfies `NoGenAt` via normalization** (machine-checked
+below). Take `\x. (let h = \y.y in perform "op" x)`: it types at `defnPerf` (ambient level `1`, stored
+`lvl' = 1` — arg type ground so `lam` does not force `lvl'` up), so `genAtV 1 defnPerf` has `arity ≠ 0`
+(the effect tail `μ = var 1 0`) — the residual corner — AND its body carries an inner `let_poly`. The
+SAME lambda ALSO types at `defnPerf` with `lvl' = 2` (`advPerf_lvl2`), putting the inner `let_poly` at
+level `2 > 1`, whence `NoGenAt 1` of the whole lambda holds via `noGenAt_of_lt` (`advPerf_lvl2_noGenAt`).
+By proof irrelevance the two derivations are defeq, so this *also* proves `NoGenAt 1 advPerf_lvl1`
+(`advPerf_lvl1_noGenAt`) — the wrapper's premise for the un-normalized `lvl' = 1` derivation the runtime
+hands us. Route (a) *holds here*; the supposed adversarial witness is not adversarial.
+
+**Scope of what is settled vs. open.** The witness's inner `let_poly` (`h : int → int`, ground) is
+*vacuous* — `genAtV n (int→int)` is `arity 0` for every `n`, so bumping `lvl'` is a free "renaming".
+The genuinely general theorem needs level **renaming** (not mere weakening: `HasType n Γ e τ ε →
+HasType (n+1) Γ e τ ε` is FALSE when an inner `let_poly` generalizes real level-`n` vars, since
+`genAtV n d ≠ genAtV (n+1) d`). The true open frontier is a *non-vacuous* inner `let_poly` generalizing
+at exactly the collision level `lvl` inside a residual-corner lambda; the right closure is to fold the
+renaming normalization *into* `genAtV_closure_ready_value_node`, dropping its `NoGenAt lvl h` premise so
+the Soundness site never supplies it. See the Session G6 progress note. -/
+
+/-- The residual-corner body: an inner `let_poly` (`let h = \y.y`) beside a `perform` whose effect tail
+lifts the outer lambda's type to `defnPerf` (`arity ≠ 0`). -/
+private def advPerfBody : Tree.Node Unit :=
+  let_ "h" (lambda "y" (variable_ "y")) (apply (perform "op") (variable_ "x"))
+
+/-- The residual-corner lambda `\x. (let h = \y.y in perform "op" x)`. -/
+private def advPerfLam : Tree.Node Unit := lambda "x" advPerfBody
+
+/-- `\y.y`'s (ground) definition type — `h`'s generalization is vacuous (`genAtV n advDefnH` is
+`arity 0` for every `n`), yet its `let_poly` node is real and sits at the enclosing `lam`'s sublevel. -/
+private def advDefnH : Ty := .fun .integer .empty .integer
+
+/-- The inner `\y.y` defn, typed at ambient level `n`. -/
+private theorem advH_defn (n : Nat) :
+    HasType (m := Unit) n [("x", Scheme.mono .integer)] (lambda "y" (variable_ "y")) advDefnH
+      (.effectExtend "op" .integer .integer (.var 1 0)) :=
+  HasType.lam (lvl' := n) (a := ()) (ε := .effectExtend "op" .integer .integer (.var 1 0))
+    (le_refl _)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    (HasType.var (s := .mono .integer) (args := []) rfl)
+
+/-- `Γ = [(x, .mono integer)]` is below any `n ≥ 1`. -/
+private theorem advH_ctxwf {n : Nat} (hn : 1 ≤ n) :
+    CtxWfV n [("x", Scheme.mono .integer)] := by
+  intro b hb l hl
+  rcases List.mem_singleton.mp hb with rfl
+  simp only [Scheme.mono, Ty.levels, List.not_mem_nil] at hl
+
+/-- `perform "op" x` at ambient level `n` with effect `⟨op:(int,int)|var 1 0⟩` (the `μ` tag is `perform`'s
+freely-chosen effect tail, independent of `n`). -/
+private theorem advH_perform (n k : Nat) :
+    HasType (m := Unit) n [("h", Scheme.genAtV k advDefnH), ("x", Scheme.mono .integer)]
+      (apply (perform "op") (variable_ "x")) .integer
+      (.effectExtend "op" .integer .integer (.var 1 0)) := by
+  refine HasType.app (argTy := .integer)
+    (εf := .effectExtend "op" .integer .integer (.var 1 0)) HasType.perform
+    (Ty.effWeaken_refl _) ?_
+  exact HasType.var (s := .mono .integer) (args := []) rfl
+
+/-- **The `lvl' = 1` (un-normalized) body derivation.** The inner `let_poly` generalizes `h` at
+exactly `lvl = 1` — the residual corner. -/
+private def advPerf_body1 :
+    HasType (m := Unit) 1 [("x", Scheme.mono .integer)] advPerfBody .integer
+      (.effectExtend "op" .integer .integer (.var 1 0)) :=
+  HasType.let_poly (a := ()) (defnTy := advDefnH) (advH_defn 1) (advH_ctxwf (le_refl _))
+    (advH_perform 2 1)
+
+/-- **The residual-corner derivation exists** — `\x. (let h = \y.y in perform "op" x) : defnPerf` at
+ambient level `1`, stored `lvl' = 1` (`arity ≠ 0`, `lvl' = lvl`). -/
+private def advPerf_lvl1 : HasType (m := Unit) 1 [] advPerfLam defnPerf .empty :=
+  HasType.lam (lvl' := 1) (a := ()) (ε := .empty) (le_refl _)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    advPerf_body1
+
+/-- **The normalized `lvl' = 2` body derivation** — the SAME body term, re-typed with the inner
+`let_poly` bumped to level `2`. Observable type unchanged (`.integer`, effect `⟨op|var 1 0⟩`). -/
+private def advPerf_body2 :
+    HasType (m := Unit) 2 [("x", Scheme.mono .integer)] advPerfBody .integer
+      (.effectExtend "op" .integer .integer (.var 1 0)) :=
+  HasType.let_poly (a := ()) (defnTy := advDefnH) (advH_defn 2) (advH_ctxwf (by decide))
+    (advH_perform 3 2)
+
+/-- **The normalized lambda derivation** — types the IDENTICAL judgment as `advPerf_lvl1` (same term,
+type `defnPerf`, ambient level `1`); only the internal stored sublevel differs (`lvl' = 2`). -/
+private def advPerf_lvl2 : HasType (m := Unit) 1 [] advPerfLam defnPerf .empty :=
+  HasType.lam (lvl' := 2) (a := ()) (ε := .empty) (by decide)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    advPerf_body2
+
+/-- The normalized body (level `2 > 1`) satisfies `NoGenAt 1` *for free* via `noGenAt_of_lt` — the
+inner `let_poly` no longer collides on the generalization level `1`. -/
+private theorem advPerf_body2_noGenAt : NoGenAt 1 advPerf_body2 :=
+  noGenAt_of_lt advPerf_body2 (by decide)
+
+/-- **The normalized lambda satisfies the wrapper's `NoGenAt 1` premise.** -/
+private theorem advPerf_lvl2_noGenAt : NoGenAt 1 advPerf_lvl2 :=
+  NoGenAt.lam (by decide)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    advPerf_body2_noGenAt
+
+/-- **Route (a) holds at the residual-corner witness.** `advPerf_lvl1` and `advPerf_lvl2` prove the
+same judgment, so by proof irrelevance they are defeq; hence the wrapper's premise `NoGenAt 1
+advPerf_lvl1` — for the un-normalized `lvl' = 1` derivation the runtime hands us — is discharged by the
+normalized derivation's `NoGenAt`. The supposed adversarial witness is *not* adversarial. -/
+private theorem advPerf_lvl1_noGenAt : NoGenAt 1 advPerf_lvl1 :=
+  advPerf_lvl2_noGenAt
+
 end Examples
 
 end Eyg.Types
