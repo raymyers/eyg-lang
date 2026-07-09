@@ -680,6 +680,31 @@ the datatype change itself.
       induction (genAtV/instantiateV re-instantiation commutation) is high-risk under batch `lake env
       lean`, wants live LSP. Per-file green, no `sorry`, axioms `[propext]`. Soundness.lean left as
       found. Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G9 — sharpens G8's target; commit `8696f55b`, Scheme.lean; see
+      `progress/2026-07-09-G1-phase6-sessionG9-raise-sublevel-induction-insufficiency.md`):** three
+      findings correcting G8's "single one-liner raise" framing. **(1)** Plain `induction h` is
+      *provably insufficient* for the `let_poly` arm: the recursor fixes the stored scheme
+      `genAtV lvl defnTy` in `ihbody`, but a `let_poly` at the raised ambient `lvl+1` **requires** the
+      stored scheme re-tagged to `genAtV (lvl+1) _`, and no rule accepts a stored scheme generalizing
+      *below* the ambient — so the arm needs a dedicated `hasType_subst`-scale re-instantiation
+      sub-lemma (a "generalization-level shift on a context binding" that rewrites the let-bound var's
+      *uses*), NOT a one-liner over the two commutation facts. **(2)** Two edge cases the single
+      `escLam` witness does not exhibit: (a) *under-application* of the poly var leaks a floating
+      level-`lvl` quantifier var into `bodyTy` (e.g. `let h=\z.z in h` at `args=[]`), so the raised
+      derivation must **explicitly extend** args with `var lvl i` to reproduce it (`escH_body`'s
+      `[var 1 0, var 1 0]` is this extension done by hand); (b) *pre-existing* level-`(lvl+1)` vars in
+      `defnTy` (leakable when its body sublevel `≥ lvl+2`) make the naive relabel `lvl→lvl+1` *inflate*
+      `genAtV`'s arity, so the internal relabel must target a genuinely **fresh** level `f` (> all
+      levels in the derivation), not `lvl+1` — the ambient-raise `+1` and the inner-gen-relabel are
+      *independent*, which G8's "single +1" conflated. Plus the `genAtV` arity=count-vs-index wart:
+      `args'` coverage must exceed the max level-`ℓ` *index* in `d`, not the arity. **(3)** The right
+      wire-in shape drops `NoGenAt` from `genAtV_closure_ready_value_node` entirely (raise the lambda
+      *body* when `lvl'=lvl`, then use the *strict* keystone `genAtV_instantiate_lam_ready`); `NoGenAt
+      lvl h` for the runtime's own `h` is genuinely *not* derivable (false for a colliding derivation;
+      proof irrelevance cannot cast across the differing ambient-level index). Banked green:
+      `Scheme.substAt_congr_freeVarsAt` (level-native analog of `subst_congr_free`), the congruence the
+      re-instantiation equality consumes. Per-file green, no `sorry`, axioms unchanged. Soundness.lean
+      left as found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
