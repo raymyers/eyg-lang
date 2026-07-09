@@ -329,11 +329,24 @@ the datatype change itself.
       `Generation.lean`/`Generalization.lean` re-greened; the magnitude readiness keystones removed as
       superseded. Prototype files (`TypingAt`/`TypingAtV`/`RuntimeAtV`) deleted. Verified green
       per-file; `Soundness.lean` deliberately left red (authorized exception — see the progress note).
-- [ ] **Phase 6 — re-green `Soundness.lean` (Session B).** The remaining step, all mechanical (101+
-      errors, categorized in `progress/2026-07-08-G1-phase4-5-sessionA-hastype-promoted-soundness-red.md`):
-      thread `lvl` through the inversion-lemma consumers and case matches; re-prove the two `let_poly`
-      preservation cases via `genAtV_closure_ready_value`; adjust `soundness`/`soundness_evalR` to type
-      at a nonzero ambient level (`ℓ ≠ 0` for the keystone). Only commit once fully green.
+- [ ] **Phase 6 — re-green `Soundness.lean` (Session B).** The remaining step, scoped as mechanical
+      (101+ errors, categorized in
+      `progress/2026-07-08-G1-phase4-5-sessionA-hastype-promoted-soundness-red.md`): thread `lvl`
+      through the inversion-lemma consumers and case matches; re-prove the two `let_poly` preservation
+      cases via `genAtV_closure_ready_value`; adjust `soundness`/`soundness_evalR` to a nonzero ambient
+      level. **BLOCKED — Session B (2026-07-08) confirmed a non-mechanical wall; STOPPED, tree left at
+      `6deadc54`.** See `progress/2026-07-08-G1-phase6-sessionB-polyabove-wall-sequential-letpoly.md`.
+      The keystone `genAtV_closure_ready_value` requires `PolyAbove ℓ Γ`, which is **provably false**
+      (machine-checked) for the ambient context of any nested/sequential `let_poly` — the two
+      preservation cases are unprovable with it, and the level-native keystone thereby **regresses basic
+      sequential let-polymorphism** (sound in the pre-G1 magnitude system, whose `noLambdaLet` only ever
+      restricted a let-binds-lambda nested in a generalized lambda's body, never sequential lets). Real
+      fix: re-prove `hasType_subst` (`Typing.lean`) with a **free-variable-aware** precondition
+      replacing blanket `PolyAbove` (the `var` arm only ever uses it for the looked-up variable), then
+      re-derive `genAtV_instantiate_lam_ready`/`genAtV_closure_ready_value` — genuine metatheory, best
+      with live LSP, multi-session, *above* the still-pending ~150-error mechanical migration. The
+      mechanical migration pattern + the required `StackWfV`/`StackWfE`→`instantiateV`+side-condition
+      `Machine.lean` refactor are recorded in the note for reuse. Caveat 5 remains OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

@@ -250,7 +250,8 @@ binding **readiness** about `v`; `Trace` passes `v` through; every other head co
 def StackWfV {m : Type} (v : Value m) : Stack m → Ty → Ty → Ty → Prop
   | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfV v rest σ ε τ
   | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
-      ∃ Γ sc defnTy bodyTy lvl, Ty.TyEquiv σ defnTy ∧ (∀ args, HasTypeV v (sc.instantiate args)) ∧
+      ∃ Γ sc defnTy bodyTy lvl, Ty.TyEquiv σ defnTy ∧
+        (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ sc.level) → HasTypeV v (sc.instantiateV args)) ∧
         EnvWf fenv Γ ∧ HasType lvl ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ
   | k, σ, ε, τ => StackWf k σ ε τ
 
@@ -266,7 +267,8 @@ def StackWfE {m : Type} (e : Tree.Node m) (env : Env m) : Stack m → Ty → Ty 
       ∃ Γ sc defnTy bodyTy lvl, Ty.TyEquiv σ defnTy ∧ EnvWf fenv Γ ∧
         HasType lvl ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ ∧
         (∀ lx lbody la, e = ⟨.Lambda lx lbody, la⟩ →
-          ∀ args, HasTypeV (Value.Closure lx lbody env) (sc.instantiate args)) ∧
+          ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ sc.level) →
+            HasTypeV (Value.Closure lx lbody env) (sc.instantiateV args)) ∧
         (sc = Scheme.mono defnTy ∨ ∃ lx lbody la, e = ⟨.Lambda lx lbody, la⟩)
   | k, σ, ε, τ => StackWf k σ ε τ
 
@@ -287,7 +289,7 @@ theorem stackWf_toStackWfV {m : Type} {v : Value m} {k : Stack m} {σ ε τ : Ty
       | Assign x body fenv =>
           obtain ⟨Γ, defnTy, bodyTy, ε0, lvl, hσ, hε, henv, hbody, hrest⟩ := stackWf_assign_inv h
           exact ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hσ,
-            fun args => by rw [Scheme.instantiate_mono]; exact hv.conv hσ, henv,
+            fun args _ => by rw [Scheme.instantiateV_mono]; exact hv.conv hσ, henv,
             HasType.conv hbody (.refl _) hε.symm, StackWf.conv hrest (.refl _) hε.symm⟩
       | Arg _ _ => exact h
       | Apply _ _ => exact h
@@ -310,8 +312,8 @@ theorem stackWf_toStackWfE {m : Type} {e : Tree.Node m} {env : Env m} {k : Stack
           obtain ⟨Γ, defnTy, bodyTy, ε0, lvl, hσ, hε, henv, hbody, hrest⟩ := stackWf_assign_inv h
           refine ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hσ, henv,
             HasType.conv hbody (.refl _) hε.symm, StackWf.conv hrest (.refl _) hε.symm, ?_, Or.inl rfl⟩
-          intro lx lb la hlam args
-          rw [Scheme.instantiate_mono]
+          intro lx lb la hlam args _
+          rw [Scheme.instantiateV_mono]
           exact (hclo lx lb la hlam).conv hσ
       | Arg _ _ => exact h
       | Apply _ _ => exact h
@@ -372,7 +374,7 @@ theorem stackWfE_value_step {m : Type} {e : Tree.Node m} {env : Env m} {v : Valu
           rcases hmono with hsc | ⟨lx, lbody, la, he⟩
           · subst hsc
             exact ⟨Γ, .mono defnTy, defnTy, bodyTy, lvl, hσ,
-              fun args => by rw [Scheme.instantiate_mono]; exact hv.conv hσ, henv, hbody, hrest⟩
+              fun args _ => by rw [Scheme.instantiateV_mono]; exact hv.conv hσ, henv, hbody, hrest⟩
           · exact absurd he (hne lx lbody la)
       | Arg _ _ => exact h
       | Apply _ _ => exact h
