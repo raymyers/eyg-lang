@@ -931,6 +931,30 @@ the datatype change itself.
       `hasType_fullRaise` + `instantiateV_genAtV_raiseTy`, drop `NoGenAt` from the wrapper. A soundness-
       critical `EnvWf.cons`/`StackWfV`-Assign refactor, first route the arc has that a *built* raise
       feeds. Soundness.lean left EXACTLY as found. Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G17 — the G16 ground-args route REFUTED at the source; no code
+      change, analysis + doc only; see
+      `progress/2026-07-09-G1-phase6-sessionG17-ground-args-route-refuted-strictify-is-type-fixed-wall.md`):**
+      No LSP. Checked the route against the exact judgments (not the note's prose) and found it a
+      **misdiagnosis** that does not merely narrow but **does not help**. (1) `HasTypeRT.var`'s real
+      groundness (`Typing.lean:835`) is `l = 0 ∨ l = s.level` = `⊆ {0, lvl}` — it **admits level-`lvl`
+      args**, not the "⊆ {0}" the note assumed; it already equals the current `EnvWf.cons` precondition.
+      (2) Ground args do **not** avoid the wrapper's `NoGenAt lvl hbody`: the only `NoGenAt`-free keystone
+      `genAtV_instantiate_lam_ready` needs `ℓ < lvl'` (body sublevel, **arg-independent**), and the
+      `..._le` variant needs `NoGenAt`; also `instantiateV` padding reintroduces `var lvl i` (level `lvl`)
+      for short ground args. The obstruction is **body-structural** (inner `let_poly` at exactly `lvl`
+      with `lvl' = lvl`), untouched by restricting args. (3) `hasType_fullRaise` cannot supply the
+      `NoGenAt`: `NoGenAt lvl` of a `let_poly`-at-ambient-`lvl` derivation is unprovable (`NoGenAt.let_poly`
+      needs `lvl ≠ ℓ`) except via proof-irrelevance from a body-sublevel-`> lvl` alternative — the
+      **type-fixed** freshening `hasType_strictify`; the **uniform** raise instead moves the escaped
+      `retTy` level-`lvl` tags to `lvl+o` (changing the judgment) and **recreates the identical collision
+      at the top level `lvl+o`**. The `escLam_lvl2` witness (`Typing.lean:2095`) does the type-fixed
+      freshening concretely (re-instantiate the inner use at the fixed level-1 `[var 1 0, var 1 0]`) but
+      **only because its inner defn is a leaf** (`\z.z`); non-leaf inner defns need the type-fixed
+      derivation raise the G7–G15 arc walled on. **No tightening shipped** (it would not help; a
+      non-helping soundness-critical refactor is not landed). Real target unchanged: type-fixed
+      `hasType_strictify` = the two-modes wall; needs invariant (i) "`defnTy` nests no foreign cross-level
+      `let_poly`" (may be false) or (ii) a mutual structural-`termination_by` freshening induction. Wants
+      live LSP, multi-session. Soundness.lean left EXACTLY as found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
