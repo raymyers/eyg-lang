@@ -494,6 +494,33 @@ the datatype change itself.
       with the Soundness preservation proof, deferred); (b) wire `genAtV_closure_ready_value_node`
       (`Substitution.lean`) to the Session-G1 keystone; (c) the ~90-error two-engine `Soundness.lean`
       grind (var-preservation now discharges via `inv_var_rt`). Caveat 5 OPEN.
+      **Progress 2026-07-08 (Session G3 — step 2 `genAtV_closure_ready_value_node` LANDED; step-1
+      frame-RT cascade fully mapped with its linchpin isolated; see
+      `progress/2026-07-08-G1-phase6-sessionG3-wrapper-landed-step1-cascade-mapped.md`):** No LSP.
+      One green additive commit (`cb598ce0`, `Substitution.lean`). (1) **`genAtV_closure_ready_value_node`**
+      — the lambda-*node*-derivation closure-readiness wrapper the `let_poly` preservation cases call:
+      from `HasType lvl Γ ⟨.Lambda x lbody, la⟩ defnTy ε` + `NoGenAt lvl h` + `PolyAboveFV`/`CtxWfV`/
+      `EnvWf`, produces `∀ args, (level-bounded) → HasTypeV (Value.Closure ..) ((genAtV lvl
+      defnTy).instantiateV args)`, composing `inv_lambda_noGenAt` + the Session-G1 non-strict keystone
+      `genAtV_instantiate_lam_ready_le` + `HasTypeV.closure` + `instantiateV_genAtV_tyEquiv`. `NoGenAt`
+      is a genuine premise (the non-strict `lvl'=lvl` `perform` branch needs it); the working-tree
+      A-engine call site (`Soundness.lean:243`) omits it, so step 3 must additionally supply it.
+      (2) **Step 1 (frame-RT threading) precisely mapped, deferred.** Confirmed dischargeable in
+      Soundness (`inv_app_rt`/`inv_let_rt` on the `MStateWf.E` `hrt` supply the frame RT witnesses),
+      but the cascade forces `HasTypeRT` onto `StackWf.assign`/`.arg` **and** `StackSegWf.assign`/`.arg`
+      (Runtime.lean's mutual block with `HasTypeV`). All mechanical **except** `stackSeg_input_conv`,
+      which rebuilds the stored assign body via `hasType_ctxHead_conv` and so needs a new **24-arm
+      derivation-indexed companion `hasTypeRT_ctxConv`** (RT-preservation under `hasType_ctxConv`) —
+      the linchpin, needs live goal-state, deferred. Recommended next-session order: land
+      `hasTypeRT_ctxConv` (Typing.lean, self-contained) → thread RT into StackSegWf (Runtime) → into
+      StackWf/StackWfV/StackWfE (Machine) → then the step-3 Soundness grind. (3) **Step 3 confirmed
+      not one-session-reachable blind:** the working-tree B-engine (`reduceEvalR`, ~2392–3237) is
+      structurally mangled (unknown `StackWfB`/`stackWfB_assign_inv`, a "Function expected" destructure
+      cascade, and a pre-existing uncommitted `sorry` at :2880 — never committed), not mere mechanical
+      residue. (4) **Sharpest open design question:** whether `NoGenAt`-at-the-call-site is a runtime
+      fact that must be threaded as an `MStateWf` invariant (gap-2 analog of gap-1's `HasTypeRT`) —
+      candidate: strengthen the already-wired `HasTypeRT` control witness to also carry `NoGenAt`.
+      Soundness.lean left exactly as found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
