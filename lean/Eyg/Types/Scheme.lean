@@ -1391,6 +1391,31 @@ theorem raiseTy_substAt_comm (t o m : Nat) (σ : Nat → Ty) (d : Ty) :
   | effectExtend l a b tl iha ihb iht => simp only [substAt, raiseTy, iha, ihb, iht]
   | _ => rfl
 
+/-- **`raiseTy` preserves row equivalence** (uniform-raise analog of `substAt_tyEquiv`; labels and the
+row/effect shape are preserved, only level tags shift). -/
+theorem raiseTy_tyEquiv (t o : Nat) {s t' : Ty} (h : TyEquiv s t') :
+    TyEquiv (raiseTy t o s) (raiseTy t o t') := by
+  induction h with
+  | refl _ => exact .refl _
+  | symm _ ih => exact .symm ih
+  | trans _ _ ih₁ ih₂ => exact .trans ih₁ ih₂
+  | congrFun _ _ _ iha ihe ihr => exact .congrFun iha ihe ihr
+  | congrList _ ih => exact .congrList ih
+  | congrRecord _ ih => exact .congrRecord ih
+  | congrUnion _ ih => exact .congrUnion ih
+  | congrPromise _ ih => exact .congrPromise ih
+  | congrRow _ _ ihf iht => exact .congrRow ihf iht
+  | congrEff _ _ _ iha ihb iht => exact .congrEff iha ihb iht
+  | swapRow hne => simp only [raiseTy]; exact .swapRow hne
+  | swapEff hne => simp only [raiseTy]; exact .swapEff hne
+
+/-- **`EffWeaken` is `raiseTy`-stable** (uniform-raise analog of `substAt_effWeaken`). -/
+theorem raiseTy_effWeaken (t o : Nat) {e₁ e₂ : Ty} (h : EffWeaken e₁ e₂) :
+    EffWeaken (raiseTy t o e₁) (raiseTy t o e₂) := by
+  rcases h with h | h
+  · exact .inl (raiseTy_tyEquiv t o h)
+  · exact .inr (raiseTy_tyEquiv t o h)
+
 end Ty
 
 /-- `substSchemeVAt` on a monomorphic scheme is `substAt` on its body. -/

@@ -1476,6 +1476,178 @@ theorem ctxWfV_raiseCtx {lvl t o : Nat} {Γ : Ctx} (hΓ : CtxWfV lvl Γ) :
   · simp only [if_neg hts] at hl
     exact Nat.lt_of_lt_of_le (hΓ (y, s) hmem l hl) (Nat.le_add_right _ _)
 
+/-! ## The uniform generalization-level raise `hasType_fullRaise`
+
+The sessions G7–G15 sought a *type-fixed* raise (bump every reachable `let_poly`'s gen level `≥ t`,
+holding the conclusion type/effect **literally fixed**) so a value-restricted closure whose body
+sublevel `lvl' = lvl` could be re-derived with `lvl' > lvl` while keeping its scheme `genAtV lvl defnTy`
+unchanged — which the closure-readiness wrapper needs. That raise hits a genuine **two-modes wall**
+(G13/G15): its `let_poly` arm must relabel the defn's *own* gen level while keeping *foreign* `≥ t`
+levels fixed (reproduced at var uses), but at nesting depth `≥ 2` a defn carries a foreign `≥ t` gen
+level, at which the single-level `raiseScheme` and the defn's needed relabel diverge — the two modes
+demand incompatible context-raise ops on the shared ambient context.
+
+The **uniform** raise below collapses those two modes into one by giving up "type-fixed": it relabels
+**every** `≥ t` level by `o` uniformly — types, effects, context, and every gen level — so its
+`let_poly` arm's defn is handled by the *same* theorem (the stored scheme becomes
+`genAtV (k+o) (raiseTy t o defnTy)`, exactly the defn's raised type). A single structural induction,
+no mutual recursion, no freshness budget, no argument padding. Its limitation (why it does not by
+itself discharge the wrapper): it raises the outer scheme's **own** to-be-generalized level-`lvl`
+variables too, collapsing `genAtV lvl defnTy` — so it re-derives the *same term* at a *raised* scheme,
+not the original one. It is nonetheless the first machine-checked derivation-level generalization-level
+raise, and — via `Scheme.instantiateV_genAtV_raiseTy` — relates the raised scheme's instantiations to
+the raise of the original's, the bridge a ground-runtime-args closure argument would consume. -/
+
+/-- Uniform scheme raise: shift the gen level `≥ t` by `o`, relabel the body uniformly, keep arity. -/
+def raiseScheme_U (t o : Nat) (s : Scheme) : Scheme :=
+  ⟨s.arity, if t ≤ s.level then s.level + o else s.level, Ty.raiseTy t o s.body⟩
+
+@[simp] theorem raiseScheme_U_mono {t o : Nat} (ht : 1 ≤ t) (τ : Ty) :
+    raiseScheme_U t o (Scheme.mono τ) = Scheme.mono (Ty.raiseTy t o τ) := by
+  simp only [raiseScheme_U, Scheme.mono, if_neg (by omega : ¬ t ≤ 0)]
+
+/-- A `genAtV`-canonical binding raises to the relabeled `genAtV` at the shifted level (`t ≤ k`). -/
+theorem raiseScheme_U_genAtV {t o k : Nat} (htk : t ≤ k) (d : Ty) :
+    raiseScheme_U t o (Scheme.genAtV k d) = Scheme.genAtV (k + o) (Ty.raiseTy t o d) := by
+  refine Scheme.ext' ?_ ?_ rfl
+  · simp only [raiseScheme_U, Scheme.genAtV]
+    exact (Ty.length_filter_levels_raiseTy htk d).symm
+  · simp only [raiseScheme_U, Scheme.genAtV, if_pos htk]
+
+/-- **Instantiation of a uniformly-raised scheme** reproduces the raise of the original instantiation,
+at the `raiseTy`-relabeled args — for **any** scheme (mono/`genAtV`/arbitrary), no canonicity needed. -/
+theorem instantiateV_raiseScheme_U (t o : Nat) (s : Scheme) (args : List Ty) :
+    (raiseScheme_U t o s).instantiateV (args.map (Ty.raiseTy t o))
+      = Ty.raiseTy t o (s.instantiateV args) := by
+  simp only [raiseScheme_U, Scheme.instantiateV]
+  by_cases h0 : s.arity = 0
+  · simp only [h0, if_true]
+  · simp only [h0, if_false]
+    rw [Ty.raiseTy_substAt_comm t o s.level _ s.body]
+    congr 1
+    funext i
+    by_cases hi : i < args.length
+    · rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hi,
+        Option.map_some, Option.getD_some, List.getD_eq_getElem?_getD,
+        List.getElem?_eq_getElem hi, Option.getD_some]
+    · have hge : args.length ≤ i := Nat.le_of_not_lt hi
+      rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_none (by simpa using hge),
+        Option.map_none, Option.getD_none, List.getD_eq_getElem?_getD,
+        List.getElem?_eq_none hge, Option.getD_none]
+      by_cases h : t ≤ s.level <;> simp [Ty.raiseTy, h]
+
+/-- Apply the uniform scheme raise to every binding in a typing context. -/
+def raiseCtx_U (t o : Nat) (Γ : Ctx) : Ctx := Γ.map (fun b => (b.1, raiseScheme_U t o b.2))
+
+@[simp] theorem raiseCtx_U_cons (t o : Nat) (x : String) (s : Scheme) (Γ : Ctx) :
+    raiseCtx_U t o ((x, s) :: Γ) = (x, raiseScheme_U t o s) :: raiseCtx_U t o Γ := rfl
+
+theorem raiseCtx_U_lookup {t o : Nat} {Γ : Ctx} {x : String} {s : Scheme}
+    (h : Γ.lookup x = some s) : (raiseCtx_U t o Γ).lookup x = some (raiseScheme_U t o s) := by
+  induction Γ with
+  | nil => simp [List.lookup] at h
+  | cons hd tl ih =>
+      obtain ⟨y, sy⟩ := hd
+      simp only [raiseCtx_U_cons, List.lookup_cons] at h ⊢
+      by_cases hxy : (x == y) = true
+      · simp only [hxy] at h ⊢; cases h; rfl
+      · simp only [hxy] at h ⊢; exact ih h
+
+/-- **`CtxWfV` shifts under the uniform context raise** (every raised body level is the image of an
+original `< lvl` level, hence `< lvl + o`). -/
+theorem ctxWfV_raiseCtx_U {lvl t o : Nat} {Γ : Ctx} (hΓ : CtxWfV lvl Γ) :
+    CtxWfV (lvl + o) (raiseCtx_U t o Γ) := by
+  intro b hb l hl
+  simp only [raiseCtx_U, List.mem_map] at hb
+  obtain ⟨⟨y, s⟩, hmem, rfl⟩ := hb
+  simp only [raiseScheme_U] at hl
+  rw [Ty.levels_raiseTy, List.mem_map] at hl
+  obtain ⟨l', hl'mem, rfl⟩ := hl
+  have hlt := hΓ (y, s) hmem l' hl'mem
+  split <;> omega
+
+/-- **The uniform generalization-level raise.** Relabels every level `≥ t` by `o` throughout a
+derivation — types, effects, context, and every reachable `let_poly`'s gen level — uniformly. A
+single structural induction: no mutual recursion, no two-modes conflict, no freshness/coverage
+bookkeeping (the `var` arm uses `instantiateV_raiseScheme_U` with `args.map (raiseTy t o)`; the
+`let_poly` arm's defn is handled by the same theorem since its raised type `raiseTy t o defnTy`
+matches the raised stored scheme `genAtV (k+o) (raiseTy t o defnTy)`). -/
+theorem hasType_fullRaise {t o : Nat} (ht : 1 ≤ t)
+    {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    (h : HasType lvl Γ e τ ε) (htlvl : t ≤ lvl) :
+    HasType (lvl + o) (raiseCtx_U t o Γ) e (Ty.raiseTy t o τ) (Ty.raiseTy t o ε) := by
+  revert htlvl
+  induction h with
+  | @var lvl Γ x s args ε a hl =>
+      intro htlvl
+      have := HasType.var (m := m) (lvl := lvl + o) (Γ := raiseCtx_U t o Γ) (x := x)
+        (s := raiseScheme_U t o s) (args := args.map (Ty.raiseTy t o)) (ε := Ty.raiseTy t o ε)
+        (a := a) (raiseCtx_U_lookup hl)
+      rwa [instantiateV_raiseScheme_U] at this
+  | @builtin lvl Γ id s args ε a hs =>
+      intro htlvl
+      have hclosed : raiseScheme_U t o s = s := by
+        refine Scheme.ext' rfl ?_ ?_
+        · simp only [raiseScheme_U, Builtins.scheme_level hs, if_neg (by omega : ¬ t ≤ 0)]
+        · simp only [raiseScheme_U]
+          exact Ty.raiseTy_eq_self_of_levels_lt
+            (fun l hl => by rw [Builtins.scheme_levels_zero hs l hl]; omega)
+      rw [← instantiateV_raiseScheme_U t o s args, hclosed]
+      exact HasType.builtin (m := m) (lvl := lvl + o) (Γ := raiseCtx_U t o Γ)
+        (args := args.map (Ty.raiseTy t o)) (ε := Ty.raiseTy t o ε) (a := a) hs
+  | @lam lvl lvl' Γ x body argTy εb retTy ε a hle hfv hbody ih =>
+      intro htlvl
+      simp only [Ty.raiseTy]
+      refine HasType.lam (lvl' := lvl' + o) (by omega) ?_ ?_
+      · intro l hl
+        rw [Ty.levels_raiseTy, List.mem_map] at hl
+        obtain ⟨l', hl'mem, rfl⟩ := hl
+        have := hfv l' hl'mem
+        split <;> omega
+      · have hb := ih (le_trans htlvl hle)
+        rw [raiseCtx_U_cons, raiseScheme_U_mono ht] at hb
+        exact hb
+  | @app lvl Γ f arg argTy εf retTy ε a hf hw harg ihf iharg =>
+      intro htlvl
+      have hf' := ihf htlvl
+      simp only [Ty.raiseTy] at hf'
+      exact HasType.app hf' (Ty.raiseTy_effWeaken t o hw) (iharg htlvl)
+  | @let_ lvl lvl' Γ x defn body defnTy bodyTy ε a hdefn hle hfv hbody ihdefn ihbody =>
+      intro htlvl
+      have hb := ihbody (le_trans htlvl hle)
+      rw [raiseCtx_U_cons, raiseScheme_U_mono ht] at hb
+      refine HasType.let_ (ihdefn htlvl) (by omega) ?_ hb
+      intro l hl
+      rw [Ty.levels_raiseTy, List.mem_map] at hl
+      obtain ⟨l', hl'mem, rfl⟩ := hl
+      have := hfv l' hl'mem
+      split <;> omega
+  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody ihdefn ihbody =>
+      intro htlvl
+      have hd := ihdefn htlvl
+      have hb := ihbody (by omega : t ≤ lvl + 1)
+      rw [raiseCtx_U_cons, raiseScheme_U_genAtV htlvl] at hb
+      have hcw' : CtxWfV (lvl + o) (raiseCtx_U t o Γ) := ctxWfV_raiseCtx_U hcw
+      exact HasType.let_poly (a := a) hd hcw'
+        (by rw [show lvl + 1 + o = lvl + o + 1 from by omega] at hb; exact hb)
+  | int => intro _; simp only [Ty.raiseTy]; exact HasType.int
+  | str => intro _; simp only [Ty.raiseTy]; exact HasType.str
+  | bin => intro _; simp only [Ty.raiseTy]; exact HasType.bin
+  | tail => intro _; simp only [Ty.raiseTy]; exact HasType.tail
+  | cons => intro _; simp only [Ty.raiseTy]; exact HasType.cons
+  | tag => intro _; simp only [Ty.raiseTy]; exact HasType.tag
+  | nocases => intro _; simp only [Ty.raiseTy]; exact HasType.nocases
+  | case_ => intro _; simp only [Ty.raiseTy]; exact HasType.case_
+  | select => intro _; simp only [Ty.raiseTy]; exact HasType.select
+  | extend => intro _; simp only [Ty.raiseTy]; exact HasType.extend
+  | overwrite => intro _; simp only [Ty.raiseTy]; exact HasType.overwrite
+  | empty => intro _; simp only [Ty.raiseTy]; exact HasType.empty
+  | perform => intro _; simp only [Ty.raiseTy]; exact HasType.perform
+  | handle => intro _; simp only [Ty.raiseTy]; exact HasType.handle
+  | conv _ hτ hε ih =>
+      intro htlvl
+      exact HasType.conv (ih htlvl) (Ty.raiseTy_tyEquiv t o hτ) (Ty.raiseTy_tyEquiv t o hε)
+
 /-! ## Sanity checks -/
 
 section Examples
