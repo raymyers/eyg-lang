@@ -432,6 +432,28 @@ the datatype change itself.
       goal-state and the grind depends on `HasTypeRT` being wired first. `Soundness.lean` left as-found
       (uncommitted; committed HEAD `Soundness.lean` is itself already red across the Phase-6 arc, so the
       additive bridge commit adds no new breakage). Caveat 5 remains OPEN.
+      **Progress 2026-07-08 (Session F — Session E's "same obstruction" conjecture REFUTED with a
+      machine-checked witness; the two gaps are DECOUPLED), one green additive commit to `Typing.lean`,
+      see `progress/2026-07-08-G1-phase6-sessionF-gap2-decoupled-from-groundness-effect-tail-witness.md`:**
+      No LSP again, so instead of the blind `HasTypeRT` mirror + grind, this session **tested** Session
+      E's central claim (gap 2's `ℓ < lvl'` strictness = gap 1's runtime-groundness blocker, both fixed
+      by `HasTypeRT`) against a concrete derivation and **falsified it**. Witness (now a permanent green
+      example in `Typing.lean`'s `section Examples`): `\x. perform "op" x` types at ambient level `1`
+      with body sublevel `lvl' = 1` (arg type ground ⇒ `lam` does not force `lvl'` up), its type carries
+      a generalizable **effect tail** `μ = var 1 0` at level `1`, so `genAtV 1 defnPerf` has `arity ≠ 0`
+      while `lvl' = ℓ = 1` (non-strict) — the exact arity≠0/non-strict wrapper branch — and the
+      derivation is **fully ground** (the level-`1` tag is `perform`'s freely-chosen `μ`, not any
+      instantiation arg). So `HasTypeRT` (which bounds only `var`/`builtin` args) does **not** touch it:
+      gap 1 and gap 2 are independent. **True fix for gap 2 (orthogonal to `HasTypeRT`):** `hasType_subst`
+      consumes strict `ℓ ≠ lvl` in **exactly one arm** (`let_poly`'s `hne`); the wrapper's conclusion is
+      true even here (the body has no `let_poly`, and `perform` is already `μ`-polymorphic). So the fix
+      is a `hasType_substAt_le` companion with precondition `ℓ ≤ lvl` + a **derivation-level** side
+      condition `NoGenAt ℓ` ("no reachable `let_poly` generalizes at exactly `ℓ`") — NOT a term-only
+      predicate (a `let_poly`'s gen-level is its ambient level, derivation-dependent), NOT a rule-strictness
+      change (upward level-weakening is unsound, breaks examples, header-fence). Session G can land the two
+      pieces (`NoGenAt`/`hasType_substAt_le` for gap 2; `HasTypeRT` for gap 1) **separately and in either
+      order**, then the ~90-error grind. `Typing.lean` per-file green (EXIT 0), Substitution/Machine
+      re-checked green; no `sorry`, no axioms, no rule change, no statement weakened. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

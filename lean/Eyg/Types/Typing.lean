@@ -751,6 +751,46 @@ example : HasType (m := Unit) 1 []
     case hbodyC =>
       exact HasType.var (s := Scheme.genAtV 2 defnC) (args := [.integer]) rfl
 
+/-! ### G1 Session F witness: the `genAtV_closure_ready_value` strictness gap is NOT the
+runtime-groundness obstruction
+
+Session E conjectured that the wrapper's residual `ℓ < lvl'` strictness gap and the var-preservation
+"runtime groundness" blocker were **the same obstruction**, both closable together by `HasTypeRT`.
+This machine-checked witness **refutes** that: the strictness gap has a reachable, **fully ground**
+instance that no groundness invariant excludes.
+
+Take the value-restricted closure `\x. perform "op" x`. Typed at ambient level `1`, its body sublevel
+is `lvl' = 1` (the arg type is ground, so `∀ l ∈ argTy.levels, l < 1` holds vacuously — `lam` does not
+force `lvl'` up). Its type `defnPerf = integer →⟨op:(integer,integer)|μ⟩ integer` carries a **generalizable
+effect tail** `μ = var 1 0` at level `1`. So a `let`-generalizing it at `ℓ = lvl = 1` produces
+`genAtV 1 defnPerf` with `arity ≠ 0` (the `μ` occurrence) while `lvl' = ℓ = 1` — the wrapper's arity≠0
+branch fires with the **non-strict** `ℓ = lvl'`, and `genAtV_closure_ready_value`'s `hlt : ℓ < lvl'`
+(needed by `hasType_subst`'s `let_poly` arm to keep the opening level off any inner generalization) is
+unavailable.
+
+Crucially the derivation is **ground**: the only `.Variable` node instantiates `.mono integer` at
+`args = []`, and the level-`1` tag comes from the `perform` rule's freely-chosen effect tail `μ`, **not**
+from any instantiation argument. So `HasTypeRT` (which only bounds `var`/`builtin` args) leaves this case
+open. The real fix is orthogonal: `hasType_subst` needs to admit `ℓ ≤ lvl'` whenever **no `let_poly` in
+the body generalizes at exactly `ℓ`** (here the body has no `let_poly` at all), a derivation-level side
+condition — not a groundness bound. See the Session F progress note. -/
+private def defnPerf : Ty :=
+  .fun .integer (.effectExtend "op" .integer .integer (.var 1 0)) .integer
+
+-- `\x. perform "op" x` types at ambient level `1` with body sublevel `lvl' = 1` (non-strict).
+example : HasType (m := Unit) 1 []
+    (lambda "x" (apply (perform "op") (variable_ "x"))) defnPerf .empty := by
+  refine HasType.lam (lvl' := 1) (le_refl _) ?_ ?_
+  · intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp)
+  · refine HasType.app (argTy := .integer)
+      (εf := .effectExtend "op" .integer .integer (.var 1 0)) HasType.perform
+      (Ty.effWeaken_refl _) ?_
+    exact HasType.var (s := .mono .integer) (args := []) rfl
+
+-- Its scheme generalized at level `1` has `arity ≠ 0` (the effect tail `μ = var 1 0`) — so the wrapper
+-- reaches its arity≠0 branch with `lvl' = ℓ = 1`, where the strict `ℓ < lvl'` is unavailable.
+example : (Scheme.genAtV 1 defnPerf).arity ≠ 0 := by decide
+
 end Examples
 
 end Eyg.Types
