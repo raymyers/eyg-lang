@@ -109,7 +109,7 @@ theorem genAtV_closure_ready_value {ℓ : Nat} (hℓ : ℓ ≠ 0)
     (hΓpa : PolyAboveFV ℓ Γ ⟨.Lambda x lbody, la⟩)
     (hΓwf : CtxWfV ℓ Γ)
     {env : Env m} (henv : EnvWf env Γ) :
-    ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ ℓ) →
+    ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = ℓ) →
       HasTypeV (Value.Closure x lbody env)
         ((Scheme.genAtV ℓ (.fun argTy εb retTy)).instantiateV args) := by
   intro args hargs

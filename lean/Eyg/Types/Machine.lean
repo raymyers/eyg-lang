@@ -251,7 +251,8 @@ def StackWfV {m : Type} (v : Value m) : Stack m → Ty → Ty → Ty → Prop
   | (Kontinue.Trace _, _) :: rest, σ, ε, τ => StackWfV v rest σ ε τ
   | (Kontinue.Assign x body fenv, _) :: rest, σ, ε, τ =>
       ∃ Γ sc defnTy bodyTy lvl, Ty.TyEquiv σ defnTy ∧
-        (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ sc.level) → HasTypeV v (sc.instantiateV args)) ∧
+        (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = sc.level) →
+            HasTypeV v (sc.instantiateV args)) ∧
         EnvWf fenv Γ ∧ HasType lvl ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ
   | k, σ, ε, τ => StackWf k σ ε τ
 
@@ -267,7 +268,7 @@ def StackWfE {m : Type} (e : Tree.Node m) (env : Env m) : Stack m → Ty → Ty 
       ∃ Γ sc defnTy bodyTy lvl, Ty.TyEquiv σ defnTy ∧ EnvWf fenv Γ ∧
         HasType lvl ((x, sc) :: Γ) body bodyTy ε ∧ StackWf rest bodyTy ε τ ∧
         (∀ lx lbody la, e = ⟨.Lambda lx lbody, la⟩ →
-          ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ sc.level) →
+          ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = sc.level) →
             HasTypeV (Value.Closure lx lbody env) (sc.instantiateV args)) ∧
         (sc = Scheme.mono defnTy ∨ ∃ lx lbody la, e = ⟨.Lambda lx lbody, la⟩)
   | k, σ, ε, τ => StackWf k σ ε τ

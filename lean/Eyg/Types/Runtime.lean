@@ -215,7 +215,7 @@ monomorphic schemes of T3–T5 this is just `HasTypeV v τ`). -/
 inductive EnvWf {m : Type} : Env m → Ctx → Prop where
   | nil : EnvWf [] []
   | cons {y v s env Γ} :
-      (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ s.level) → HasTypeV v (s.instantiateV args)) →
+      (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) → HasTypeV v (s.instantiateV args)) →
       EnvWf env Γ →
       EnvWf ((y, v) :: env) ((y, s) :: Γ)
 
@@ -406,7 +406,7 @@ typing rule chose. -/
 theorem envwf_lookup {m : Type} {env : Env m} {Γ : Ctx} {x : String} {s : Scheme}
     (h : EnvWf env Γ) (hl : Γ.lookup x = some s) :
     ∃ v, env.lookup x = some v ∧
-      ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ s.level) → HasTypeV v (s.instantiateV args) := by
+      ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = s.level) → HasTypeV v (s.instantiateV args) := by
   induction env generalizing Γ with
   | nil => cases h; simp [List.lookup] at hl
   | cons hd tl ih =>
