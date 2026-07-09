@@ -1288,6 +1288,67 @@ the datatype change itself.
       mechanical regression (Soundness ~1938/~2050 + B-mirrors) and the ~66-error B-engine grind. Caveat 5
       OPEN (poly-let preservation DISCHARGED; closure-body-RT: **substitution infra COMPLETE**, runtime
       threading + wiring remain).
+      **Progress 2026-07-09 (Session G26 — `builtinApp_arity2`/`instantiateV` regression CLEARED (A+B) +
+      headline wrappers migrated; A-engine now at EXACTLY the 2 closure-RT crux sites; closure-RT gap
+      signed off as an env/context-GROUNDNESS invariant beyond the G22-G23 scalar-field pattern; no
+      commit — all durable working-tree progress inside uncommittable-red `Soundness.lean`).** No LSP
+      (canary failed). HEAD `471de13a`; `grep -rn sorry Eyg/Types/*.lean` empty throughout. **Landed
+      (working tree, verified error-reducing):** (a) the G23 `partialBuiltin → instantiateV` regression —
+      `builtinApp_arity2`/`_B`'s `hbase` premise + internal `rw` (~1938/~3796), the `fix`-creation
+      `hB`/`rw … at hpw` (~2044/~3858), the 16 mono caller `hbase` proofs
+      (`Scheme.instantiate_mono` → `Scheme.instantiateV_mono`) and the 2 `equal` proofs
+      (`Scheme.instantiate,Ty.subst` → `Scheme.instantiateV,Ty.substAt`); the `simpa … using hpw` lines
+      left alone (close by defeq on a concrete literal scheme). (b) `soundness_evalR_value`/
+      `soundness_evalR_noBadCrash` re-threaded to the migrated `mStateWf_initial`
+      `(1 ≤ lvl)(HasType lvl …)(HasTypeRT h)` (they still passed pre-migration `HasType [] prog τ ε`).
+      **Result:** `lake env lean -DmaxErrors=500 Soundness.lean` shows the WHOLE A-engine (< 2444) green
+      EXCEPT the two Apply-frame closure-case sites (874-877 + mirror 1036-1039) — the RT gap; ~89 of the
+      remaining ~95 errors are the un-migrated B-engine. **Closure-RT gap — DEFINITIVE sign-off:** the
+      `.E`-state (`MStateWf.E`) needs `HasTypeRT hbody` for the applied closure body; `hasTypeRT_subst`
+      (G25) can produce it from `RTSubstReady ℓ hbody` + ground `σ`, but **neither is available and
+      `HasTypeRT hbody` is genuinely un-storable in `HasTypeV.closure`** (the Lambda-creation site has
+      only the lambda-NODE RT, which by design carries no body premise — a legitimately-typed body can be
+      non-RT, e.g. `\w. a w`; recursing `HasTypeRT.lam` into bodies would reject it). Body-RT must be
+      re-established by grounding at apply — but the non-RT arg levels are references to **outer, captured,
+      level-`<lvl'`** poly bindings, groundable only from the **environment/context**, which today carries
+      NO groundness. **New subtlety (extends G24/G25):** a body may reference **several** outer
+      generalization levels ⇒ grounding is potentially **iterated** (one `hasTypeRT_subst` per level), and
+      each grounding `ℓ` must lie **outside** the exposed `retTy/εb/argTy/Γ` level sets to preserve the
+      running config's types. **So gap 1's remaining piece is a structural env/context-groundness
+      predicate (candidate `CtxGround ℓ Γ`/`EnvGround`, threaded into `EnvWf.cons` + `HasTypeV.closure`)
+      whose CONSTRUCTION at the plain-Lambda site is non-obvious — NOT the locally-dischargeable scalar
+      fields of G22-G23.** The substitution consumer (`RTSubstReady`+`hasTypeRT_subst`) is ready; the
+      upstream groundness invariant + RT-producing keystone variant + (iterated) wiring remain, and the
+      B-engine is a straightforward mechanical mirror once that shared invariant is designed. B-engine left
+      a CLEAN un-migrated block (a half-migration would be more broken/harder to resume). Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G27 — closure-RT groundness DESIGN session; the G24/G26 "put it on
+      `HasTypeV.closure`" recommendation CORRECTED; single-grounding discharge + 3 side conditions worked
+      out; no code landed, Soundness.lean preserved intact). See
+      `progress/2026-07-09-G1-phase6-sessionG27-closureRT-groundness-applyf-frame-correction.md`.** No LSP
+      (canary failed). HEAD `471de13a`; no edits (G26 working tree preserved), `grep -rn sorry` empty.
+      Confirmed the exact error state (`-DmaxErrors=8`): A-engine errors ONLY at 874-877/1036-1039, root
+      cause = `cases hf with | closure henvc hbody heqc` binds 3 of the migrated 5 fields + the `.E`
+      `refine` misses the `HasTypeRT hty` slot for `hty = weakenEff (HasType.conv hbody hR …) …`.
+      **KEY RESULT (corrects the standing recommendation): the groundness invariant CANNOT be a
+      `HasTypeV.closure`/`HasTypeRT.lam` field** — proven by two concrete reachable witnesses: (1)
+      `let f = (\u. \w. a u) in …` makes the inner body instantiate `a` at `[.var L1 0]` (L1 = f's gen
+      level `≠` inner level `lvl'`), so the stored body is not `RTSubstReady lvl'`, and `EnvWf.cons`'s
+      poly-readiness must build `HasTypeV.closure` for such non-ground instantiations; (2) at
+      `closure_typed_of_lambda` (Soundness 214) only the body-premise-free `HasTypeRT.lam` is available,
+      and strengthening it to `RTSubstReady lvl' hbody` was evaluated + REJECTED (admits `\w. a w` but
+      rejects witness (1) ⇒ would make a legitimate closed program non-RT at `mStateWf_initial`). **The
+      real principle: stored closures can be non-RT; only APPLIED closures are ground-enough ⇒ the
+      invariant belongs on the `applyf` frame (`StackWf.applyf`/`StackSegWf.applyf`) + an `EnvWf.cons`
+      ground-args-only readiness clause, NOT `HasTypeV.closure`.** **Discharge (single grounding, no
+      iteration — dissolves the G24/G26 multi-level worry):** at the apply site run the already-landed
+      `hasTypeRT_subst` ONCE at `ℓ = lvl'` with any ground `σ`, under 3 side conditions the frame must
+      guarantee — (C1) `CtxWfV lvl' Γ`; (C2) `retTy'`/`εb'` levels `< lvl'`; (C3) `RTSubstReady lvl'
+      hbody` — which make `substCtxAt/substAt lvl' σ` identity on `Γnew/retTy'/εb'` (argTy' already
+      `< lvl'`) so the re-typed derivation matches the required judgment AND is `HasTypeRT`. Next session:
+      thread (C1)+(C3) into `EnvWf.cons` (ground-args clause only), (C2) into `applyf`, wire the 4 apply
+      sites (+ `hasTypeRT_weakenEff`, a `weakenEffAux`-mirror needed in Soundness.lean). This threading is
+      multi-file (Runtime+Machine+both Soundness engines), validatable only at full green — hence not
+      landed this session. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
