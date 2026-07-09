@@ -4,13 +4,16 @@ import Eyg.Types.Typing
 # G2 Phase-1 spike — `hasType_substAt_multi` (go/no-go gate)
 
 The genuinely-new mathematics of the `eyg-g2-args-discipline-universal-readiness` plan: generalize
-`hasType_substAt_le`'s σ-range bound `l = 0 ∨ l = ℓ` to a **per-level** side condition. The clean
-condition (discovered here) is `l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ e)`:
+`hasType_substAt_le`'s σ-range bound `l = 0 ∨ l = ℓ` to a **per-level** side condition. The winning
+condition (discovered here) *strictly extends* it with a third disjunct:
+`l = 0 ∨ l = ℓ ∨ (l < lvl ∧ PolyAboveFV l Γ e)`:
 
-* `l < lvl` (the root ambient) discharges the `lam`/`let`/`let_poly` bound-type `l < lvl'`
-  obligations (ambient only grows going down) and the `let_poly` gen-level dodge `hcleanlvl`; it
-  also makes the `NoGenAt l h` capture-avoidance free via `noGenAt_of_lt` — so, unlike the plan's
-  tentative statement, `NoGenAt l h` need not be threaded.
+* `l = ℓ` is the existing `_le` fragment — discharged by the derivation-level `NoGenAt ℓ h` (`hng`)
+  and `PolyAboveFV ℓ Γ e` (`hΓ`) exactly as there.
+* `l < lvl` (the root ambient) is the new disjunct admitting the off-scheme instantiation levels
+  (G30/G31). It discharges the `lam`/`let`/`let_poly` bound-type `l < lvl'` obligations (ambient
+  only grows going down) and the `let_poly` gen-level dodge `hcleanlvl`; it also makes the
+  `NoGenAt l h` capture-avoidance free via `noGenAt_of_lt` — so no per-level `NoGenAt l h` threads.
 * `PolyAboveFV l Γ e` (per σ-range level) is the var-arm capture avoidance against context schemes.
 
 Spike file — validated with `lake env lean`. Promoted into `Typing.lean` once green.
@@ -36,14 +39,17 @@ theorem ctxWfV_substCtxAt_lt {ℓ L : Nat} {σ : Nat → Ty}
   · exact hσ i l hi
 
 /-- **The per-level readiness keystone.** Re-types a derivation under an outer level-`ℓ`
-substitution `substAt ℓ σ` whose range levels each are `0` or (`< lvl` and `PolyAboveFV`), with the
-derivation-level `NoGenAt ℓ h` and `ℓ ≤ lvl`. Generalizes `hasType_substAt_le` (whose `σ`-range ⊆
-`{0, ℓ}` is the
-special case `l = ℓ ⟹ l < lvl` via `ℓ ≤ lvl` plus `PolyAboveFV ℓ Γ e = hΓ`). -/
+substitution `substAt ℓ σ` whose range levels each are `0`, `= ℓ`, or (`< lvl` and `PolyAboveFV`),
+with the derivation-level `NoGenAt ℓ h` and `ℓ ≤ lvl`. Strictly generalizes `hasType_substAt_le`
+(its `σ`-range ⊆ `{0, ℓ}` is the `l = 0 ∨ l = ℓ` fragment — the `l = ℓ` disjunct is discharged by
+`hng`/`hΓ` exactly as there); the new third disjunct `l < lvl ∧ PolyAboveFV l Γ e` is what admits
+the off-scheme instantiation levels (G30/G31) — `l < lvl` gives every bound-type `l < lvl'` bound
+and the gen-level dodge (plus `NoGenAt l h` free via `noGenAt_of_lt`), `PolyAboveFV l` gives the
+var-arm capture avoidance. -/
 theorem hasType_substAt_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
     {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
     {h : HasType lvl Γ e τ ε}
-    (hσ : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ e))
+    (hσ : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl ∧ PolyAboveFV l Γ e))
     (hng : NoGenAt ℓ h) (hlt : ℓ ≤ lvl) (hΓ : PolyAboveFV ℓ Γ e) :
     HasType lvl (substCtxAt ℓ σ Γ) e (Ty.substAt ℓ σ τ) (Ty.substAt ℓ σ ε) := by
   revert hlt hΓ hσ
@@ -57,8 +63,9 @@ theorem hasType_substAt_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
             (hΓ x (by simp [Tree.Node.freeVars]) s hl).resolve_left h0
           refine Or.inr ⟨Ne.symm hlvlℓ, ?_⟩
           intro i j hj
-          rcases hσ i s.level (Ty.mem_levels_of_mem_freeVarsAt hj) with h | ⟨_, hpa⟩
+          rcases hσ i s.level (Ty.mem_levels_of_mem_freeVarsAt hj) with h | h | ⟨_, hpa⟩
           · exact hlvl0 h
+          · exact hlvlℓ h
           · exact absurd rfl ((hpa x (by simp [Tree.Node.freeVars]) s hl).resolve_left h0).2
       rw [substAt_instantiateV_scheme hdisj args]
       exact HasType.var (substCtxAt_lookup hl)
@@ -76,15 +83,16 @@ theorem hasType_substAt_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
         rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
         · exact hfv l hl'
         · have hℓlt := hfv ℓ hm
-          rcases hσ i l hi with h | ⟨h, _⟩ <;> omega
-      · have hσ' : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl' ∧
+          rcases hσ i l hi with h | h | ⟨h, _⟩ <;> omega
+      · have hσ' : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl' ∧
             PolyAboveFV l ((x, Scheme.mono argTy) :: Γ) body) := by
           intro i l hl
-          rcases hσ i l hl with h | ⟨hlt', hpa⟩
+          rcases hσ i l hl with h | h | ⟨hlt', hpa⟩
           · exact Or.inl h
-          · exact Or.inr ⟨lt_of_lt_of_le hlt' hle,
+          · exact Or.inr (Or.inl h)
+          · exact Or.inr (Or.inr ⟨lt_of_lt_of_le hlt' hle,
               polyAboveFV_bind (Or.inl rfl) hpa
-                (fun y hy hne => List.mem_filter.mpr ⟨hy, by simpa using hne⟩)⟩
+                (fun y hy hne => List.mem_filter.mpr ⟨hy, by simpa using hne⟩)⟩)
         have hb := ih hσ' (le_trans hlt hle)
           (polyAboveFV_bind (Or.inl rfl) hΓ
             (fun y hy hne => List.mem_filter.mpr ⟨hy, by simpa using hne⟩))
@@ -92,36 +100,40 @@ theorem hasType_substAt_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
         exact hb
   | @app lvl Γ f arg argTy εf retTy ε a hf hw harg nghf ngharg ihf iharg =>
       intro hσ hlt hΓ
-      have hσf : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ f) := by
+      have hσf : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl ∧ PolyAboveFV l Γ f) := by
         intro i l hl
-        rcases hσ i l hl with h | ⟨hlt', hpa⟩
+        rcases hσ i l hl with h | h | ⟨hlt', hpa⟩
         · exact Or.inl h
-        · exact Or.inr ⟨hlt', polyAboveFV_sub hpa (fun y hy => List.mem_append_left _ hy)⟩
-      have hσa : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ arg) := by
+        · exact Or.inr (Or.inl h)
+        · exact Or.inr (Or.inr ⟨hlt', polyAboveFV_sub hpa (fun y hy => List.mem_append_left _ hy)⟩)
+      have hσa : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl ∧ PolyAboveFV l Γ arg) := by
         intro i l hl
-        rcases hσ i l hl with h | ⟨hlt', hpa⟩
+        rcases hσ i l hl with h | h | ⟨hlt', hpa⟩
         · exact Or.inl h
-        · exact Or.inr ⟨hlt', polyAboveFV_sub hpa (fun y hy => List.mem_append_right _ hy)⟩
+        · exact Or.inr (Or.inl h)
+        · exact Or.inr (Or.inr ⟨hlt', polyAboveFV_sub hpa (fun y hy => List.mem_append_right _ hy)⟩)
       have hf' := ihf hσf hlt (polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy))
       simp only [Ty.substAt] at hf'
       exact HasType.app hf' (Ty.substAt_effWeaken ℓ σ hw)
         (iharg hσa hlt (polyAboveFV_sub hΓ (fun y hy => List.mem_append_right _ hy)))
   | @let_ lvl lvl' Γ x defn body defnTy bodyTy ε a hdefn hle hfv hbody ngd ngb ihdefn ihbody =>
       intro hσ hlt hΓ
-      have hσd : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ defn) := by
+      have hσd : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl ∧ PolyAboveFV l Γ defn) := by
         intro i l hl
-        rcases hσ i l hl with h | ⟨hlt', hpa⟩
+        rcases hσ i l hl with h | h | ⟨hlt', hpa⟩
         · exact Or.inl h
-        · exact Or.inr ⟨hlt', polyAboveFV_sub hpa (fun y hy => List.mem_append_left _ hy)⟩
-      have hσb : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl' ∧
+        · exact Or.inr (Or.inl h)
+        · exact Or.inr (Or.inr ⟨hlt', polyAboveFV_sub hpa (fun y hy => List.mem_append_left _ hy)⟩)
+      have hσb : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl' ∧
           PolyAboveFV l ((x, Scheme.mono defnTy) :: Γ) body) := by
         intro i l hl
-        rcases hσ i l hl with h | ⟨hlt', hpa⟩
+        rcases hσ i l hl with h | h | ⟨hlt', hpa⟩
         · exact Or.inl h
-        · exact Or.inr ⟨lt_of_lt_of_le hlt' hle,
+        · exact Or.inr (Or.inl h)
+        · exact Or.inr (Or.inr ⟨lt_of_lt_of_le hlt' hle,
             polyAboveFV_bind (Or.inl rfl) hpa
               (fun y hy hne =>
-                List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne⟩))⟩
+                List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne⟩))⟩)
       have hb := ihbody hσb (le_trans hlt hle)
         (polyAboveFV_bind (Or.inl rfl) hΓ
           (fun y hy hne => List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne⟩)))
@@ -133,27 +145,28 @@ theorem hasType_substAt_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
       rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
       · exact hfv l hl'
       · have hℓlt := hfv ℓ hm
-        rcases hσ i l hi with h | ⟨h, _⟩ <;> omega
+        rcases hσ i l hi with h | h | ⟨h, _⟩ <;> omega
   | @let_poly lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw
       hbody hne ngd ngb ihdefn ihbody =>
       intro hσ hlt hΓ
       have hlts : ℓ < lvl := lt_of_le_of_ne hlt (Ne.symm hne)
       have hne' : ℓ ≠ lvl := Nat.ne_of_lt hlts
       have hcleanlvl : ∀ i, lvl ∉ (σ i).levels := by
-        intro i hmem; rcases hσ i lvl hmem with h | ⟨h, _⟩ <;> omega
+        intro i hmem; rcases hσ i lvl hmem with h | h | ⟨h, _⟩ <;> omega
       have hσltlvl : ∀ i, ∀ l ∈ (σ i).levels, l < lvl := by
-        intro i l hl; rcases hσ i l hl with h | ⟨h, _⟩ <;> omega
+        intro i l hl; rcases hσ i l hl with h | h | ⟨h, _⟩ <;> omega
       have hΓdefn : PolyAboveFV ℓ Γ ⟨.Lambda lx lbody, la⟩ :=
         polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy)
       have hΓdb : PolyAboveFV ℓ ((lx, Scheme.mono argTy) :: Γ) lbody :=
         polyAboveFV_bind (Or.inl rfl) hΓdefn
           (fun y hy hne2 => List.mem_filter.mpr ⟨hy, by simpa using hne2⟩)
-      have hσdb : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl' ∧
+      have hσdb : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl' ∧
           PolyAboveFV l ((lx, Scheme.mono argTy) :: Γ) lbody) := by
         intro i l hl
-        rcases hσ i l hl with h | ⟨hlt', hpa⟩
+        rcases hσ i l hl with h | h | ⟨hlt', hpa⟩
         · exact Or.inl h
-        · refine Or.inr ⟨lt_trans hlt' hstrict, ?_⟩
+        · exact Or.inr (Or.inl h)
+        · refine Or.inr (Or.inr ⟨lt_trans hlt' hstrict, ?_⟩)
           have hpad : PolyAboveFV l Γ ⟨.Lambda lx lbody, la⟩ :=
             polyAboveFV_sub hpa (fun y hy => List.mem_append_left _ hy)
           exact polyAboveFV_bind (Or.inl rfl) hpad
@@ -165,16 +178,17 @@ theorem hasType_substAt_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
         rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
         · exact hfv l hl'
         · have hℓlt := hfv ℓ hm
-          rcases hσ i l hi with h | ⟨h, _⟩ <;> omega
+          rcases hσ i l hi with h | h | ⟨h, _⟩ <;> omega
       have hΓ1 : PolyAboveFV ℓ ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body :=
         polyAboveFV_bind (Or.inr (by simp only [Scheme.genAtV]; omega)) hΓ
           (fun y hy hne2 => List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne2⟩))
-      have hσ1 : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl + 1 ∧
+      have hσ1 : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl + 1 ∧
           PolyAboveFV l ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body) := by
         intro i l hl
-        rcases hσ i l hl with h | ⟨hlt', hpa⟩
+        rcases hσ i l hl with h | h | ⟨hlt', hpa⟩
         · exact Or.inl h
-        · refine Or.inr ⟨by omega, ?_⟩
+        · exact Or.inr (Or.inl h)
+        · refine Or.inr (Or.inr ⟨by omega, ?_⟩)
           exact polyAboveFV_bind (Or.inr (by simp only [Scheme.genAtV]; omega)) hpa
             (fun y hy hne2 =>
               List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne2⟩))
@@ -205,5 +219,16 @@ theorem hasType_substAt_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
   | @conv lvl Γ e τ τ' ε ε' h hτ hε ngh ih =>
       intro hσ hlt hΓ
       exact HasType.conv (ih hσ hlt hΓ) (Ty.substAt_tyEquiv ℓ σ hτ) (Ty.substAt_tyEquiv ℓ σ hε)
+
+/-- **Subsumption check.** `hasType_substAt_multi` strictly generalizes `hasType_substAt_le`: the
+`{0, ℓ}` σ-range bound is the first two disjuncts, so the `_le` statement is an immediate corollary
+(no extra hypotheses). Machine-confirms the "strictly generalizes" claim. -/
+theorem hasType_substAt_le_of_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
+    (hσ : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ)
+    {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    {h : HasType lvl Γ e τ ε} (hng : NoGenAt ℓ h) (hlt : ℓ ≤ lvl)
+    (hΓ : PolyAboveFV ℓ Γ e) :
+    HasType lvl (substCtxAt ℓ σ Γ) e (Ty.substAt ℓ σ τ) (Ty.substAt ℓ σ ε) :=
+  hasType_substAt_multi hℓ σ (fun i l hl => (hσ i l hl).imp_right Or.inl) hng hlt hΓ
 
 end Eyg.Types

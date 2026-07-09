@@ -9,21 +9,28 @@ The plan's single genuinely-new lemma is **proven, machine-checked, no sorry, ax
 GREEN. The `le`-proof induction skeleton carried over arm-by-arm as predicted — the spike compiled on
 the first real attempt (only fix: a missing `open Eyg.Ir`).
 
-## The refined σ-condition (simpler than the plan's tentative form)
+## The refined σ-condition (strictly generalizes `_le`, drops the plan's `NoGenAt l h`)
 
 Plan §3 tentatively proposed `hσ : l = 0 ∨ (NoGenAt l h ∧ PolyAboveFV l Γ e)`. The condition that
-actually makes the induction go through — and is *simpler* — is:
+actually makes the induction go through — and is *simpler* — **strictly extends** `_le`'s `{0, ℓ}`
+bound with a third disjunct:
 
 ```
-hσ : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ e)
+hσ : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ ∨ (l < lvl ∧ PolyAboveFV l Γ e)
 ```
 
-Key simplification: **`NoGenAt l h` need not be threaded.** For a σ-range level `l < lvl` (root
-ambient), `NoGenAt l h` is *free* via the existing `noGenAt_of_lt` (reachable gen levels are all
-`≥ lvl > l`). And ambient only grows going down, so `l < lvl ≤ lvl'` discharges every `lam`/`let`/
-`let_poly` bound-type `l < lvl'` obligation and the `let_poly` gen-level dodge `hcleanlvl`. Only the
-var arm needs a genuine per-level fact — `PolyAboveFV l Γ e` — for capture avoidance against context
-schemes (its `l = s.level` branch contradicts `PolyAboveFV l`'s `s.level ≠ l`).
+The `l = ℓ` disjunct must be kept (self-review caught this): it is `_le`'s regime, covering the
+boundary case `l = ℓ = lvl'` (e.g. `\x. perform "op" x`, whose body sublevel can equal the gen
+level — and in the floor form `l = ℓ` is the `s.level` disjunct). Dropping it would make the lemma
+*fail to subsume* `hasType_substAt_le`; a corollary `hasType_substAt_le_of_multi` now machine-confirms
+the subsumption.
+
+Key simplification vs the plan: **no per-level `NoGenAt l h` is threaded.** For a σ-range level
+`l < lvl` (the new disjunct), `NoGenAt l h` is *free* via the existing `noGenAt_of_lt` (reachable
+gen levels are all `≥ lvl > l`); ambient only grows going down, so `l < lvl ≤ lvl'` discharges every
+bound-type `l < lvl'` obligation and the `let_poly` gen-level dodge. The `l = ℓ` disjunct is
+discharged by the derivation-level `NoGenAt ℓ h` (`hng`) exactly as in `_le`. Only the var arm needs
+a genuine per-level fact — `PolyAboveFV l Γ e` — for capture avoidance against context schemes.
 
 This means the readiness-construction side conditions the closure promise must bound are just
 `l < lvl` and `PolyAboveFV l` per arg level — no derivation-indexed `NoGenAt` obligation on the

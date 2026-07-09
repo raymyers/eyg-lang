@@ -174,9 +174,10 @@ fully-unconstrained-args entry premise is not witnessable by any level-bounded i
             (`Eyg/Types/G2Validation.lean`, builds clean, axioms `[propext, Quot.sound]`). Pins the
             plan premise: universal readiness is TRUE at the exact G30/G31 fatal instantiations.
       - [x] **`hasType_substAt_multi` PROVEN — go/no-go gate GREEN** (`Eyg/Types/G2Spike.lean`, no
-            sorry, standard axioms). The winning σ-condition is *simpler* than §3's tentative form:
-            `l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ e)` — `NoGenAt l h` need NOT be threaded (free via
-            `noGenAt_of_lt` for `l < lvl`). See `plan/progress/2026-07-09-G2-phase1-substAt-multi-GREEN.md`;
+            sorry, standard axioms; strictly subsumes `hasType_substAt_le` via a machine-checked
+            corollary). Winning σ-condition: `l = 0 ∨ l = ℓ ∨ (l < lvl ∧ PolyAboveFV l Γ e)` —
+            no per-level `NoGenAt l h` threads (free via `noGenAt_of_lt` for `l < lvl`; the `l = ℓ`
+            boundary uses `hng`). See `plan/progress/2026-07-09-G2-phase1-substAt-multi-GREEN.md`;
             fold the simplification into §2/§3's promise phrasing at Phase 2.
       - [x] ambient-monotonicity is already `noGenAt_of_lt`; floor-nesting reduces to it (no new lemma).
 - [ ] **Phase 2 — `ArgsDisc` + readiness keystone.** Define `ArgsDisc` (+ floor carrier decision),
