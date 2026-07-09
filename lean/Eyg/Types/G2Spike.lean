@@ -231,4 +231,69 @@ theorem hasType_substAt_le_of_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat →
     HasType lvl (substCtxAt ℓ σ Γ) e (Ty.substAt ℓ σ τ) (Ty.substAt ℓ σ ε) :=
   hasType_substAt_multi hℓ σ (fun i l hl => (hσ i l hl).imp_right Or.inl) hng hlt hΓ
 
+/-- **The floor-conditioned term-level readiness keystone.** The `hasType_substAt_multi`-powered
+generalization of `genAtV_instantiate_lam_ready_le`: a value-restricted lambda's `genAtV ℓ`-scheme is
+realised as a genuine `substAt ℓ` re-typing of its own body derivation at instantiation args whose
+levels obey the **floor** form `l = 0 ∨ l = ℓ ∨ (l < lvl' ∧ PolyAboveFV l Γ ⟨lam⟩)` — with `lvl'`
+(the body sublevel) as the floor `B`. This is the consumption site the plan's §3 names: exactly the
+G30/G31 off-scheme instantiation levels are now admitted (they satisfy `l < lvl'`), with no grounding.
+The `_le` keystone is the `hargs ⊆ {0, ℓ}` special case. -/
+theorem genAtV_instantiate_lam_ready_floor {ℓ : Nat} (hℓ : ℓ ≠ 0)
+    {lvl' : Nat} {Γ : Ctx} {x : String} {lbody : Tree.Node m} {la : m}
+    {argTy εb retTy ε : Ty}
+    (hlt : ℓ ≤ lvl')
+    (hfv : ∀ l ∈ argTy.levels, l < lvl')
+    {hbody : HasType lvl' ((x, .mono argTy) :: Γ) lbody retTy εb}
+    (hng : NoGenAt ℓ hbody)
+    (hΓpa : PolyAboveFV ℓ Γ ⟨.Lambda x lbody, la⟩)
+    (hΓwf : CtxWfV ℓ Γ)
+    (args : List Ty)
+    (hargs : ∀ t ∈ args, ∀ l ∈ t.levels,
+      l = 0 ∨ l = ℓ ∨ (l < lvl' ∧ PolyAboveFV l Γ ⟨.Lambda x lbody, la⟩)) :
+    HasType ℓ Γ ⟨.Lambda x lbody, la⟩
+      ((Scheme.genAtV ℓ (.fun argTy εb retTy)).instantiateV args) ε := by
+  set defnTy : Ty := .fun argTy εb retTy with hdefn
+  have hΓpa' : PolyAboveFV ℓ ((x, Scheme.mono argTy) :: Γ) lbody :=
+    polyAboveFV_bind (Or.inl rfl) hΓpa
+      (fun y hy hne => List.mem_filter.mpr ⟨hy, by simpa using hne⟩)
+  by_cases h0 : (Scheme.genAtV ℓ defnTy).arity = 0
+  · rw [Scheme.instantiateV, if_pos h0, ← Ty.substAt_var_self ℓ defnTy]
+    have hσ : ∀ i, ∀ l ∈ ((fun i => Ty.var ℓ i) i).levels,
+        l = 0 ∨ l = ℓ ∨ (l < lvl' ∧ PolyAboveFV l ((x, Scheme.mono argTy) :: Γ) lbody) := by
+      intro i l hl; simp only [Ty.levels, List.mem_singleton] at hl; exact Or.inr (Or.inl hl)
+    have hb := hasType_substAt_multi hℓ (fun i => Ty.var ℓ i) hσ hng hlt hΓpa'
+    rw [substCtxAt_cons, substSchemeVAt_mono] at hb
+    have hlam := HasType.lam (a := la) (ε := ε) hlt
+      (by intro l hl
+          rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
+          · exact hfv l hl'
+          · simp only [Ty.levels, List.mem_singleton] at hi; rw [hi]; exact hfv ℓ hm) hb
+    have hfix : substCtxAt ℓ (fun i => Ty.var ℓ i) Γ = Γ := substCtxAt_fix hΓwf
+    rw [hfix] at hlam
+    simpa only [Ty.substAt, hdefn] using hlam
+  · rw [Scheme.instantiateV, if_neg h0]
+    have hσ : ∀ i, ∀ l ∈ (args.getD i (.var ℓ i)).levels,
+        l = 0 ∨ l = ℓ ∨ (l < lvl' ∧ PolyAboveFV l ((x, Scheme.mono argTy) :: Γ) lbody) := by
+      intro i l hl
+      rcases lt_or_ge i args.length with hi | hi
+      · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi] at hl
+        rcases hargs _ (List.getElem_mem hi) l hl with h | h | ⟨hlt', hpa⟩
+        · exact Or.inl h
+        · exact Or.inr (Or.inl h)
+        · exact Or.inr (Or.inr ⟨hlt',
+            polyAboveFV_bind (Or.inl rfl) hpa
+              (fun y hy hne => List.mem_filter.mpr ⟨hy, by simpa using hne⟩)⟩)
+      · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none hi, Option.getD_none] at hl
+        simp only [Ty.levels, List.mem_singleton] at hl; exact Or.inr (Or.inl hl)
+    have hb := hasType_substAt_multi hℓ (fun i => args.getD i (.var ℓ i)) hσ hng hlt hΓpa'
+    rw [substCtxAt_cons, substSchemeVAt_mono] at hb
+    have hlam := HasType.lam (a := la) (ε := ε) hlt
+      (by intro l hl
+          rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
+          · exact hfv l hl'
+          · have hℓlt := hfv ℓ hm; rcases hσ i l hi with h | h | ⟨h, _⟩ <;> omega) hb
+    have hfix : substCtxAt ℓ (fun i => args.getD i (.var ℓ i)) Γ = Γ := substCtxAt_fix hΓwf
+    rw [hfix] at hlam
+    simpa only [Ty.substAt, hdefn] using hlam
+
 end Eyg.Types

@@ -41,6 +41,15 @@ promise. Simplifies Phase 2/3 accordingly (update §2/§3's promise phrasing whe
 `ctxWfV_substCtxAt_lt` — the `σ`-levels-`< L` variant of `ctxWfV_substCtxAt` (the existing one needs
 `≤ ℓ` with `ℓ < L`; the let_poly arm now supplies `< lvl` directly).
 
+## Floor-conditioned term-level readiness keystone (also GREEN)
+
+`genAtV_instantiate_lam_ready_floor` — the `hasType_substAt_multi`-powered generalization of
+`genAtV_instantiate_lam_ready_le`. Its `hargs` condition is the floor form
+`l = 0 ∨ l = ℓ ∨ (l < lvl' ∧ PolyAboveFV l Γ ⟨lam⟩)` with the body sublevel `lvl'` as the floor `B`.
+This is the exact consumption site of §3: the G30/G31 off-scheme instantiation levels (`l < lvl'`)
+are now admitted with no grounding. Pure `HasType` (no `ArgsDisc`, no `HasTypeV`) → additive and
+sign-off-independent. No sorry, axioms `[propext, Classical.choice, Quot.sound]`.
+
 ## Where it lives / next
 
 Kept in the spike file for Phase 1 (G1 methodology). Phase 2 promotes `hasType_substAt_multi` +
