@@ -1350,6 +1350,67 @@ theorem exists_levelsBelow {m : Type} {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {
   | conv _ hτ hε ih =>
       obtain ⟨N, hN⟩ := ih; exact ⟨N, LevelsBelow.conv hτ hε hN⟩
 
+/-! ## Context raise `raiseCtx` (relabel generalization levels `≥ t` by a uniform offset)
+
+The generalization-level raise re-tags every reachable `let_poly`'s gen level `k ↦ k + o` (for `k` at
+or above a threshold `t`), which — because a `let_poly`'s stored scheme is `genAtV k defnTy` — forces
+the corresponding **context** binding for the let-bound variable from `genAtV k defnTy` to
+`genAtV (k+o) (substAt k (·↦ var (k+o)) defnTy)` (the exact input of `instantiateV_genAtV_relabel`).
+`raiseScheme`/`raiseCtx` package that context transformation; bindings whose gen level is *below* `t`
+(all `mono` bindings, and any outer poly binding generalized below the raise threshold) are left
+literally fixed. -/
+
+/-- Relabel a single scheme for the generalization-level raise: a scheme generalized at a level
+`≥ t` has its gen level bumped by `o` and its body's level-`(s.level)` variables relabeled to
+`s.level + o` (matching `instantiateV_genAtV_relabel`); a scheme below the threshold is fixed. -/
+def raiseScheme (t o : Nat) (s : Scheme) : Scheme :=
+  if t ≤ s.level then
+    Scheme.genAtV (s.level + o) (Ty.substAt s.level (fun i => Ty.var (s.level + o) i) s.body)
+  else s
+
+/-- A scheme whose gen level is strictly below the threshold is fixed by the raise. -/
+@[simp] theorem raiseScheme_of_level_lt {t o : Nat} {s : Scheme} (h : s.level < t) :
+    raiseScheme t o s = s := by
+  simp only [raiseScheme, if_neg (Nat.not_le.mpr h)]
+
+/-- Every `mono` binding is fixed by the raise (its gen level is `0 < t`). -/
+@[simp] theorem raiseScheme_mono {t o : Nat} (ht : 0 < t) (τ : Ty) :
+    raiseScheme t o (Scheme.mono τ) = Scheme.mono τ :=
+  raiseScheme_of_level_lt (by simpa [Scheme.mono] using ht)
+
+/-- Apply the generalization-level raise to every scheme in a typing context. -/
+def raiseCtx (t o : Nat) (Γ : Ctx) : Ctx :=
+  Γ.map (fun b => (b.1, raiseScheme t o b.2))
+
+@[simp] theorem raiseCtx_nil (t o : Nat) : raiseCtx t o [] = [] := rfl
+
+@[simp] theorem raiseCtx_cons (t o : Nat) (x : String) (s : Scheme) (Γ : Ctx) :
+    raiseCtx t o ((x, s) :: Γ) = (x, raiseScheme t o s) :: raiseCtx t o Γ := rfl
+
+/-- Context lookup commutes with `raiseCtx` (keys preserved). -/
+theorem raiseCtx_lookup {t o : Nat} {Γ : Ctx} {x : String} {s : Scheme}
+    (h : Γ.lookup x = some s) : (raiseCtx t o Γ).lookup x = some (raiseScheme t o s) := by
+  induction Γ with
+  | nil => simp [List.lookup] at h
+  | cons hd tl ih =>
+      obtain ⟨y, sy⟩ := hd
+      simp only [raiseCtx_cons, List.lookup_cons] at h ⊢
+      by_cases hxy : (x == y) = true
+      · simp only [hxy] at h ⊢; cases h; rfl
+      · simp only [hxy] at h ⊢; exact ih h
+
+/-- **The raise fixes a context all of whose bindings are generalized below the threshold `t`.**
+Every `mono` binding (gen level `0`) and every poly binding generalized below `t` is left literally
+unchanged, so a context whose bindings all have `s.level < t` is fixed. -/
+theorem raiseCtx_fix {t o : Nat} {Γ : Ctx} (hΓ : ∀ b ∈ Γ, b.2.level < t) :
+    raiseCtx t o Γ = Γ := by
+  induction Γ with
+  | nil => rfl
+  | cons hd tl ih =>
+      obtain ⟨y, s⟩ := hd
+      simp only [raiseCtx_cons, raiseScheme_of_level_lt (hΓ (y, s) (by simp)),
+        ih (fun b hb => hΓ b (List.mem_cons_of_mem _ hb))]
+
 /-! ## Sanity checks -/
 
 section Examples
