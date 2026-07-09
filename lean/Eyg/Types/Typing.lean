@@ -349,6 +349,61 @@ theorem polyAboveFV_bind {m : Type} {ℓ : Nat} {Γ : Ctx} {x : String} {s0 : Sc
     have hne : y ≠ x := by intro h; subst h; exact hyx (by simp)
     exact hΓ y (hmem y hy hne) s hlk
 
+/-! ## Runtime nonzero-poly-level context invariant (`CtxPolyBd`)
+
+The blocker for the `let_poly` preservation case: `genAtV_closure_ready_value_node` needs
+`PolyAboveFV lvl Γ (defn lambda)` and `lvl ≠ 0`, and `CtxWfV lvl Γ` alone cannot supply the
+`s.level ≠ 0` half of `PolyAboveFV`'s poly disjunct (a `genAtV 0 d` binding with `0 ∈ d.levels`
+satisfies `CtxWfV` yet has level `0`). The fix is a *carried* runtime invariant: every polymorphic
+(`arity ≠ 0`) binding in the reachable context sits at a **nonzero** level (and — automatically for the
+`genAtV` schemes the runtime actually builds — that level occurs among its body's levels). Established
+at a nonzero initial ambient level and preserved by every `let_poly` step (which generalizes at its own
+— necessarily nonzero — ambient level, per the inline-strict `let_poly` shape). -/
+
+/-- Every polymorphic (`arity ≠ 0`) binding of `Γ` has a nonzero level that occurs among its body's
+levels. `lvl` in `body.levels` is automatic for `genAtV lvl d` (arity `≠ 0 ⟹ lvl ∈ d.levels`); the
+content is nonzero-ness. -/
+def CtxPolyBd (Γ : Ctx) : Prop :=
+  ∀ b ∈ Γ, b.2.arity ≠ 0 → b.2.level ≠ 0 ∧ b.2.level ∈ b.2.body.levels
+
+/-- **Bridge:** `CtxPolyBd Γ` + `CtxWfV ℓ Γ` derive the free-variable-aware substitution precondition
+`PolyAboveFV ℓ Γ e` for **every** term `e`. A looked-up poly binding's level is `≠ 0` (from
+`CtxPolyBd`) and `< ℓ` hence `≠ ℓ` (from `CtxWfV`, since that level is one of its body levels). -/
+theorem polyAboveFV_of_ctxPolyBd {ℓ : Nat} {Γ : Ctx} {e : Tree.Node m}
+    (hnz : CtxPolyBd Γ) (hwf : CtxWfV ℓ Γ) : PolyAboveFV ℓ Γ e := by
+  intro x _ s hlk
+  by_cases h0 : s.arity = 0
+  · exact Or.inl h0
+  · obtain ⟨hne0, hmem⟩ := hnz (x, s) (lookup_mem hlk) h0
+    exact Or.inr ⟨hne0, by have := hwf (x, s) (lookup_mem hlk) s.level hmem; omega⟩
+
+/-- **Preservation of `CtxPolyBd` under a `let_poly` binding** (`genAtV lvl d`, `lvl ≠ 0`). The new
+binding is either mono-like (`arity = 0`, vacuous) or poly, in which case its level is `lvl ≠ 0` and
+`arity ≠ 0 ⟹ lvl ∈ d.levels` by the definition of `genAtV`. -/
+theorem ctxPolyBd_cons_genAtV {Γ : Ctx} {x : String} {lvl : Nat} {d : Ty}
+    (hlvl : lvl ≠ 0) (hΓ : CtxPolyBd Γ) :
+    CtxPolyBd ((x, Scheme.genAtV lvl d) :: Γ) := by
+  intro b hb harity
+  rcases List.mem_cons.mp hb with h | h
+  · subst h
+    refine ⟨hlvl, ?_⟩
+    simp only [Scheme.genAtV] at harity ⊢
+    have hpos : 0 < (d.levels.filter (· = lvl)).length := Nat.pos_of_ne_zero harity
+    obtain ⟨a, ha⟩ := List.exists_mem_of_length_pos hpos
+    rw [List.mem_filter] at ha
+    obtain ⟨hmem, heq⟩ := ha
+    simp only [decide_eq_true_eq] at heq
+    exact heq ▸ hmem
+  · exact hΓ b h harity
+
+/-- A monomorphic binding preserves `CtxPolyBd` (its `arity = 0`, so the obligation is vacuous). -/
+theorem ctxPolyBd_cons_mono {Γ : Ctx} {x : String} {t : Ty} (hΓ : CtxPolyBd Γ) :
+    CtxPolyBd ((x, Scheme.mono t) :: Γ) := by
+  intro b hb harity
+  rcases List.mem_cons.mp hb with h | h
+  · subst h; exact absurd rfl harity
+  · exact hΓ b h harity
+
 /-! ## Level-native type substitution — the instantiation-direction re-typing lemma -/
 
 /-- **Instantiation-direction type substitution for `HasType`.** A derivation re-types under an
