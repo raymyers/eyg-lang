@@ -347,6 +347,27 @@ the datatype change itself.
       with live LSP, multi-session, *above* the still-pending ~150-error mechanical migration. The
       mechanical migration pattern + the required `StackWfV`/`StackWfE`→`instantiateV`+side-condition
       `Machine.lean` refactor are recorded in the note for reuse. Caveat 5 remains OPEN.
+      **Progress 2026-07-08 (Session B2 — the `PolyAbove` wall RESOLVED), see
+      `progress/2026-07-08-G1-phase6-sessionB2-polyaboveFV-keystone-fixed.md`:** one green additive edit
+      to `Typing.lean`/`Substitution.lean` (both build green per-file; `Soundness.lean` deliberately
+      untouched). The blanket `PolyAbove ℓ Γ` precondition is replaced by the **free-variable-aware**
+      `PolyAboveFV ℓ Γ e := ∀ x ∈ e.freeVars, ∀ s, Γ.lookup x = some s → s.arity = 0 ∨ ℓ < s.level`
+      (new `Node.freeVars`; helpers `polyAboveFV_sub`/`_bind`; `polyAboveFV_of_polyAbove` bridge). It
+      threads through the whole `hasType_subst` induction because every binder adds a *fine* binding
+      (`mono` ⇒ `arity 0`; `let_poly`'s `genAtV lvl` ⇒ `level = lvl > ℓ`), so it never constrains the
+      pre-existing ambient bindings the term does not reference. `hasType_subst`,
+      `genAtV_instantiate_lam_ready`, and `genAtV_closure_ready_value` re-proved over
+      `PolyAboveFV ℓ Γ ⟨.Lambda x lbody, la⟩`; axioms unchanged (`[propext, Classical.choice,
+      Quot.sound]`), no `sorry`. **Validated non-vacuously** with permanent regression examples in
+      `Typing.lean`: `¬ PolyAbove 2 Γseq` (the wall, `by decide`), `PolyAboveFV 2 Γseq (\z.z)` (holds
+      where `PolyAbove` fails), the keystone firing for `c` at level 2 producing
+      `\z.z : Integer → Integer`, and the whole program `let a = \x.x in (let c = \z.z in c)`
+      type-checking at `HasType 1 []`. **Residual for Session C (flagged, not forced):** the
+      *referencing* case (a generalized inner lambda that references an outer lower-level polymorphic
+      binding, e.g. `let a = \x.x in (let c = \w. a w in c)`) needs a tightening of `EnvWf.cons`'s args
+      side-condition (the level-native analog of the pre-G1 `ctxWf_fixed`/`subst_eq_of_fixes_free`),
+      best settled with the Soundness preservation cases that produce the args — judgment bookkeeping,
+      not open mathematics. Full analysis in the note.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

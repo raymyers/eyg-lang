@@ -92,7 +92,9 @@ theorem closure_typed_of_lambda {lvl : Nat} {Γ : Ctx} {x : String} {body : Tree
 
 /-- **The value-level readiness keystone (level-native `generalizes_closure_ready`).** For a let-bound
 lambda presented via its `lam` components at ambient level `ℓ` — body at a strictly higher level `lvl'`,
-ambient context `Γ` below `ℓ` (`CtxWfV ℓ Γ`) with polymorphic bindings above `ℓ` (`PolyAbove ℓ Γ`) —
+ambient context `Γ` below `ℓ` (`CtxWfV ℓ Γ`) with every binding the body **references** above `ℓ`
+(`PolyAboveFV ℓ Γ ⟨.Lambda x lbody, la⟩` — free-variable-aware, so sequential/nested `let_poly` whose
+generalized body does not reference a lower-level outer binding is admitted) —
 whose runtime environment realizes `Γ` (`EnvWf env Γ`), the lambda's runtime closure
 `Value.Closure x lbody env` inhabits **every** (well-formed) instantiation of its generalized scheme
 `genAtV ℓ (.fun argTy εb retTy)` — exactly the `EnvWf.cons` obligation (`s.level = ℓ`), with **no
@@ -104,7 +106,7 @@ theorem genAtV_closure_ready_value {ℓ : Nat} (hℓ : ℓ ≠ 0)
     (hlt : ℓ < lvl')
     (hfv : ∀ l ∈ argTy.levels, l < lvl')
     (hbody : HasType lvl' ((x, .mono argTy) :: Γ) lbody retTy εb)
-    (hΓpa : PolyAbove ℓ Γ)
+    (hΓpa : PolyAboveFV ℓ Γ ⟨.Lambda x lbody, la⟩)
     (hΓwf : CtxWfV ℓ Γ)
     {env : Env m} (henv : EnvWf env Γ) :
     ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ ℓ) →
