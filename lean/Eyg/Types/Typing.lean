@@ -1047,6 +1047,102 @@ theorem hasType_ctxHead_conv {m : Type} {lvl : Nat} {Γ : Ctx} {e : Tree.Node m}
     HasType lvl ((x, .mono σ') :: Γ) e τ ε :=
   hasType_ctxConv h [] Γ x σ σ' rfl hc
 
+/-- **RT-indexed context-binding conversion** (the `HasTypeRT` companion to `hasType_ctxConv`).
+Since `HasTypeRT` is indexed by the *specific* `HasType` derivation and `hasType_ctxConv`'s output is
+opaque (a recursor application that case-splits on the runtime binder lookup), we cannot state the RT
+of `hasType_ctxConv h …` directly. Instead we bundle: from `HasTypeRT h` we rebuild — mirroring
+`hasType_ctxConv` arm-for-arm — a fresh converted derivation `h'` **together with** its `HasTypeRT`
+witness. `stackSeg_input_conv` destructures both. The `lam`/`let_poly` defn subterms reuse the plain
+`hasType_ctxConv` (their RT is not required by `HasTypeRT.lam`/`.let_poly`). -/
+theorem hasTypeRT_ctxConv {m : Type} {lvl : Nat} {Γ₀ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    {h : HasType lvl Γ₀ e τ ε} (hrt : HasTypeRT h) :
+    ∀ (Δ Γ : Ctx) (x : String) (σ σ' : Ty),
+      Γ₀ = Δ ++ (x, .mono σ) :: Γ → Ty.TyEquiv σ' σ →
+      ∃ h' : HasType lvl (Δ ++ (x, .mono σ') :: Γ) e τ ε, HasTypeRT h' := by
+  induction hrt with
+  | @var lvl Γ₁ y s args ε' a hl hargs =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      rw [List.lookup_append] at hl
+      cases hΔ : Δ.lookup y with
+      | some v =>
+          rw [hΔ, Option.some_or] at hl; cases hl
+          exact ⟨HasType.var (by rw [List.lookup_append, hΔ, Option.some_or]),
+            HasTypeRT.var (by rw [List.lookup_append, hΔ, Option.some_or]) hargs⟩
+      | none =>
+          rw [hΔ, Option.none_or] at hl
+          by_cases hyx : (y == x) = true
+          · simp only [List.lookup_cons, hyx] at hl; cases hl
+            refine ⟨HasType.conv
+              (HasType.var (s := .mono σ') (args := args)
+                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx]))
+              ?_ (.refl _), HasTypeRT.conv ?_ (.refl _)
+                (HasTypeRT.var (s := .mono σ') (args := args)
+                  (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx])
+                  hargs)⟩
+            · simp only [Scheme.instantiateV_mono]; exact hc
+            · simp only [Scheme.instantiateV_mono]; exact hc
+          · simp only [List.lookup_cons, hyx, Bool.false_eq_true] at hl ⊢
+            exact ⟨HasType.var (s := s) (args := args)
+                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx,
+                  Bool.false_eq_true]; exact hl),
+              HasTypeRT.var (s := s) (args := args)
+                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx,
+                  Bool.false_eq_true]; exact hl) hargs⟩
+  | @lam lvl lvl' Γ₁ z body argTy εb retTy ε' a hle hfv hbody =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      have hb := hasType_ctxConv hbody ((z, .mono argTy) :: Δ) Γ x σ σ' rfl hc
+      exact ⟨HasType.lam hle hfv hb, HasTypeRT.lam (hbody := hb) hle hfv⟩
+  | @app lvl Γ₁ f arg argTy εf retTy ε' a hf hw harg rf rarg ihf iharg =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨hf', rf'⟩ := ihf Δ Γ x σ σ' rfl hc
+      obtain ⟨harg', rarg'⟩ := iharg Δ Γ x σ σ' rfl hc
+      exact ⟨HasType.app hf' hw harg', HasTypeRT.app (hw := hw) rf' rarg'⟩
+  | @let_ lvl lvl' Γ₁ z defn body defnTy bodyTy ε' a hdefn hle hfv hbody rd rb ihd ihb =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨hd', rd'⟩ := ihd Δ Γ x σ σ' rfl hc
+      obtain ⟨hb', rb'⟩ := ihb ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc
+      exact ⟨HasType.let_ hd' hle hfv hb', HasTypeRT.let_ hle hfv rd' rb'⟩
+  | @let_poly lvl Γ₁ z lx lbody la body defnTy bodyTy ε' a hdefn hcw hbody rb ihb =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨hb', rb'⟩ := ihb ((z, Scheme.genAtV lvl defnTy) :: Δ) Γ x σ σ' rfl hc
+      have hd := hasType_ctxConv hdefn Δ Γ x σ σ' rfl hc
+      have hcw' := ctxWfV_ctxConv hc hcw
+      exact ⟨HasType.let_poly hd hcw' hb',
+        HasTypeRT.let_poly (hdefn := hd) (hcw := hcw') rb'⟩
+  | int => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.int, HasTypeRT.int⟩
+  | str => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.str, HasTypeRT.str⟩
+  | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.bin, HasTypeRT.bin⟩
+  | builtin hs hargs =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      exact ⟨HasType.builtin hs, HasTypeRT.builtin hs hargs⟩
+  | tail => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.tail, HasTypeRT.tail⟩
+  | cons => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.cons, HasTypeRT.cons⟩
+  | tag => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.tag, HasTypeRT.tag⟩
+  | nocases =>
+      intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.nocases, HasTypeRT.nocases⟩
+  | case_ => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.case_, HasTypeRT.case_⟩
+  | select => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.select, HasTypeRT.select⟩
+  | extend => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.extend, HasTypeRT.extend⟩
+  | overwrite =>
+      intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.overwrite, HasTypeRT.overwrite⟩
+  | empty => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.empty, HasTypeRT.empty⟩
+  | perform =>
+      intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.perform, HasTypeRT.perform⟩
+  | handle => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.handle, HasTypeRT.handle⟩
+  | @conv lvl Γ₁ e' τ' τ'' ε₁ ε₂ hh hτ hε rh ih =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨h'', rh''⟩ := ih Δ Γ x σ σ' rfl hc
+      exact ⟨HasType.conv h'' hτ hε, HasTypeRT.conv hτ hε rh''⟩
+
+/-- The head-binding (`Δ = []`) specialization of `hasTypeRT_ctxConv`, the form `stackSeg_input_conv`
+uses: from a stored assign-body's `HasTypeRT` witness, rebuild both the type-converted body
+derivation and its RT witness when the bound variable's type is rewritten along a `TyEquiv`. -/
+theorem hasTypeRT_ctxHead_conv {m : Type} {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {x : String}
+    {σ σ' τ ε : Ty} {h : HasType lvl ((x, .mono σ) :: Γ) e τ ε} (hrt : HasTypeRT h)
+    (hc : Ty.TyEquiv σ' σ) :
+    ∃ h' : HasType lvl ((x, .mono σ') :: Γ) e τ ε, HasTypeRT h' :=
+  hasTypeRT_ctxConv hrt [] Γ x σ σ' rfl hc
+
 /-! ## Sanity checks -/
 
 section Examples
