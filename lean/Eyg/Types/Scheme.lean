@@ -1084,6 +1084,30 @@ theorem mem_levels_substAt_strong {ℓ l : Nat} {σ : Nat → Ty} {t : Ty}
         · exact Or.inr ⟨Or.inr hm, h'⟩
   | _ => simp only [substAt, levels] at h; exact absurd h (by simp)
 
+/-- **A ground (level-`ℓ`-free) substitution removes the outer level.** If `σ` never introduces the
+outer level `ℓ`, then `substAt ℓ σ t` contains no `ℓ` tag: every `var ℓ _` leaf is replaced by an
+`ℓ`-free `σ _`, and no other leaf carries `ℓ`. This is the fact the `hasTypeRT_subst` var/builtin arms
+need to drop the `ℓ` disjunct from the input args' level bound. -/
+theorem not_mem_levels_substAt {ℓ : Nat} {σ : Nat → Ty} (hσ : ∀ i, ℓ ∉ (σ i).levels) (t : Ty) :
+    ℓ ∉ (substAt ℓ σ t).levels := by
+  induction t with
+  | var l' i =>
+      simp only [substAt]
+      by_cases hl' : l' = ℓ
+      · rw [if_pos hl']; exact hσ i
+      · rw [if_neg hl']; simp only [levels, List.mem_singleton]; intro h; exact hl' h.symm
+  | «fun» a e r iha ihe ihr =>
+      simp only [substAt, levels, List.mem_append, not_or]; exact ⟨⟨iha, ihe⟩, ihr⟩
+  | list a ih => simpa only [substAt, levels] using ih
+  | record r ih => simpa only [substAt, levels] using ih
+  | union r ih => simpa only [substAt, levels] using ih
+  | promise a ih => simpa only [substAt, levels] using ih
+  | rowExtend l' f t ihf iht =>
+      simp only [substAt, levels, List.mem_append, not_or]; exact ⟨ihf, iht⟩
+  | effectExtend l' a b t iha ihb iht =>
+      simp only [substAt, levels, List.mem_append, not_or]; exact ⟨⟨iha, ihb⟩, iht⟩
+  | _ => simp only [substAt, levels]; exact fun h => by simp at h
+
 /-- **Cross-level commutation for a body with no occurrence at the outer level.** -/
 theorem substAt_substAt_comm_of_no_mem {ℓ1 ℓ2 : Nat} (hne : ℓ1 ≠ ℓ2) {σ τ : Nat → Ty} {t : Ty}
     (hclosed : ∀ j, j ∉ freeVarsAt ℓ1 t) :

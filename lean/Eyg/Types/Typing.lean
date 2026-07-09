@@ -1032,6 +1032,92 @@ inductive HasTypeRT {m : Type} :
       (hτ : Ty.TyEquiv τ τ') (hε : Ty.TyEquiv ε ε') :
       HasTypeRT h → HasTypeRT (HasType.conv h hτ hε)
 
+/-! ## The level-`ℓ`-aware strengthening `HasTypeRTAt ℓ` (gap 1: closure-body re-typing)
+
+`HasTypeRT` bounds a control's `var`/`builtin` instantiation args' levels by `{0, s.level}`. At a
+closure application the new control is the closure **body**, which — for a legitimately-typed nested
+polymorphic program (e.g. `\w. a w` with `a : ∀α. α→α` used at `[.var 2 0]`) — carries args at the
+*inner generalization level* `ℓ` (here `2`), NOT yet ground. Such a body is re-typed by the poly-let
+keystone via `substAt ℓ (ground σ)`, which grounds those `ℓ`-tagged args (`[.var 2 0] ↦ [W]`),
+recovering `HasTypeRT` of the re-typed derivation.
+
+`HasTypeRTAt ℓ h` is the precondition that re-typing needs: it is exactly `HasTypeRT`, but its
+`var`/`builtin` arms bound args by `{0, ℓ, s.level}` (one extra `ℓ` disjunct). `hasTypeRT_subst` then
+consumes it and — under a ground `σ` — produces `HasTypeRT` of the re-typed derivation (the `ℓ`
+disjunct is discharged: `substAt ℓ σ` removes `ℓ` and introduces only `0`, per
+`Ty.not_mem_levels_substAt`/`Ty.mem_levels_substAt_strong`). Like `HasTypeRT`, it does **not** recurse
+into `lam`/`let_poly` bodies (they become controls only on their own closure application, re-typed
+freshly). -/
+inductive HasTypeRTAt {m : Type} (ℓ : Nat) :
+    {lvl : Nat} → {Γ : Ctx} → {e : Tree.Node m} → {τ ε : Ty} →
+    HasType lvl Γ e τ ε → Prop where
+  | var {lvl Γ x s args ε a} (hl : Γ.lookup x = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = ℓ ∨ l = s.level) :
+      HasTypeRTAt ℓ (HasType.var (lvl := lvl) (Γ := Γ) (x := x) (s := s) (args := args)
+        (ε := ε) (a := a) hl)
+  | lam {lvl lvl' Γ x body argTy εb retTy ε a}
+      (hle : lvl ≤ lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono argTy) :: Γ) body retTy εb} :
+      HasTypeRTAt ℓ (HasType.lam (ε := ε) (a := a) hle hfv hbody)
+  | app {lvl Γ f arg argTy εf retTy ε a}
+      {hf : HasType lvl Γ f (.fun argTy εf retTy) ε} {hw : Ty.EffWeaken εf ε}
+      {harg : HasType lvl Γ arg argTy ε} :
+      HasTypeRTAt ℓ hf → HasTypeRTAt ℓ harg → HasTypeRTAt ℓ (HasType.app (a := a) hf hw harg)
+  | let_ {lvl lvl' Γ x defn body defnTy bodyTy ε a}
+      {hdefn : HasType lvl Γ defn defnTy ε} (hle : lvl ≤ lvl')
+      (hfv : ∀ l ∈ defnTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body bodyTy ε} :
+      HasTypeRTAt ℓ hdefn → HasTypeRTAt ℓ hbody →
+      HasTypeRTAt ℓ (HasType.let_ (a := a) hdefn hle hfv hbody)
+  | let_poly {lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a}
+      (hstrict : lvl < lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbodydefn : HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb} {hcw : CtxWfV lvl Γ}
+      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body bodyTy ε} :
+      HasTypeRTAt ℓ hbody →
+      HasTypeRTAt ℓ (HasType.let_poly (a := a) (la := la) hstrict hfv hbodydefn hcw hbody)
+  | int {lvl Γ n ε a} :
+      HasTypeRTAt ℓ (HasType.int (m := m) (lvl := lvl) (Γ := Γ) (n := n) (ε := ε) (a := a))
+  | str {lvl Γ s ε a} :
+      HasTypeRTAt ℓ (HasType.str (m := m) (lvl := lvl) (Γ := Γ) (s := s) (ε := ε) (a := a))
+  | bin {lvl Γ b ε a} :
+      HasTypeRTAt ℓ (HasType.bin (m := m) (lvl := lvl) (Γ := Γ) (b := b) (ε := ε) (a := a))
+  | builtin {lvl Γ id s args ε a} (hs : Builtins.scheme id = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = ℓ ∨ l = s.level) :
+      HasTypeRTAt ℓ (HasType.builtin (lvl := lvl) (Γ := Γ) (args := args) (ε := ε) (a := a) hs)
+  | tail {lvl Γ elem ε a} :
+      HasTypeRTAt ℓ (HasType.tail (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | cons {lvl Γ elem ε a} :
+      HasTypeRTAt ℓ (HasType.cons (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | tag {lvl Γ l elem tail ε a} :
+      HasTypeRTAt ℓ (HasType.tag (m := m) (lvl := lvl) (Γ := Γ) (l := l) (elem := elem)
+        (tail := tail) (ε := ε) (a := a))
+  | nocases {lvl Γ ret ε a} :
+      HasTypeRTAt ℓ (HasType.nocases (m := m) (lvl := lvl) (Γ := Γ) (ret := ret) (ε := ε)
+        (a := a))
+  | case_ {lvl Γ l inner eff ret tail ε a} :
+      HasTypeRTAt ℓ (HasType.case_ (m := m) (lvl := lvl) (Γ := Γ) (l := l) (inner := inner)
+        (eff := eff) (ret := ret) (tail := tail) (ε := ε) (a := a))
+  | select {lvl Γ l fieldTy tail ε a} :
+      HasTypeRTAt ℓ (HasType.select (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (tail := tail) (ε := ε) (a := a))
+  | extend {lvl Γ l fieldTy row ε a} :
+      HasTypeRTAt ℓ (HasType.extend (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (row := row) (ε := ε) (a := a))
+  | overwrite {lvl Γ l newTy oldTy tail ε a} :
+      HasTypeRTAt ℓ (HasType.overwrite (m := m) (lvl := lvl) (Γ := Γ) (l := l) (newTy := newTy)
+        (oldTy := oldTy) (tail := tail) (ε := ε) (a := a))
+  | empty {lvl Γ ε a} :
+      HasTypeRTAt ℓ (HasType.empty (m := m) (lvl := lvl) (Γ := Γ) (ε := ε) (a := a))
+  | perform {lvl Γ l aa b μ ε ann} :
+      HasTypeRTAt ℓ (HasType.perform (m := m) (lvl := lvl) (Γ := Γ) (l := l) (a := aa) (b := b)
+        (μ := μ) (ε := ε) (ann := ann))
+  | handle {lvl Γ l lift reply tail ret ε ann} :
+      HasTypeRTAt ℓ (HasType.handle (m := m) (lvl := lvl) (Γ := Γ) (l := l) (lift := lift)
+        (reply := reply) (tail := tail) (ret := ret) (ε := ε) (ann := ann))
+  | conv {lvl Γ e τ τ' ε ε'} {h : HasType lvl Γ e τ ε}
+      (hτ : Ty.TyEquiv τ τ') (hε : Ty.TyEquiv ε ε') :
+      HasTypeRTAt ℓ h → HasTypeRTAt ℓ (HasType.conv h hτ hε)
+
 /-- **The var-preservation discharge lemma.** From a `HasTypeRT` control derivation on a bare
 variable node, recover the looked-up scheme, its instantiation args, the lookup, the equivalence (as
 `inv_var`) **and** the args side-condition needed to apply `envwf_lookup`'s conditional readiness
