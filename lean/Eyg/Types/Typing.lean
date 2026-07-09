@@ -1183,6 +1183,173 @@ theorem hasTypeRT_ctxHead_conv {m : Type} {lvl : Nat} {Γ : Ctx} {e : Tree.Node 
     ∃ h' : HasType lvl ((x, .mono σ') :: Γ) e τ ε, HasTypeRT h' :=
   hasTypeRT_ctxConv hrt [] Γ x σ σ' rfl hc
 
+/-! ## Global level cap `LevelsBelow` (freshness discipline for the generalization-level raise)
+
+The generalization-level *raise* (`hasType_raise`, below/next session) relabels every reachable
+`let_poly`'s stored generalization level `k ↦ k + o` and must pick the target genuinely **fresh**
+w.r.t. that node's own `defnTy` (`k + o ∉ defnTy.levels`, so the relabel does not inflate `genAtV`'s
+arity — Session G9 Finding 2(b)). A single uniform offset `o ≥ N`, with `N` a strict upper bound on
+every `let_poly`-`defnTy` level anywhere in the derivation, discharges this uniformly. `LevelsBelow N h`
+is that bound as a `NoGenAt`-shaped inductive (indexed by the derivation): its `let_poly` arm records
+`∀ l ∈ defnTy.levels, l < N` and every arm recurses; `exists_levelsBelow` supplies some `N` for any
+derivation (finite syntax ⇒ finitely many levels ⇒ take the max). -/
+
+/-- **Every reachable `let_poly`'s `defnTy` has all its levels `< N`** (a parallel-to-`HasType`
+predicate, indexed by the derivation, mirroring `NoGenAt`). Only the `let_poly` arm carries a
+non-trivial bound (`∀ l ∈ defnTy.levels, l < N`); every constructor recurses on its
+sub-derivation(s). Consumed by `hasType_raise` to pick a fresh relabel target `k + o` with
+`o ≥ N`. -/
+inductive LevelsBelow {m : Type} (N : Nat) :
+    {lvl : Nat} → {Γ : Ctx} → {e : Tree.Node m} → {τ ε : Ty} →
+    HasType lvl Γ e τ ε → Prop where
+  | var {lvl Γ x s args ε a} (hl : Γ.lookup x = some s) :
+      LevelsBelow N (HasType.var (lvl := lvl) (Γ := Γ) (x := x) (s := s) (args := args)
+        (ε := ε) (a := a) hl)
+  | lam {lvl lvl' Γ x body argTy εb retTy ε a}
+      (hle : lvl ≤ lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono argTy) :: Γ) body retTy εb} :
+      LevelsBelow N hbody → LevelsBelow N (HasType.lam (ε := ε) (a := a) hle hfv hbody)
+  | app {lvl Γ f arg argTy εf retTy ε a}
+      {hf : HasType lvl Γ f (.fun argTy εf retTy) ε} {hw : Ty.EffWeaken εf ε}
+      {harg : HasType lvl Γ arg argTy ε} :
+      LevelsBelow N hf → LevelsBelow N harg → LevelsBelow N (HasType.app (a := a) hf hw harg)
+  | let_ {lvl lvl' Γ x defn body defnTy bodyTy ε a}
+      {hdefn : HasType lvl Γ defn defnTy ε} (hle : lvl ≤ lvl')
+      (hfv : ∀ l ∈ defnTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body bodyTy ε} :
+      LevelsBelow N hdefn → LevelsBelow N hbody →
+      LevelsBelow N (HasType.let_ (a := a) hdefn hle hfv hbody)
+  | let_poly {lvl Γ x lx lbody la body defnTy bodyTy ε a}
+      {hdefn : HasType lvl Γ ⟨.Lambda lx lbody, la⟩ defnTy ε} {hcw : CtxWfV lvl Γ}
+      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body bodyTy ε} :
+      (∀ l ∈ defnTy.levels, l < N) → LevelsBelow N hdefn → LevelsBelow N hbody →
+      LevelsBelow N (HasType.let_poly (a := a) hdefn hcw hbody)
+  | int {lvl Γ n ε a} :
+      LevelsBelow N (HasType.int (m := m) (lvl := lvl) (Γ := Γ) (n := n) (ε := ε) (a := a))
+  | str {lvl Γ s ε a} :
+      LevelsBelow N (HasType.str (m := m) (lvl := lvl) (Γ := Γ) (s := s) (ε := ε) (a := a))
+  | bin {lvl Γ b ε a} :
+      LevelsBelow N (HasType.bin (m := m) (lvl := lvl) (Γ := Γ) (b := b) (ε := ε) (a := a))
+  | builtin {lvl Γ id s args ε a} (hs : Builtins.scheme id = some s) :
+      LevelsBelow N (HasType.builtin (lvl := lvl) (Γ := Γ) (args := args) (ε := ε) (a := a) hs)
+  | tail {lvl Γ elem ε a} :
+      LevelsBelow N (HasType.tail (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | cons {lvl Γ elem ε a} :
+      LevelsBelow N (HasType.cons (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | tag {lvl Γ l elem tail ε a} :
+      LevelsBelow N (HasType.tag (m := m) (lvl := lvl) (Γ := Γ) (l := l) (elem := elem)
+        (tail := tail) (ε := ε) (a := a))
+  | nocases {lvl Γ ret ε a} :
+      LevelsBelow N (HasType.nocases (m := m) (lvl := lvl) (Γ := Γ) (ret := ret) (ε := ε)
+        (a := a))
+  | case_ {lvl Γ l inner eff ret tail ε a} :
+      LevelsBelow N (HasType.case_ (m := m) (lvl := lvl) (Γ := Γ) (l := l) (inner := inner)
+        (eff := eff) (ret := ret) (tail := tail) (ε := ε) (a := a))
+  | select {lvl Γ l fieldTy tail ε a} :
+      LevelsBelow N (HasType.select (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (tail := tail) (ε := ε) (a := a))
+  | extend {lvl Γ l fieldTy row ε a} :
+      LevelsBelow N (HasType.extend (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (row := row) (ε := ε) (a := a))
+  | overwrite {lvl Γ l newTy oldTy tail ε a} :
+      LevelsBelow N (HasType.overwrite (m := m) (lvl := lvl) (Γ := Γ) (l := l) (newTy := newTy)
+        (oldTy := oldTy) (tail := tail) (ε := ε) (a := a))
+  | empty {lvl Γ ε a} :
+      LevelsBelow N (HasType.empty (m := m) (lvl := lvl) (Γ := Γ) (ε := ε) (a := a))
+  | perform {lvl Γ l aa b μ ε ann} :
+      LevelsBelow N (HasType.perform (m := m) (lvl := lvl) (Γ := Γ) (l := l) (a := aa) (b := b)
+        (μ := μ) (ε := ε) (ann := ann))
+  | handle {lvl Γ l lift reply tail ret ε ann} :
+      LevelsBelow N (HasType.handle (m := m) (lvl := lvl) (Γ := Γ) (l := l) (lift := lift)
+        (reply := reply) (tail := tail) (ret := ret) (ε := ε) (ann := ann))
+  | conv {lvl Γ e τ τ' ε ε'} {h : HasType lvl Γ e τ ε}
+      (hτ : Ty.TyEquiv τ τ') (hε : Ty.TyEquiv ε ε') :
+      LevelsBelow N h → LevelsBelow N (HasType.conv h hτ hε)
+
+/-- **Monotonicity of the global level cap.** A derivation bounded by `N` is bounded by any `N' ≥ N`. -/
+theorem LevelsBelow.mono {m : Type} {N N' : Nat} (hle : N ≤ N')
+    {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} {h : HasType lvl Γ e τ ε}
+    (hlb : LevelsBelow N h) : LevelsBelow N' h := by
+  induction hlb with
+  | var hl => exact LevelsBelow.var hl
+  | lam hle' hfv _ ih => exact LevelsBelow.lam hle' hfv ih
+  | @app lvl Γ f arg argTy εf retTy ε a hf hw harg _ _ ihf iharg =>
+      exact LevelsBelow.app (hw := hw) ihf iharg
+  | let_ hle' hfv _ _ ihd ihb => exact LevelsBelow.let_ hle' hfv ihd ihb
+  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody hbnd _ _ ihd ihb =>
+      exact LevelsBelow.let_poly (hcw := hcw)
+        (fun l hl => lt_of_lt_of_le (hbnd l hl) hle) ihd ihb
+  | int => exact LevelsBelow.int
+  | str => exact LevelsBelow.str
+  | bin => exact LevelsBelow.bin
+  | builtin hs => exact LevelsBelow.builtin hs
+  | tail => exact LevelsBelow.tail
+  | cons => exact LevelsBelow.cons
+  | tag => exact LevelsBelow.tag
+  | nocases => exact LevelsBelow.nocases
+  | case_ => exact LevelsBelow.case_
+  | select => exact LevelsBelow.select
+  | extend => exact LevelsBelow.extend
+  | overwrite => exact LevelsBelow.overwrite
+  | empty => exact LevelsBelow.empty
+  | perform => exact LevelsBelow.perform
+  | handle => exact LevelsBelow.handle
+  | conv hτ hε _ ih => exact LevelsBelow.conv hτ hε ih
+
+/-- **Existence of a global level cap.** Every derivation has *some* `N` bounding all its reachable
+`let_poly`-`defnTy` levels (finite syntax; take the max via `LevelsBelow.mono`). This is the freshness
+budget the generalization-level raise spends (offset `o ≥ N`). -/
+theorem exists_levelsBelow {m : Type} {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    (h : HasType lvl Γ e τ ε) : ∃ N, LevelsBelow N h := by
+  induction h with
+  | var hl => exact ⟨0, LevelsBelow.var hl⟩
+  | lam hle hfv _ ih =>
+      obtain ⟨N, hN⟩ := ih; exact ⟨N, LevelsBelow.lam hle hfv hN⟩
+  | @app lvl Γ f arg argTy εf retTy ε a hf hw harg ihf iharg =>
+      obtain ⟨Nf, hNf⟩ := ihf; obtain ⟨Na, hNa⟩ := iharg
+      exact ⟨max Nf Na, LevelsBelow.app (hw := hw)
+        (hNf.mono (le_max_left _ _)) (hNa.mono (le_max_right _ _))⟩
+  | let_ hdefn hle hfv _ ihd ihb =>
+      obtain ⟨Nd, hNd⟩ := ihd; obtain ⟨Nb, hNb⟩ := ihb
+      exact ⟨max Nd Nb, LevelsBelow.let_ hle hfv (hNd.mono (le_max_left _ _))
+        (hNb.mono (le_max_right _ _))⟩
+  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody ihd ihb =>
+      obtain ⟨Nd, hNd⟩ := ihd; obtain ⟨Nb, hNb⟩ := ihb
+      refine ⟨max (defnTy.levels.foldr max 0 + 1) (max Nd Nb),
+        LevelsBelow.let_poly (hcw := hcw) ?_ (hNd.mono ?_) (hNb.mono ?_)⟩
+      · intro l hl
+        have hle : l ≤ defnTy.levels.foldr max 0 := by
+          have key : ∀ (ls : List Nat), l ∈ ls → l ≤ ls.foldr max 0 := by
+            intro ls hls
+            induction ls with
+            | nil => simp at hls
+            | cons hd tl ih =>
+                simp only [List.foldr]
+                rcases List.mem_cons.mp hls with rfl | h
+                · exact le_max_left _ _
+                · exact le_trans (ih h) (le_max_right _ _)
+          exact key _ hl
+        omega
+      · exact le_trans (le_max_left _ _) (le_max_right _ _)
+      · exact le_trans (le_max_right _ _) (le_max_right _ _)
+  | int => exact ⟨0, LevelsBelow.int⟩
+  | str => exact ⟨0, LevelsBelow.str⟩
+  | bin => exact ⟨0, LevelsBelow.bin⟩
+  | builtin hs => exact ⟨0, LevelsBelow.builtin hs⟩
+  | tail => exact ⟨0, LevelsBelow.tail⟩
+  | cons => exact ⟨0, LevelsBelow.cons⟩
+  | tag => exact ⟨0, LevelsBelow.tag⟩
+  | nocases => exact ⟨0, LevelsBelow.nocases⟩
+  | case_ => exact ⟨0, LevelsBelow.case_⟩
+  | select => exact ⟨0, LevelsBelow.select⟩
+  | extend => exact ⟨0, LevelsBelow.extend⟩
+  | overwrite => exact ⟨0, LevelsBelow.overwrite⟩
+  | empty => exact ⟨0, LevelsBelow.empty⟩
+  | perform => exact ⟨0, LevelsBelow.perform⟩
+  | handle => exact ⟨0, LevelsBelow.handle⟩
+  | conv _ hτ hε ih =>
+      obtain ⟨N, hN⟩ := ih; exact ⟨N, LevelsBelow.conv hτ hε hN⟩
+
 /-! ## Sanity checks -/
 
 section Examples
