@@ -643,6 +643,43 @@ the datatype change itself.
       (5) **Landed `Ty.substAt_substAt_same`** (`Scheme.lean`, `c50bbfe9`): same-level substitution
       composition, unconditional — the renaming-step building block. Per-file green, no `sorry`, axioms
       unchanged. Soundness.lean left as found. Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G8 — G7's freshen/mono-ize split CORRECTED: the escaping inner
+      `let_poly` is freshenable via re-instantiation, so the mono-ize branch is unnecessary; the
+      residual corner reduces to a SINGLE level-raising lemma; one green additive commit `68f207d3` to
+      `Typing.lean`; see
+      `progress/2026-07-09-G1-phase6-sessionG8-escape-freshenable-reinstantiation.md`):** No LSP.
+      (1) **The "escape ⇒ mono-ize" dichotomy is imprecise.** G7's escape witness
+      `\x. (let h = \z.z in h)` (inner gen var re-surfaces in `retTy = β→β`, `arity ≠ 0` — the genuinely
+      hard corner, unlike `advPerf`'s vacuous ground inner let) is **freshenable**, not requiring
+      mono-ize. The level-`lvl` var in `retTy` is produced by *instantiating* the inner scheme at an
+      outer/lower variable, and that argument is chosen independently of the inner scheme's gen level —
+      so the inner level moves fresh while the identical argument reproduces the identical `retTy`.
+      Machine-checked: `escLam_lvl1` (inner `let_poly` at level `1`, escaping; `genAtV 1 escDefnTy`
+      `arity 2`) and `escLam_lvl2` (inner `let_poly` freshened to level `2`, use re-instantiated at the
+      identical `[var 1 0, var 1 0]`) prove the **identical judgment**; `NoGenAt 1` holds via
+      `noGenAt_of_lt` + proof irrelevance, **no** mono-ize / principal-types step. Landed as permanent
+      green witnesses in `section Examples`. (2) **Why re-instantiation dissolves G7's representation
+      wall.** The correct transformation is not a tag-uniform *type substitution* (ill-defined, G7
+      Finding 1) but a *re-elaboration*: re-tag the inner node's own gen level to fresh on its **defn
+      subtree only** (well-defined, since `CtxWfV lvl Γ` — `Typing.lean:51`, `∀ b ∈ Γ, ∀ l ∈
+      b.2.body.levels, l < ℓ` — forbids any level-`lvl` var in the *context*, so the only level-`lvl`
+      vars in the defn are this node's own gen vars) and re-instantiate each use at the same arguments.
+      A use's result type depends only on its instantiation **arguments** (outer/ground, unchanged),
+      never on the inner gen level (bound-and-gone), so `retTy` is preserved; the interface is never
+      substituted at `lvl`, so no tag collision. (3) **Re-characterized metatheorem (supersedes G7's
+      split):** the residual corner needs a **single** level-raising lemma, not a two-branch case split —
+      `hasType_raise_sublevel : HasType lvl Γ e τ ε → CtxWfV lvl Γ → HasType (lvl+1) Γ e τ ε` (same
+      `Γ`/`τ`/`ε`), whose `let_poly` arm re-tags `genAtV lvl d ↦ genAtV (lvl+1) (substAt lvl (·↦var
+      (lvl+1)) d)` on the defn and threads identical args through the body's `var` uses (commutation =
+      `substAt_substAt_same` + `substAt_substAt_comm`); `CtxWfV lvl Γ` keeps the raise from ever
+      touching a context scheme. One raise turns the wrapper's residual `lvl' = lvl` into `lvl' > lvl`,
+      whence `noGenAt_of_lt` discharges `NoGenAt lvl` with zero soundness narrowing. Cleaner/smaller
+      than G7's split (no mono-ize, no escape predicate, no global fresh-level allocation). **Not proved
+      this session** — statement pinned, `let_poly`-arm mechanism validated on the witness; the 21-arm
+      induction (genAtV/instantiateV re-instantiation commutation) is high-risk under batch `lake env
+      lean`, wants live LSP. Per-file green, no `sorry`, axioms `[propext]`. Soundness.lean left as
+      found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
