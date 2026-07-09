@@ -521,6 +521,38 @@ the datatype change itself.
       fact that must be threaded as an `MStateWf` invariant (gap-2 analog of gap-1's `HasTypeRT`) —
       candidate: strengthen the already-wired `HasTypeRT` control witness to also carry `NoGenAt`.
       Soundness.lean left exactly as found. Caveat 5 OPEN.
+
+      **Progress 2026-07-08 (Session G4 — step 1 linchpin `hasTypeRT_ctxConv` LANDED; step 2 frame-RT
+      threading LANDED across Runtime+Machine; step 3 Soundness grind assessed, gap-2 provenance
+      pinned; see `progress/2026-07-08-G1-phase6-sessionG4-steps1-2-landed.md`):** No LSP. Two green
+      additive commits. (1) **`hasTypeRT_ctxConv` + `hasTypeRT_ctxHead_conv`** (`Typing.lean`,
+      commit `4d232f7b`) — the RT companion to `hasType_ctxConv`. Because `HasTypeRT` is indexed by the
+      *specific* derivation and `hasType_ctxConv`'s output is an opaque recursor application that
+      case-splits on the runtime binder lookup, it is stated **bundled** as `∃ h', HasTypeRT h'`
+      (rebuilding a fresh converted derivation + its RT arm-for-arm, 21 RT arms), NOT as
+      `HasTypeRT (hasType_ctxConv h …)`. The var conv-subcase is discharged because both `.mono σ` and
+      `.mono σ'` have `.level = 0`, so the args-level side-condition transports verbatim; `lam`/`let_poly`
+      defn subterms reuse the plain `hasType_ctxConv`. (2) **Step 2 frame-RT threading** (`Runtime.lean`
+      + `Machine.lean`, commit `c223c4c1`) — added a `HasTypeRT hbody`/`HasTypeRT harg` field to the
+      `assign`/`arg` constructors of both `StackSegWf` and `StackWf`; threaded through
+      `stackSeg_conv_output`/`_input_conv` (the latter via `hasTypeRT_ctxHead_conv`)/`_append`,
+      `stackSeg_toStackWf`, `stackWf_assign_inv`/`_arg_inv` (now surface the RT existentially), the
+      `StackWfV`/`StackWfE` Assign heads, and `stackWf_toStackWfV`/`E`, `stackWfE_toStackWf`/
+      `_lambda_step`/`_value_step`. Both files + all non-Soundness deps per-file green; no `sorry`, no new
+      axioms. (3) **Working-tree Soundness.lean re-characterized** (correcting Session G3's note): the
+      uncommitted diff is only **53 lines** of *legit* level-tag migration (not "structurally mangled"):
+      `StackWfB` **IS defined** at :2443 (T7 groundwork — not an unknown identifier), and there is
+      **NO `sorry`** anywhere in the current working tree. 103 cascading errors from an *incomplete*
+      migration (starts at :34 `mStateWf_E` — still out of sync with the RT-carrying `MStateWf.E`).
+      (4) **Gap-2 provenance pinned.** The `let_poly` preservation case (`Soundness.lean:243`) needs
+      three facts `genAtV_closure_ready_value_node` requires but that are absent at the runtime site:
+      `hℓ : lvl ≠ 0` (solvable: run `soundness` at a fixed ambient `lvl ≥ 1`, threaded via `MStateWf`),
+      `hΓpa : PolyAboveFV lvl Γ ⟨.Lambda …⟩` (candidate: derive from `CtxWfV`/`PolyAbove`, or thread as
+      an `MStateWf` invariant), and the sharp one `hng : NoGenAt lvl hdefn` (the gap-2 analog of gap-1's
+      `HasTypeRT` — most likely must become a new `MStateWf.E` invariant, e.g. strengthen the wired
+      `HasTypeRT` witness to also carry `NoGenAt` of the control). Full-green Soundness is a multi-session
+      grind + this gap-2 design resolution; **not** reachable blind this session. Soundness.lean left as
+      found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
