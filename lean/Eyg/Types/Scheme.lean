@@ -1229,6 +1229,89 @@ theorem substAt_relabel_getD {ℓ f : Nat} (hne : f ≠ ℓ) {d : Ty} (hf : f �
         iht hf.2 (fun i hi => hcov i (Or.inr hi))]
   | _ => rfl
 
+/-- **Uniform generalization-level raise on a type.** Relabel *every* variable at a level `≥ t` by
+the offset `o` (`var l i ↦ var (l+o) i` for `t ≤ l`), fixing all levels `< t`. This is the
+*multi-level* type transformation the generalization-level raise's relabel mode actually needs (see
+`plan/progress/2026-07-09-…-sessionG13-…`): a single-level `substAt k` relabel suffices **only** when
+the type's sole `≥ t` level is the designated `k` (`raiseTy_eq_substAt_of_single` below), which fails
+in general once a relabel-`k` descent passes — through the shared, mode-independent `raiseCtx` — an
+inner binding generalized at a different level `k' ≠ k` whose stored body carries foreign level-`k`
+content. -/
+def raiseTy (t o : Nat) : Ty → Ty
+  | .var l i => if t ≤ l then .var (l + o) i else .var l i
+  | .fun a e r => .fun (raiseTy t o a) (raiseTy t o e) (raiseTy t o r)
+  | .binary => .binary
+  | .integer => .integer
+  | .string => .string
+  | .list a => .list (raiseTy t o a)
+  | .record r => .record (raiseTy t o r)
+  | .union r => .union (raiseTy t o r)
+  | .empty => .empty
+  | .rowExtend l f tl => .rowExtend l (raiseTy t o f) (raiseTy t o tl)
+  | .effectExtend l a b tl => .effectExtend l (raiseTy t o a) (raiseTy t o b) (raiseTy t o tl)
+  | .never => .never
+  | .promise a => .promise (raiseTy t o a)
+
+/-- `raiseTy` fixes a type all of whose levels are strictly below the threshold. -/
+theorem raiseTy_eq_self_of_levels_lt {t o : Nat} {d : Ty} (h : ∀ l ∈ d.levels, l < t) :
+    raiseTy t o d = d := by
+  induction d with
+  | var l i =>
+      have hl : l < t := h l (by simp [levels])
+      simp only [raiseTy, if_neg (Nat.not_le.mpr hl)]
+  | «fun» a e r iha ihe ihr =>
+      simp only [levels, List.mem_append] at h
+      simp only [raiseTy, iha (fun l hl => h l (Or.inl (Or.inl hl))),
+        ihe (fun l hl => h l (Or.inl (Or.inr hl))), ihr (fun l hl => h l (Or.inr hl))]
+  | list a ih => simp only [levels] at h; simp only [raiseTy, ih h]
+  | record r ih => simp only [levels] at h; simp only [raiseTy, ih h]
+  | union r ih => simp only [levels] at h; simp only [raiseTy, ih h]
+  | promise a ih => simp only [levels] at h; simp only [raiseTy, ih h]
+  | rowExtend l f tl ihf iht =>
+      simp only [levels, List.mem_append] at h
+      simp only [raiseTy, ihf (fun l hl => h l (Or.inl hl)), iht (fun l hl => h l (Or.inr hl))]
+  | effectExtend l a b tl iha ihb iht =>
+      simp only [levels, List.mem_append] at h
+      simp only [raiseTy, iha (fun l hl => h l (Or.inl (Or.inl hl))),
+        ihb (fun l hl => h l (Or.inl (Or.inr hl))), iht (fun l hl => h l (Or.inr hl))]
+  | _ => rfl
+
+/-- **Single-level `substAt` relabel equals the uniform `raiseTy`** exactly when the type's only
+level `≥ t` is the designated level `k` (`t ≤ k`). This pinpoints the invariant a *single*-relabel-
+level companion theorem would have to maintain on every stored scheme body it descends past: the body
+must carry no foreign `≥ t` level other than its own generalization level `k`. When that fails,
+`substAt k (·↦ var (k+o))` (which moves only level `k`) diverges from `raiseTy t o` (which moves every
+`≥ t` level), and the relabel accumulates additional levels — the core obstruction to the G12
+single-level-`k` blueprint. -/
+theorem raiseTy_eq_substAt_of_single {t o k : Nat} (htk : t ≤ k) {d : Ty}
+    (h : ∀ l ∈ d.levels, t ≤ l → l = k) :
+    raiseTy t o d = substAt k (fun i => var (k + o) i) d := by
+  induction d with
+  | var l i =>
+      by_cases hl : t ≤ l
+      · have hlk : l = k := h l (by simp [levels]) hl
+        subst hlk
+        simp only [raiseTy, substAt, if_pos hl, if_true]
+      · have hlk : l ≠ k := fun c => hl (c ▸ htk)
+        simp only [raiseTy, substAt, if_neg hl, if_neg hlk]
+  | «fun» a e r iha ihe ihr =>
+      simp only [levels, List.mem_append] at h
+      simp only [raiseTy, substAt, iha (fun l hl => h l (Or.inl (Or.inl hl))),
+        ihe (fun l hl => h l (Or.inl (Or.inr hl))), ihr (fun l hl => h l (Or.inr hl))]
+  | list a ih => simp only [levels] at h; simp only [raiseTy, substAt, ih h]
+  | record r ih => simp only [levels] at h; simp only [raiseTy, substAt, ih h]
+  | union r ih => simp only [levels] at h; simp only [raiseTy, substAt, ih h]
+  | promise a ih => simp only [levels] at h; simp only [raiseTy, substAt, ih h]
+  | rowExtend l f tl ihf iht =>
+      simp only [levels, List.mem_append] at h
+      simp only [raiseTy, substAt, ihf (fun l hl => h l (Or.inl hl)),
+        iht (fun l hl => h l (Or.inr hl))]
+  | effectExtend l a b tl iha ihb iht =>
+      simp only [levels, List.mem_append] at h
+      simp only [raiseTy, substAt, iha (fun l hl => h l (Or.inl (Or.inl hl))),
+        ihb (fun l hl => h l (Or.inl (Or.inr hl))), iht (fun l hl => h l (Or.inr hl))]
+  | _ => rfl
+
 end Ty
 
 /-- `substSchemeVAt` on a monomorphic scheme is `substAt` on its body. -/
