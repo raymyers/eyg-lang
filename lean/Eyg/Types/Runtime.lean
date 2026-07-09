@@ -77,7 +77,7 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   them), which is what makes `fix` preservation provable. -/
   | partialBuiltin {id s args applied a ε r τ} :
       PartialBuiltinWf id s applied →
-      BuiltinPartialWf (s.instantiate args) applied (.fun a ε r) →
+      BuiltinPartialWf (s.instantiateV args) applied (.fun a ε r) →
       Ty.TyEquiv (.fun a ε r) τ →
       HasTypeV (.Partial (.Builtin id) applied) τ
   /-- The empty list inhabits any list type. -/

@@ -396,6 +396,29 @@ theorem ctxPolyBd_cons_genAtV {Γ : Ctx} {x : String} {lvl : Nat} {d : Ty}
     exact heq ▸ hmem
   · exact hΓ b h harity
 
+/-- **The per-binding poly-boundedness fact for a `genAtV` scheme** (the `EnvWf.cons`/`StackWfV`
+`hpoly` obligation): a `genAtV lvl d` binding with `lvl ≠ 0` sits at a nonzero level that occurs
+among its body's levels whenever it is genuinely polymorphic (`arity ≠ 0`). -/
+theorem schemePolyBd_genAtV {lvl : Nat} {d : Ty} (hlvl : lvl ≠ 0) :
+    (Scheme.genAtV lvl d).arity ≠ 0 →
+      (Scheme.genAtV lvl d).level ≠ 0 ∧
+        (Scheme.genAtV lvl d).level ∈ (Scheme.genAtV lvl d).body.levels := by
+  intro harity
+  refine ⟨hlvl, ?_⟩
+  simp only [Scheme.genAtV] at harity ⊢
+  have hpos : 0 < (d.levels.filter (· = lvl)).length := Nat.pos_of_ne_zero harity
+  obtain ⟨a, ha⟩ := List.exists_mem_of_length_pos hpos
+  rw [List.mem_filter] at ha
+  obtain ⟨hmem, heq⟩ := ha
+  simp only [decide_eq_true_eq] at heq
+  exact heq ▸ hmem
+
+/-- The `hpoly` obligation for a monomorphic scheme is vacuous (`arity = 0`). -/
+theorem schemePolyBd_mono {t : Ty} :
+    (Scheme.mono t).arity ≠ 0 →
+      (Scheme.mono t).level ≠ 0 ∧ (Scheme.mono t).level ∈ (Scheme.mono t).body.levels :=
+  fun h => absurd rfl h
+
 /-- A monomorphic binding preserves `CtxPolyBd` (its `arity = 0`, so the obligation is vacuous). -/
 theorem ctxPolyBd_cons_mono {Γ : Ctx} {x : String} {t : Ty} (hΓ : CtxPolyBd Γ) :
     CtxPolyBd ((x, Scheme.mono t) :: Γ) := by
