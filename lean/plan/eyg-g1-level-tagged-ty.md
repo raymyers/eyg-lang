@@ -368,6 +368,24 @@ the datatype change itself.
       side-condition (the level-native analog of the pre-G1 `ctxWf_fixed`/`subst_eq_of_fixes_free`),
       best settled with the Soundness preservation cases that produce the args — judgment bookkeeping,
       not open mathematics. Full analysis in the note.
+      **Progress 2026-07-08 (Session C — referencing-case gap CLOSED; Soundness re-green still pending),
+      commit `32c42948`, see
+      `progress/2026-07-08-G1-phase6-sessionC-referencing-case-closed-soundness-pending.md`:** Part 1
+      done via two coordinated additive changes — (1) weaken `PolyAboveFV`'s per-variable disjunct from
+      `ℓ < s.level` to `s.level ≠ 0 ∧ s.level ≠ ℓ` (admits referenced bindings *below* `ℓ`); (2) tighten
+      the substitution/args side-condition from `l ≤ ℓ` to `l = 0 ∨ l = ℓ` throughout (`hasType_subst`,
+      `genAtV_instantiate_lam_ready`, `genAtV_closure_ready_value`, `EnvWf.cons`/`envwf_lookup`,
+      `StackWfV`/`StackWfE`). The `var` arm derives cleanliness `s.level ∉ σ.levels` from
+      `σ.levels ⊆ {0, ℓ}` + `s.level ∉ {0, ℓ}`, uniformly below *and* above `ℓ`. Validated non-vacuously
+      (permanent regression examples in `Typing.lean`: `polyAboveFV_reflam`, `hbody_ref`, keystone firing
+      to `Integer → Integer`, whole referencing program `let a = \x.x in (let c = \w. a w in c)` at
+      `HasType 1 []`). Per-file green, axioms `[propext, Classical.choice, Quot.sound]`, no `sorry`.
+      **Part 2 (re-green `Soundness.lean`) NOT reached** — 103 errors; working-tree Soundness found
+      partially migrated, left as-found (uncommitted, unedited this session). One non-mechanical
+      obstruction for Session D: var-preservation must discharge the tightened args side-condition for
+      args `HasType.var` does not record — needs a runtime "instantiation args are ground/ambient-level"
+      invariant on the machine-state typing (NOT a premise on `HasType.var`, which would wrongly reject
+      typing-time instantiations). Error-cluster map + recommended Session D order in the note.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
