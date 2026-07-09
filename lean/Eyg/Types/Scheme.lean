@@ -475,6 +475,29 @@ theorem substAt_substAt_comm {ℓ1 ℓ2 : Nat} (hne : ℓ1 ≠ ℓ2) {σ : Nat �
   | effectExtend l a b t iha ihb iht => simp only [substAt, iha, ihb, iht]
   | _ => rfl
 
+/-- **Same-level substitution composition.** Two substitutions *at the very same level* `ℓ` compose
+into one: the outer `substAt ℓ σ` applied after the inner `substAt ℓ τ` is `substAt ℓ` of the
+composite map `i ↦ substAt ℓ σ (τ i)`. Unlike `substAt_substAt_comm` (distinct levels, needing
+`hclean`) this holds **unconditionally**, because a `var ℓ i` leaf is rewritten by `τ` first, whose
+result the outer `σ`-pass sees, while every other-level leaf is fixed by both passes. This is the
+level-renaming building block: `substAt ℓ (fun i => .var ℓ' i)` (rename `ℓ → ℓ'`) composes with a
+later instantiation exactly by this law. -/
+theorem substAt_substAt_same (ℓ : Nat) (σ τ : Nat → Ty) (t : Ty) :
+    substAt ℓ σ (substAt ℓ τ t) = substAt ℓ (fun i => substAt ℓ σ (τ i)) t := by
+  induction t with
+  | var l i =>
+      by_cases h : l = ℓ
+      · simp only [substAt, if_pos h]
+      · simp only [substAt, if_neg h]
+  | «fun» a e r iha ihe ihr => simp only [substAt, iha, ihe, ihr]
+  | list a ih => simp only [substAt, ih]
+  | record r ih => simp only [substAt, ih]
+  | union r ih => simp only [substAt, ih]
+  | promise a ih => simp only [substAt, ih]
+  | rowExtend l f t ihf iht => simp only [substAt, ihf, iht]
+  | effectExtend l a b t iha ihb iht => simp only [substAt, iha, ihb, iht]
+  | _ => rfl
+
 /-- A level occurring as a free-variable's level (at any index) is among `t`'s `levels`. -/
 theorem mem_levels_of_mem_freeVarsAt {t : Ty} {ℓ j : Nat} (hmem : j ∈ freeVarsAt ℓ t) :
     ℓ ∈ t.levels := by
