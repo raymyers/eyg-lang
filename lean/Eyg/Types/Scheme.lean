@@ -498,6 +498,36 @@ theorem substAt_substAt_same (ℓ : Nat) (σ τ : Nat → Ty) (t : Ty) :
   | effectExtend l a b t iha ihb iht => simp only [substAt, iha, ihb, iht]
   | _ => rfl
 
+/-- **Two level-`ℓ` substitutions agreeing on every level-`ℓ` free variable produce the same result.**
+The level-native analog of `subst_congr_free` (which is the `ℓ = 0` case, modulo `freeVars =
+freeVarsAt 0`): a `var ℓ i` leaf is rewritten via `σ i`, so only the maps' values at `ℓ`'s free-var
+indices matter; every other-level leaf is fixed by both passes. The re-instantiation building block a
+generalization-level shift (`substAt ℓ σ` at a scheme's own level) consumes — matching two
+instantiation maps that agree exactly on the generalized indices. -/
+theorem substAt_congr_freeVarsAt {ℓ : Nat} {σ₁ σ₂ : Nat → Ty} {t : Ty}
+    (h : ∀ i ∈ freeVarsAt ℓ t, σ₁ i = σ₂ i) : substAt ℓ σ₁ t = substAt ℓ σ₂ t := by
+  induction t with
+  | var l i =>
+      by_cases hl : l = ℓ
+      · subst hl; simp only [substAt, if_pos]; exact h i (by simp [freeVarsAt])
+      · simp only [substAt, if_neg hl]
+  | «fun» a e r iha ihe ihr =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihe (fun i hi => h i (Or.inl (Or.inr hi))), ihr (fun i hi => h i (Or.inr hi))]
+  | list a ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | record r ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | union r ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | promise a ih => simp only [substAt, ih (fun i hi => h i hi)]
+  | rowExtend l f t ihf iht =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, ihf (fun i hi => h i (Or.inl hi)), iht (fun i hi => h i (Or.inr hi))]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [freeVarsAt, List.mem_append] at h
+      simp only [substAt, iha (fun i hi => h i (Or.inl (Or.inl hi))),
+        ihb (fun i hi => h i (Or.inl (Or.inr hi))), iht (fun i hi => h i (Or.inr hi))]
+  | _ => rfl
+
 /-- A level occurring as a free-variable's level (at any index) is among `t`'s `levels`. -/
 theorem mem_levels_of_mem_freeVarsAt {t : Ty} {ℓ j : Nat} (hmem : j ∈ freeVarsAt ℓ t) :
     ℓ ∈ t.levels := by
