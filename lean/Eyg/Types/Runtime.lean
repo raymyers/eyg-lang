@@ -58,11 +58,15 @@ inductive HasTypeV {m : Type} : Value m → Ty → Prop where
   | int {n τ} : Ty.TyEquiv .integer τ → HasTypeV (.Integer n) τ
   | str {s τ} : Ty.TyEquiv .string τ → HasTypeV (.String s) τ
   | bin {b τ} : Ty.TyEquiv .binary τ → HasTypeV (.Binary b) τ
-  /-- A closure inhabits (a type equivalent to) an arrow whose middle slot is the
-  body's effect row, provided its captured env realizes a context typing the body. -/
-  | closure {x body env argTy εb retTy Γ τ} :
+  /-- A closure inhabits (a type equivalent to) an arrow, provided its captured env realizes a context
+  under which the **lambda node** type-checks level-natively (`HasType lvl`), at some ambient level
+  `lvl` (existentially stored — the level is irrelevant to the value, only that the lambda types). This
+  is the level-native replacement of the old magnitude closure premise: it exists for arbitrarily
+  nested generalization (no `noLambdaLet`). -/
+  | closure {lvl' x body env argTy εb retTy Γ τ} :
       EnvWf env Γ →
-      HasType ((x, .mono argTy) :: Γ) body retTy εb →
+      (∀ l ∈ argTy.levels, l < lvl') →
+      HasType lvl' ((x, .mono argTy) :: Γ) body retTy εb →
       Ty.TyEquiv (.fun argTy εb retTy) τ →
       HasTypeV (.Closure x body env) τ
   /-- A (strictly under-applied) builtin partial at (a type equivalent to) its
@@ -211,7 +215,7 @@ monomorphic schemes of T3–T5 this is just `HasTypeV v τ`). -/
 inductive EnvWf {m : Type} : Env m → Ctx → Prop where
   | nil : EnvWf [] []
   | cons {y v s env Γ} :
-      (∀ args, HasTypeV v (s.instantiate args)) →
+      (∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ s.level) → HasTypeV v (s.instantiateV args)) →
       EnvWf env Γ →
       EnvWf ((y, v) :: env) ((y, s) :: Γ)
 
@@ -238,14 +242,14 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
   | trace {a w rest σin εin σout εout} :
       StackSegWf rest σin εin σout εout →
       StackSegWf ((Kontinue.Trace w, a) :: rest) σin εin σout εout
-  | assign {a x body fenv Γ defnTy bodyTy εin σout εout rest} :
+  | assign {a x body fenv Γ defnTy bodyTy εin σout εout rest lvl} :
       EnvWf fenv Γ →
-      HasType ((x, .mono defnTy) :: Γ) body bodyTy εin →
+      HasType lvl ((x, .mono defnTy) :: Γ) body bodyTy εin →
       StackSegWf rest bodyTy εin σout εout →
       StackSegWf ((Kontinue.Assign x body fenv, a) :: rest) defnTy εin σout εout
-  | arg {a arg fenv Γ argTy εf retTy εin σout εout rest} :
+  | arg {a arg fenv Γ argTy εf retTy εin σout εout rest lvl} :
       EnvWf fenv Γ →
-      HasType Γ arg argTy εin →
+      HasType lvl Γ arg argTy εin →
       Ty.EffWeaken εf εin →
       StackSegWf rest retTy εin σout εout →
       StackSegWf ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy εf retTy) εin σout εout
@@ -285,7 +289,7 @@ theorem HasTypeV.conv {m : Type} {v : Value m} {τ τ' : Ty}
   | int he => exact .int (he.trans heq)
   | str he => exact .str (he.trans heq)
   | bin he => exact .bin (he.trans heq)
-  | closure henv hbody he => exact .closure henv hbody (he.trans heq)
+  | closure henv hfv hbody he => exact .closure henv hfv hbody (he.trans heq)
   | partialBuiltin hs hp he => exact .partialBuiltin hs hp (he.trans heq)
   | listNil he => exact .listNil (he.trans heq)
   | listCons hh ht he => exact .listCons hh ht (he.trans heq)
@@ -350,7 +354,7 @@ theorem stackSeg_conv_input {m : Type} {seg : Stack m} :
       | assign henv hbody h' =>
           exact .assign henv ((hasType_ctxHead_conv hbody hσ).conv (.refl _) hε.symm)
             (ih h' (.refl _) hε)
-      | @arg _ arg fenv Γ argTy εf retTy εin₀ _ _ rest' henv harg hw h' =>
+      | @arg _ arg fenv Γ argTy εf retTy εin₀ _ _ rest' _ henv harg hw h' =>
           obtain ⟨a', e', r', rfl, ha', he', hr'⟩ := Ty.tyEquiv_fun_inv' hσ
           have hw' : Ty.EffWeaken e' εin' := by
             rcases Ty.effWeaken_tyEquiv_right hw hε.symm with h | h
@@ -401,7 +405,8 @@ typing rule chose. -/
 
 theorem envwf_lookup {m : Type} {env : Env m} {Γ : Ctx} {x : String} {s : Scheme}
     (h : EnvWf env Γ) (hl : Γ.lookup x = some s) :
-    ∃ v, env.lookup x = some v ∧ ∀ args, HasTypeV v (s.instantiate args) := by
+    ∃ v, env.lookup x = some v ∧
+      ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ s.level) → HasTypeV v (s.instantiateV args) := by
   induction env generalizing Γ with
   | nil => cases h; simp [List.lookup] at hl
   | cons hd tl ih =>
@@ -522,7 +527,7 @@ theorem canonical_arrow {m : Type} {v : Value m} {a ε r : Ty}
     (∃ x body env, v = .Closure x body env) ∨
     (∃ sw applied, v = .Partial sw applied) := by
   cases h with
-  | closure _ _ _ => exact Or.inl ⟨_, _, _, rfl⟩
+  | closure _ _ _ _ => exact Or.inl ⟨_, _, _, rfl⟩
   | partialBuiltin _ _ _ => exact Or.inr ⟨_, _, rfl⟩
   | partialConsNil _ => exact Or.inr ⟨_, _, rfl⟩
   | partialConsOne _ _ => exact Or.inr ⟨_, _, rfl⟩
@@ -568,7 +573,9 @@ example : HasTypeV (.Partial (.Builtin "int_add") [.Integer 2] : Value Unit)
 -- A closure over the empty env inhabits `integer → integer`.
 example : HasTypeV (.Closure "x" (Eyg.Ir.Tree.variable_ "x") [] : Value Unit)
     (.fun .integer .empty .integer) :=
-  HasTypeV.closure EnvWf.nil (HasType.var (s := .mono .integer) (args := []) rfl)
+  HasTypeV.closure EnvWf.nil (lvl' := 0)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    (HasType.var (s := .mono .integer) (args := []) rfl)
     (Ty.TyEquiv.refl _)
 
 -- The `fixed` value of the pure builder `\f. f` (a `(Int→Int)→(Int→Int)` closure)
@@ -577,7 +584,8 @@ example : HasTypeV (.Partial (.Builtin "fixed")
     [.Closure "f" (Eyg.Ir.Tree.variable_ "f") []] : Value Unit)
     (.fun .integer .empty .integer) :=
   HasTypeV.partialFixed
-    (HasTypeV.closure EnvWf.nil
+    (HasTypeV.closure EnvWf.nil (lvl' := 0)
+      (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
       (HasType.var (s := .mono (.fun .integer .empty .integer)) (args := []) rfl)
       (Ty.TyEquiv.refl _))
     (Ty.TyEquiv.refl _)

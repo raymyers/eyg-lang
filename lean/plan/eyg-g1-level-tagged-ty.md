@@ -298,7 +298,12 @@ the datatype change itself.
       the crux `closure`); the runtime-continuation / partial value constructors (`partialBuiltin`,
       `partialResume`, data/partials) carry zero generalization content and are mechanical
       `HasTypeV → HasTypeVAt lvl` transliterations left for the Phase-5 `Machine`/`Runtime` re-green.
-- [ ] **Phase 4 — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
+- [x] **Phase 4 — re-thread `Typing.lean`.** DONE (2026-07-08, "Session A", commit noted below).
+      `HasType` is now level-parameterized (`HasType lvl Γ e τ ε`); `let_poly` generalizes at exactly
+      `lvl` via `Scheme.genAtV`/`CtxWfV`, **`noLambdaLet` dropped**, no side-channel `n`. `hasType_subst`
+      (instantiation-direction) + `genAtV_instantiate_lam_ready` live in `Typing.lean`. See
+      `progress/2026-07-08-G1-phase4-5-sessionA-hastype-promoted-soundness-red.md`.
+- [ ] **Phase 4 (superseded scoping note) — re-thread `Typing.lean`.** Drop the side-channel `n`/`CtxWf`; `let_poly`
       uses the tag directly; drop `noLambdaLet` from the rule (the actual deliverable).
       **Scoped 2026-07-08 (no source edits, tree held green at `f33550e7`), see
       `progress/2026-07-08-G1-phase4-scoped-multisession-not-landed.md`:** grounded blast-radius
@@ -316,12 +321,19 @@ the datatype change itself.
       re-greens everything except Soundness (Phases 4-5); Session B/C re-greens `Soundness.lean`
       (Phase 6). All required lemmas already exist axiom-clean (Phase 3b); the remainder is
       re-elaboration-heavy editing safe only with interactive goal-state tooling.
-- [ ] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port).
-      Mechanical but must land fully before Phase 6, since it's upstream of every
-      preservation case.
-- [ ] **Phase 6 — re-green `Soundness.lean`.** The expensive step: mostly "adjust to
-      compile" (most of the 141 case-matches don't inspect `var` directly), plus genuine
-      re-proof for the `let_poly` preservation/progress cases specifically.
+- [x] **Phase 5 — re-green `Machine.lean`/`Runtime.lean`** (value typing, interpreter port). DONE
+      (2026-07-08, "Session A"). `HasTypeV`/`EnvWf`/`StackWf`/`StackSegWf` keep their arities (the
+      ambient level is an **existential field** of `closure`/`assign`/`arg`, not an index — this
+      collapses the projected ~256-site migration to a handful of sites). `EnvWf.cons` readiness is now
+      level-native + conditional; `genAtV_closure_ready_value` ported into `Substitution.lean`.
+      `Generation.lean`/`Generalization.lean` re-greened; the magnitude readiness keystones removed as
+      superseded. Prototype files (`TypingAt`/`TypingAtV`/`RuntimeAtV`) deleted. Verified green
+      per-file; `Soundness.lean` deliberately left red (authorized exception — see the progress note).
+- [ ] **Phase 6 — re-green `Soundness.lean` (Session B).** The remaining step, all mechanical (101+
+      errors, categorized in `progress/2026-07-08-G1-phase4-5-sessionA-hastype-promoted-soundness-red.md`):
+      thread `lvl` through the inversion-lemma consumers and case matches; re-prove the two `let_poly`
+      preservation cases via `genAtV_closure_ready_value`; adjust `soundness`/`soundness_evalR` to type
+      at a nonzero ambient level (`ℓ ≠ 0` for the keystone). Only commit once fully green.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

@@ -53,58 +53,6 @@ theorem substCtx_lookup {σ : Nat → Ty} {Γ : Ctx} {x : String} {s : Scheme}
       · simp only [hxy] at h ⊢; cases h; rfl
       · simp only [hxy] at h ⊢; exact ih h
 
-/-- **Type substitution for `HasType`** (on terms with no generalizable internal `let`). A
-well-typed term stays well-typed under an ambient type substitution `σ`. The `noLambdaLet`
-hypothesis keeps the **`let_poly` arm vacuous** (a `let` binding a `Lambda` makes `noLambdaLet`
-`False`, so `generalizes_subst_false` is never re-triggered) while letting **mono `let`s** (whose
-definition is not a `Lambda`) be re-typed by the ordinary `let_` arm — substitution-stable for an
-arbitrary `σ`. This strictly enlarges the substitutable fragment over the old `noLet`. -/
-theorem hasType_subst {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty} (σ : Nat → Ty)
-    (h : HasType Γ e τ ε) (hnl : Tree.Node.noLambdaLet e) :
-    HasType (substCtx σ Γ) e (Ty.subst σ τ) (Ty.subst σ ε) := by
-  induction h with
-  | @var Γ x s args ε a hl =>
-      rw [Scheme.subst_instantiate' σ s args]
-      exact HasType.var (substCtx_lookup hl)
-  | @builtin Γ id s args ε a hs =>
-      rw [Scheme.subst_instantiate' σ s args, Builtins.scheme_substScheme σ hs]
-      exact HasType.builtin hs
-  | @lam Γ x body argTy εb retTy ε a hbody ih =>
-      simp only [Tree.Node.noLambdaLet] at hnl
-      simp only [substCtx_cons, Scheme.substScheme_mono] at ih
-      simp only [Ty.subst]
-      exact HasType.lam (ih hnl)
-  | @app Γ f arg argTy εf retTy ε a hf hw harg ihf iharg =>
-      simp only [Tree.Node.noLambdaLet] at hnl
-      simp only [Ty.subst] at ihf
-      exact HasType.app (ihf hnl.1) (Ty.subst_effWeaken σ hw) (iharg hnl.2)
-  | @let_ Γ x defn body defnTy bodyTy ε a hdefn hbody ihdefn ihbody =>
-      obtain ⟨hd, hb⟩ := Tree.Node.noLambdaLet_let hnl
-      simp only [substCtx_cons, Scheme.substScheme_mono] at ihbody
-      exact HasType.let_ (ihdefn hd) (ihbody hb)
-  | @let_poly Γ x lx lbody la body defnTy bodyTy ε n a hdefn hcw hnl' hbody ihdefn ihbody =>
-      simp only [Tree.Node.noLambdaLet] at hnl
-  | int => simp only [Ty.subst]; exact HasType.int
-  | str => simp only [Ty.subst]; exact HasType.str
-  | bin => simp only [Ty.subst]; exact HasType.bin
-  | tail => simp only [Ty.subst]; exact HasType.tail
-  | cons => simp only [Ty.subst]; exact HasType.cons
-  | tag => simp only [Ty.subst]; exact HasType.tag
-  | nocases => simp only [Ty.subst]; exact HasType.nocases
-  | case_ => simp only [Ty.subst]; exact HasType.case_
-  | select => simp only [Ty.subst]; exact HasType.select
-  | extend => simp only [Ty.subst]; exact HasType.extend
-  | overwrite => simp only [Ty.subst]; exact HasType.overwrite
-  | empty => simp only [Ty.subst]; exact HasType.empty
-  | perform => simp only [Ty.subst]; exact HasType.perform
-  | @handle Γ l lift reply tail ret ε a =>
-      have heq : Ty.subst σ (handleTy l lift reply tail ret)
-          = handleTy l (Ty.subst σ lift) (Ty.subst σ reply) (Ty.subst σ tail)
-              (Ty.subst σ ret) := by
-        simp [handleTy, handlerTy, execTy, kontTy, Ty.subst]
-      rw [heq]; exact HasType.handle
-  | conv _ hτ hε ih => exact HasType.conv (ih hnl) (Ty.subst_tyEquiv σ hτ) (Ty.subst_tyEquiv σ hε)
-
 /-! ## Value-level substitution for `gen`-eligible values
 
 The value substitution lemma `HasTypeV v τ → HasTypeV v (subst σ τ)` is **false**
@@ -132,25 +80,40 @@ an inverted existential. Composing this with `hasType_subst` types the value at
 `EnvWf.cons` polymorphic-readiness obligation `gen` must discharge — without ever
 needing the (false-for-open-rows) value substitution lemma. -/
 
-/-- A lambda's runtime closure is typed at the lambda term's type, with the
-closure's context taken to be the evaluation context `Γ` (no existential). -/
-theorem closure_typed_of_lambda {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
+/-- A lambda's runtime closure is typed at the lambda term's type, with the closure's context taken to
+be the evaluation context `Γ` (no existential). Level-native: inverts the lambda node via `inv_lambda`
+and feeds the arrow-component `HasTypeV.closure`. -/
+theorem closure_typed_of_lambda {lvl : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
     {env : Env m} {τ ε : Ty} (henv : EnvWf env Γ)
-    (h : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) :
+    (h : HasType lvl Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) :
     HasTypeV (.Closure x body env) τ := by
-  obtain ⟨argTy, εb, retTy, hbody, heq⟩ := inv_lambda h
-  exact HasTypeV.closure henv hbody heq
+  obtain ⟨lvl', argTy, εb, retTy, hle, hfv, hbody, heq⟩ := inv_lambda h
+  exact HasTypeV.closure henv hfv hbody heq
 
-/-- **Polymorphic readiness for a value-restricted `let`-bound lambda.** If
-`σ` fixes the surrounding context `Γ`, the lambda's closure is typed at the
-substituted type — the per-`args` obligation behind `EnvWf.cons` for a generalized
-binding, proved via `hasType_subst` (no value substitution lemma needed). -/
-theorem closure_typed_of_lambda_subst {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
-    {env : Env m} {τ ε : Ty} (σ : Nat → Ty) (hfix : substCtx σ Γ = Γ) (hnl : Tree.Node.noLambdaLet body)
-    (henv : EnvWf env Γ) (h : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) :
-    HasTypeV (.Closure x body env) (Ty.subst σ τ) := by
-  have h' := hasType_subst σ h (by simp only [Tree.Node.noLambdaLet]; exact hnl)
-  rw [hfix] at h'
-  exact closure_typed_of_lambda henv h'
+/-- **The value-level readiness keystone (level-native `generalizes_closure_ready`).** For a let-bound
+lambda presented via its `lam` components at ambient level `ℓ` — body at a strictly higher level `lvl'`,
+ambient context `Γ` below `ℓ` (`CtxWfV ℓ Γ`) with polymorphic bindings above `ℓ` (`PolyAbove ℓ Γ`) —
+whose runtime environment realizes `Γ` (`EnvWf env Γ`), the lambda's runtime closure
+`Value.Closure x lbody env` inhabits **every** (well-formed) instantiation of its generalized scheme
+`genAtV ℓ (.fun argTy εb retTy)` — exactly the `EnvWf.cons` obligation (`s.level = ℓ`), with **no
+`noLambdaLet`** on the closure body. Composes `genAtV_instantiate_lam_ready` (term level, `Typing.lean`)
+with `HasTypeV.closure` (reconstructing the arrow components via `inv_lambda`). -/
+theorem genAtV_closure_ready_value {ℓ : Nat} (hℓ : ℓ ≠ 0)
+    {lvl' : Nat} {Γ : Ctx} {x : String} {lbody : Tree.Node m} {la : m}
+    {argTy εb retTy : Ty}
+    (hlt : ℓ < lvl')
+    (hfv : ∀ l ∈ argTy.levels, l < lvl')
+    (hbody : HasType lvl' ((x, .mono argTy) :: Γ) lbody retTy εb)
+    (hΓpa : PolyAbove ℓ Γ)
+    (hΓwf : CtxWfV ℓ Γ)
+    {env : Env m} (henv : EnvWf env Γ) :
+    ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l ≤ ℓ) →
+      HasTypeV (Value.Closure x lbody env)
+        ((Scheme.genAtV ℓ (.fun argTy εb retTy)).instantiateV args) := by
+  intro args hargs
+  have hlam := genAtV_instantiate_lam_ready (m := m) (la := la) (ε := .empty)
+    hℓ hlt hfv hbody hΓpa hΓwf args hargs
+  obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heq⟩ := inv_lambda hlam
+  exact HasTypeV.closure henv hfv' hbody' heq
 
 end Eyg.Types

@@ -124,25 +124,10 @@ theorem generalizes_ctxConv {s : Scheme} {Δ Γ : Ctx} {x : String} {σ σ' d : 
       exact congrArg Scheme.mono (key σg hσ)
     · exact hfix b (List.mem_append.mpr (Or.inr (List.mem_cons_of_mem _ hbΓ)))
 
-/-- **The polymorphic-readiness keystone for a value-restricted `let`.** If `s`
-generalizes the lambda's type `defnTy` away from the evaluation context `Γ`, then
-the lambda's runtime closure inhabits **every** instantiation of `s` — exactly the
-`∀ args, HasTypeV v (s.instantiate args)` clause `EnvWf.cons` requires to bind the
-generalized scheme. Proved by composing `Generalizes` (each instantiation is a
-`Γ`-fixing instance) with `closure_typed_of_lambda_subst` (a `Γ`-fixing
-substitution re-types the closure), with **no** value-substitution lemma and **no**
-existential captured context. -/
-theorem generalizes_closure_ready {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
-    {env : Env m} {defnTy ε : Ty} {s : Scheme}
-    (hgen : Generalizes s Γ defnTy)
-    (hnl : Tree.Node.noLambdaLet body)
-    (henv : EnvWf env Γ)
-    (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
-    ∀ args, HasTypeV (Value.Closure x body env) (s.instantiate args) := by
-  intro args
-  obtain ⟨σ, heq, hfix⟩ := hgen args
-  rw [heq]
-  exact closure_typed_of_lambda_subst σ hfix hnl henv hlam
+-- NOTE (G1 Phase 4): the magnitude-based polymorphic-readiness keystone
+-- `generalizes_closure_ready` is superseded by the level-native `genAtV_closure_ready_value`
+-- (`Substitution.lean`), which discharges the (now level-native, conditional) `EnvWf.cons` obligation
+-- with no `noLambdaLet` restriction. Removed here as part of the level-native `HasType` promotion.
 
 /-! ## Level-indexed generalization `GeneralizesAt` (the substitution-stable redesign, T6 gen)
 
@@ -281,19 +266,8 @@ theorem genAt_generalizes {n : Nat} {Γ : Ctx} {d : Ty}
     Generalizes (Scheme.genAt n d) Γ d :=
   generalizesAt_to_generalizes hΓ (genAt_generalizesAt n d)
 
-/-- **Push-time polymorphic readiness for a `genAt`-generalized `let`.** Combines the rule-facing
-bridge `genAt_generalizes` with the keystone `generalizes_closure_ready`: a let-bound lambda's runtime
-closure inhabits **every** instantiation of its computed scheme `genAt n defnTy` (for a context below
-level `n`). This is the closed readiness `Rdy` the `Assign`-push computes once, at the one coherent
-point, and carries across the lambda→closure step (the coupling design's `StackWfV`). -/
-theorem genAt_closure_ready {n : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m}
-    {env : Env m} {defnTy ε : Ty}
-    (hΓ : ∀ σ' : Nat → Ty, (∀ i, i < n → σ' i = .var 0 i) → substCtx σ' Γ = Γ)
-    (hnl : Tree.Node.noLambdaLet body)
-    (henv : EnvWf env Γ)
-    (hlam : HasType Γ (⟨.Lambda x body, a⟩ : Tree.Node m) defnTy ε) :
-    ∀ args, HasTypeV (Value.Closure x body env) ((Scheme.genAt n defnTy).instantiate args) :=
-  generalizes_closure_ready (genAt_generalizes hΓ) hnl henv hlam
+-- NOTE (G1 Phase 4): `genAt_closure_ready` (the `genAt`-generalized magnitude readiness) is likewise
+-- superseded by `genAtV_closure_ready_value` (`Substitution.lean`) and removed with the promotion.
 
 /-- **Generalization arity is stable under a level map.** A level map fixes the generalized region
 `[n,∞)` and keeps the ambient region within `[0,n)` (weight `0`), so the weighted max defining the
@@ -507,39 +481,14 @@ theorem substCtx_cons_genAt {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ)
       = (x, Scheme.genAt n (Ty.subst σ defnTy)) :: substCtx σ Γ := by
   simp only [substCtx_cons, genAt_substScheme hσ]
 
-/-- **The `let_poly` arm of a level-parameterized `hasType_subst`, fired non-vacuously.** Given a
-`LevelMap n σ` at the let's stored generalization level `n`, a `CtxWf n Γ` (the level side-invariant
-the rule already stores), and the two sub-derivations a substitution induction would deliver — the
-definition re-typed at `subst σ defnTy` (`hdefn'`) and the body re-typed under the *substituted*
-generalized binding (`hbody'`, whose context is exactly `substCtx_cons_genAt`'s right-hand side) — the
-whole `Let` node reconstructs via `HasType.let_poly`. Unlike `hasType_subst`'s arm, `noLambdaLet` is
-required only on the inner lambda body `lbody` (the genuine restriction the rule always carries), *not*
-on the whole term: the term here binds a `Lambda` in a `let`, so the general `hasType_subst` cannot
-even reach it. `CtxWf n (substCtx σ Γ)` is re-established by `ctxWf_substCtx`. -/
-theorem hasType_substLM_letPoly {m : Type} {n : Nat} {σ : Nat → Ty} (hσ : Ty.LevelMap n σ)
-    {Γ : Ctx} {x lx : String} {lbody body : Tree.Node m} {la a : m}
-    {defnTy bodyTy ε : Ty}
-    (hcw : CtxWf n Γ)
-    (hnl : Tree.Node.noLambdaLet lbody)
-    (hdefn' : HasType (substCtx σ Γ) ⟨.Lambda lx lbody, la⟩ (Ty.subst σ defnTy) (Ty.subst σ ε))
-    (hbody' : HasType ((x, Scheme.genAt n (Ty.subst σ defnTy)) :: substCtx σ Γ) body
-      (Ty.subst σ bodyTy) (Ty.subst σ ε)) :
-    HasType (substCtx σ Γ) ⟨.Let x ⟨.Lambda lx lbody, la⟩ body, a⟩
-      (Ty.subst σ bodyTy) (Ty.subst σ ε) :=
-  HasType.let_poly (n := n) hdefn' (ctxWf_substCtx hcw hσ) hnl hbody'
+-- NOTE (G1 Phase 4): `hasType_substLM_letPoly` (the magnitude `LevelMap` `let_poly`-arm reconstruction)
+-- is superseded by the level-native `hasType_subst` `let_poly` arm (`Typing.lean`); removed with the
+-- promotion (the magnitude `HasType.let_poly` constructor arity it used no longer exists).
 
-/-! ## Level-native `CtxWfV` (Phase 3b prototype, not yet wired in)
+/-! ## Level-native `CtxWfV` helpers
 
-The level-tag analog of `CtxWf` above, bounding a context's bindings' `Ty.levels` instead of
-magnitude-based ambient free vars — ported from `LevelTagSpike.lean`'s `CtxWf2`/`ctxWf2_cons` onto the
-real `Ctx`/`Scheme`. Confirms the *whole* freshness-threading discipline (not just the one-shot
-`subst_instantiateV` commutation) survives on the real system, the same way the spike validated it on
-the toy model. Not yet consumed by any rule — `Typing.lean`'s `let_poly` still allocates the old
-magnitude-based `n`, not a level counter; that rewiring is Phase 4. -/
-
-/-- **Context below level `ℓ`**: every level occurring in every binding's scheme body (quantifier
-level *and* ambient references alike, via `Ty.levels`) is `< ℓ`. -/
-def CtxWfV (ℓ : Nat) (Γ : Ctx) : Prop := ∀ b ∈ Γ, ∀ l ∈ b.2.body.levels, l < ℓ
+`CtxWfV` itself now lives in `Typing.lean` (it is a field of the level-native `HasType.let_poly`); the
+freshness-extension helper `ctxWfV_cons` and the deep-nesting confirmation example stay here. -/
 
 /-- **Freshness extension**: a context below `ℓ`, extended with a new binding generalized (via
 `Scheme.genAtV`) at exactly the fresh level `ℓ` (whose body's levels are all `≤ ℓ`, i.e. either
@@ -692,36 +641,39 @@ theorem generalizes_subst_false :
 section
 open Eyg.Ir.Tree
 
-/-- `let id = \y. y in id 1` — the polymorphic `let` binds `id` at the generalized scheme
-`∀α. α → α` (`genAt 0 (var0 → var0)`), and the body instantiates it at `Integer`. -/
-example : HasType (m := Unit) []
+/-- `let id = \y. y in id 1` — the polymorphic `let` binds `id` at the level-native generalized scheme
+`∀α. α → α` (`genAtV 1 (var⟨1,0⟩ → var⟨1,0⟩)`), and the body (at level `2`) instantiates it at
+`Integer`. Ambient level `1` (top-level generalization lives at a nonzero level, per the level-tag
+design). -/
+example : HasType (m := Unit) 1 []
     (let_ "id" (lambda "y" (variable_ "y")) (apply (variable_ "id") (integer 1)))
     .integer .empty := by
-  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0 0) .empty (.var 0 0)) ?_ ?_ ?_ ?_
-  · exact HasType.lam (HasType.var (s := .mono (.var 0 0)) (args := []) rfl)
+  refine HasType.let_poly (defnTy := .fun (.var 1 0) .empty (.var 1 0)) ?_ ?_ ?_
+  · exact HasType.lam (lvl' := 2) (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+      (HasType.var (s := .mono (.var 1 0)) (args := []) rfl)
   · intro b hb; cases hb
-  · trivial
   · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
-    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0 0) .empty (.var 0 0)))
+    exact HasType.var (s := Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))
       (args := [.integer]) rfl
 
-/-- **Nested-`let` polymorphism (the `noLambdaLet` relaxation).** The generalized lambda's body
-contains an **internal mono `let`** (`let y = x in y`) — a binding the old `noLet` premise rejected
-outright. With `noLambdaLet` it is accepted: `id' = \x. (let y = x in y)` generalizes to `∀α. α→α`
-and the body instantiates it at `Integer`. The body's `let` binds a *variable* (not a `Lambda`), so
-`noLambdaLet` holds and `hasType_subst`'s mono `let_` arm carries it. -/
-example : HasType (m := Unit) []
+/-- **Nested-`let` polymorphism.** The generalized lambda's body contains an internal mono `let`
+(`let y = x in y`); level-natively `id' = \x. (let y = x in y)` generalizes to `∀α. α→α` at level `1`
+and the body instantiates it at `Integer`. -/
+example : HasType (m := Unit) 1 []
     (let_ "id'" (lambda "x" (let_ "y" (variable_ "x") (variable_ "y")))
       (apply (variable_ "id'") (integer 1)))
     .integer .empty := by
-  refine HasType.let_poly (n := 0) (defnTy := .fun (.var 0 0) .empty (.var 0 0)) ?_ ?_ ?_ ?_
-  · exact HasType.lam (HasType.let_
-      (HasType.var (s := .mono (.var 0 0)) (args := []) rfl)
-      (HasType.var (s := .mono (.var 0 0)) (args := []) rfl))
+  refine HasType.let_poly (defnTy := .fun (.var 1 0) .empty (.var 1 0)) ?_ ?_ ?_
+  · refine HasType.lam (lvl' := 2) (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ?_
+    refine HasType.let_ (defnTy := .var 1 0) (HasType.var (s := .mono (.var 1 0)) (args := []) rfl)
+      (lvl' := 2) (le_refl _)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ?_
+    exact HasType.var (s := .mono (.var 1 0)) (args := []) rfl
   · intro b hb; cases hb
-  · trivial
   · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
-    exact HasType.var (s := Scheme.genAt 0 (.fun (.var 0 0) .empty (.var 0 0)))
+    exact HasType.var (s := Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))
       (args := [.integer]) rfl
 
 end
