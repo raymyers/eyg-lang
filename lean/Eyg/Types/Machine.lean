@@ -392,35 +392,47 @@ expected input need only be equivalent to the declared reply type) to the answer
 discharged in `preservation`'s `reply` case. -/
 def MStateWf {m : Type} : MState m → Ty → Ty → Prop
   | .run (.E e, env, k), τ, ε =>
-      ∃ Γ τin lvl, EnvWf env Γ ∧ HasType lvl Γ e τin ε ∧ StackWfE e env k τin ε τ
+      ∃ Γ τin lvl, EnvWf env Γ ∧ ∃ hty : HasType lvl Γ e τin ε,
+        HasTypeRT hty ∧ StackWfE e env k τin ε τ
   | .run (.V v, _, k), τ, ε => ∃ τin, HasTypeV v τin ∧ StackWfV v k τin ε τ
   | .wait op _ k, τ, ε =>
       ∃ a b replyTy, Ty.EffContains ε op a b ∧ Ty.TyEquiv b replyTy ∧ StackWf k replyTy ε τ
 
 /-! ## A well-typed program yields a well-typed initial state
 
-`MStateWf (run (Config.initial prog)) τ ε` reduces to `HasType [] prog τ ε`: the
-empty env realizes the empty context and the empty stack is the identity
-transformer. This is the entry point the soundness theorem (T3c-iii) starts from. -/
+`MStateWf (run (Config.initial prog)) τ ε` reduces to `HasType [] prog τ ε` **plus** the
+runtime-restriction `HasTypeRT h`: the empty env realizes the empty context and the empty
+stack is the identity transformer. The `HasTypeRT h` premise is the runtime-groundness
+invariant at the entry point; it holds for closed programs of ground result type (every
+reachable-as-control var node then instantiates at ground/ambient-level args) and is
+threaded forward by preservation. This is the entry point the soundness theorem (T3c-iii)
+starts from. -/
 
 theorem mStateWf_initial {m : Type} {lvl : Nat} {prog : Tree.Node m} {τ ε : Ty}
-    (h : HasType lvl [] prog τ ε) : MStateWf (.run (Config.initial prog)) τ ε :=
-  ⟨[], τ, lvl, EnvWf.nil, h, StackWf.nil⟩
+    (h : HasType lvl [] prog τ ε) (hrt : HasTypeRT h) :
+    MStateWf (.run (Config.initial prog)) τ ε :=
+  ⟨[], τ, lvl, EnvWf.nil, h, hrt, StackWf.nil⟩
 
 /-! ## Sanity checks -/
 
 section
 open Eyg.Ir.Tree
 
--- The initial state for `(\x. x) 1` is well-typed at `integer ! empty`.
+-- The initial state for `(\x. x) 1` is well-typed at `integer ! empty` and its control
+-- derivation is `HasTypeRT` (all args are ground: the closure body's `x` is `.mono`, the
+-- literal is a leaf).
 example : MStateWf (.run (Config.initial
     (apply (lambda "x" (variable_ "x")) (integer 1)))) .integer .empty := by
-  apply mStateWf_initial (lvl := 0)
-  refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) ?_
-  · exact HasType.lam (lvl' := 0) (le_refl _)
+  have hlam : HasType (m := Unit) 0 [] (lambda "x" (variable_ "x"))
+      (.fun .integer .empty .integer) .empty :=
+    HasType.lam (lvl' := 0) (le_refl _)
       (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
       (HasType.var (s := .mono .integer) (args := []) rfl)
-  · exact HasType.int
+  have happ : HasType (m := Unit) 0 []
+      (apply (lambda "x" (variable_ "x")) (integer 1)) .integer .empty :=
+    HasType.app (argTy := .integer) hlam (Ty.effWeaken_refl _) HasType.int
+  exact mStateWf_initial happ
+    (HasTypeRT.app (hw := Ty.effWeaken_refl _) (hasTypeRT_lambda hlam) HasTypeRT.int)
 
 -- A non-empty stack: applying the argument frame to a function value flows
 -- `integer → integer` to a final `integer`.
