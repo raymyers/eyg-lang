@@ -1470,6 +1470,47 @@ the datatype change itself.
       function; confirming the crux's applied arg is genuinely ground/σ grounds ℓ; the two small
       `hasTypeRT_subst`-wrapper obligations at the crux). Nothing committable (no source edits). Caveat 5
       OPEN. See `progress/2026-07-09-G1-phase6-sessionG30-envgroundness-refuted-rtsubstready-needed.md`.**
+
+      **Progress 2026-07-09 (Session G31 — the *authorized* `RTSubstReady ℓ hbody` single-level field
+      is ALSO REFUTED by a machine-checked counterexample; the obstruction is a MULTIPLICITY of
+      independent off-scheme instantiation levels a single `ℓ` cannot cover; STOP + flag, no code
+      landed, `Soundness.lean` byte-identical). See
+      `progress/2026-07-09-G1-phase6-sessionG31-rtsubstready-single-level-refuted.md`.** No LSP (canary
+      failed); Read/Grep + `lake env lean` scratch (`decide`/explicit derivations). HEAD `c1800acb`; NO
+      source edits (`diff -q Eyg/Types/Soundness.lean /tmp/Soundness-backup...lean` IDENTICAL), `grep -rn
+      sorry Eyg/Types/*.lean` empty. **Fresh, specific user authorization this session for the
+      `RTSubstReady ℓ hbody` field on `HasTypeV.closure` — that exact single-level design is proven
+      unworkable below.** **THE COUNTEREXAMPLE (machine-checked, all `example`s/`def`s compiled):** the
+      closed program `let a = \x.\y.x in (\w. a w)` where the captured 2-parameter scheme
+      `a : ∀αβ. α→β→α` (generalized at level 1) is instantiated in the body `a w` at `args =
+      [.var 2 0, .var 5 0]` — the first arg (`α`) forced to `w`'s domain `.var 2 0` (level 2), the
+      SECOND arg (`β`, which does NOT appear in `a w` since `a w : β→α`) FREE at an independent level 5.
+      `HasType.var` places NO constraint on `args` levels (verified: `| var … → HasType lvl Γ ⟨.Variable
+      x,a⟩ (s.instantiateV args) ε`), so this is a legitimate declarative derivation; the whole program
+      type-checks (`def progAB`, level 1, `[]`, result type `.var 2 0 → (.var 5 0 → .var 2 0)`) and is
+      `HasTypeRT` (`HasTypeRT.lam` takes no body premise, so the body's off-level args never reach the
+      program-level RT — same structure as G30's machine-verified single-param CE). This closure
+      `Closure "w" (a w) [(a,…)]` is created DIRECTLY at top-level plain-lambda-eval (Soundness ~213) with
+      NO prior application to ground anything, so the `RTSubstReady ℓ hbody` field MUST be constructed
+      there. **It cannot:** the `RTSubstReady.var` side-condition for the `a`-node is `∀ t ∈ [.var 2 0,
+      .var 5 0], ∀ l ∈ t.levels, l = 0 ∨ l = ℓ ∨ l = s.level=1`, i.e. `(ℓ=2) ∧ (ℓ=5)` — UNSATISFIABLE for
+      every single `ℓ` (machine-checked: `example : ∀ ℓ, ¬ (…) := … omega`). G30's `ℓ`-disjunct admits ONE
+      off-scheme level; this witness has TWO independent ones. **DEEPER (design-fatal) consequence:** even
+      the CONSUME side is unsalvageable by iterated grounding — level 5 ESCAPES into the closure's result
+      type `.var 5 0 → .var 2 0`, so applying the closure to a `w`-value grounds only level 2 (the domain);
+      the re-typed body `a @ [ground, .var 5 0]` still fails `HasTypeRT.var`'s `{0, s.level}` bound
+      (`5 ∉ {0,1}`). So `HasTypeRT hbody` — the actual `MStateWf.E` requirement at the crux — is genuinely
+      unachievable for this reachable closure REGARDLESS of the field predicate, exposing that the
+      `{0, s.level}`-bounded-`HasTypeRT` E-state invariant (+ the matching `EnvWf.cons` readiness bound)
+      is itself incompatible with declaratively-typed programs that instantiate a captured multi-parameter
+      scheme at extra/escaping free levels. **DECISION (per the closing-brief rule "if you find ANY
+      construction site genuinely cannot supply `RTSubstReady` — a real counterexample, not difficulty —
+      STOP immediately"):** the authorized single-`ℓ` `RTSubstReady` field is refuted; salvage would need a
+      MULTI-level readiness predicate AND a matching relaxation of the E-state RT invariant + `EnvWf.cons`
+      readiness to admit escaping non-ground instantiation levels — a materially larger, different core
+      redesign (or a rethink of whether `HasTypeRT`-at-E-state is the right invariant at all). Requesting
+      fresh authorization / design decision for that broader change. Nothing committable (no source edits).
+      Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
