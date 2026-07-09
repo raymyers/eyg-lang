@@ -1118,6 +1118,232 @@ inductive HasTypeRTAt {m : Type} (ℓ : Nat) :
       (hτ : Ty.TyEquiv τ τ') (hε : Ty.TyEquiv ε ε') :
       HasTypeRTAt ℓ h → HasTypeRTAt ℓ (HasType.conv h hτ hε)
 
+/-! ## The self-contained re-typing precondition `RTSubstReady ℓ` + `hasTypeRT_subst` (gap 1)
+
+`hasTypeRT_subst` must, in one pass, (a) re-type a derivation under `substAt ℓ (ground σ)` — the
+`NoGenAt`-driven induction of `hasType_substAt_le` — AND (b) track the `HasTypeRTAt` args bound so the
+output is `HasTypeRT`. Mixing an induction on one derivation-indexed `Prop` predicate with an inversion
+of the other fails in Lean's dependent elimination (`HasType : Prop` gives no constructor discrimination
+through the derivation index; node-based inversion returns mismatched existentials + an irreducible
+`let_`/`let_poly` disjunct). `RTSubstReady ℓ h` sidesteps this: it merges both into ONE inductive,
+carrying — in a SINGLE recursion — the `var`/`builtin` args bound (`{0, ℓ, s.level}`) AND, at the two
+positions the RT recursion does NOT descend into but the re-typing DOES (`lam` body, `let_poly` defn),
+the `NoGenAt ℓ` witness that body needs. Inducting on it yields every sub-witness as an arm variable —
+no inversion, no existential mismatch, no dead disjunct. The carried `NoGenAt` fields are dischargeable
+for free at the (few) construction sites via `noGenAt_of_lt` (whenever `ℓ <` the sub-level) plus, at the
+non-strict `ℓ = lvl` boundary, the keystone's `inv_let`-supplied `NoGenAt lvl hdefn`. -/
+inductive RTSubstReady {m : Type} (ℓ : Nat) :
+    {lvl : Nat} → {Γ : Ctx} → {e : Tree.Node m} → {τ ε : Ty} →
+    HasType lvl Γ e τ ε → Prop where
+  | var {lvl Γ x s args ε a} (hl : Γ.lookup x = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = ℓ ∨ l = s.level) :
+      RTSubstReady ℓ (HasType.var (lvl := lvl) (Γ := Γ) (x := x) (s := s) (args := args)
+        (ε := ε) (a := a) hl)
+  | lam {lvl lvl' Γ x body argTy εb retTy ε a}
+      (hle : lvl ≤ lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono argTy) :: Γ) body retTy εb} :
+      NoGenAt ℓ hbody → RTSubstReady ℓ (HasType.lam (ε := ε) (a := a) hle hfv hbody)
+  | app {lvl Γ f arg argTy εf retTy ε a}
+      {hf : HasType lvl Γ f (.fun argTy εf retTy) ε} {hw : Ty.EffWeaken εf ε}
+      {harg : HasType lvl Γ arg argTy ε} :
+      RTSubstReady ℓ hf → RTSubstReady ℓ harg → RTSubstReady ℓ (HasType.app (a := a) hf hw harg)
+  | let_ {lvl lvl' Γ x defn body defnTy bodyTy ε a}
+      {hdefn : HasType lvl Γ defn defnTy ε} (hle : lvl ≤ lvl')
+      (hfv : ∀ l ∈ defnTy.levels, l < lvl')
+      {hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body bodyTy ε} :
+      RTSubstReady ℓ hdefn → RTSubstReady ℓ hbody →
+      RTSubstReady ℓ (HasType.let_ (a := a) hdefn hle hfv hbody)
+  | let_poly {lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a}
+      (hstrict : lvl < lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbodydefn : HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb} {hcw : CtxWfV lvl Γ}
+      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body bodyTy ε} :
+      lvl ≠ ℓ → NoGenAt ℓ hbodydefn → RTSubstReady ℓ hbody →
+      RTSubstReady ℓ (HasType.let_poly (a := a) (la := la) hstrict hfv hbodydefn hcw hbody)
+  | int {lvl Γ n ε a} :
+      RTSubstReady ℓ (HasType.int (m := m) (lvl := lvl) (Γ := Γ) (n := n) (ε := ε) (a := a))
+  | str {lvl Γ s ε a} :
+      RTSubstReady ℓ (HasType.str (m := m) (lvl := lvl) (Γ := Γ) (s := s) (ε := ε) (a := a))
+  | bin {lvl Γ b ε a} :
+      RTSubstReady ℓ (HasType.bin (m := m) (lvl := lvl) (Γ := Γ) (b := b) (ε := ε) (a := a))
+  | builtin {lvl Γ id s args ε a} (hs : Builtins.scheme id = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = ℓ ∨ l = s.level) :
+      RTSubstReady ℓ (HasType.builtin (lvl := lvl) (Γ := Γ) (args := args) (ε := ε) (a := a) hs)
+  | tail {lvl Γ elem ε a} :
+      RTSubstReady ℓ (HasType.tail (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | cons {lvl Γ elem ε a} :
+      RTSubstReady ℓ (HasType.cons (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
+  | tag {lvl Γ l elem tail ε a} :
+      RTSubstReady ℓ (HasType.tag (m := m) (lvl := lvl) (Γ := Γ) (l := l) (elem := elem)
+        (tail := tail) (ε := ε) (a := a))
+  | nocases {lvl Γ ret ε a} :
+      RTSubstReady ℓ (HasType.nocases (m := m) (lvl := lvl) (Γ := Γ) (ret := ret) (ε := ε)
+        (a := a))
+  | case_ {lvl Γ l inner eff ret tail ε a} :
+      RTSubstReady ℓ (HasType.case_ (m := m) (lvl := lvl) (Γ := Γ) (l := l) (inner := inner)
+        (eff := eff) (ret := ret) (tail := tail) (ε := ε) (a := a))
+  | select {lvl Γ l fieldTy tail ε a} :
+      RTSubstReady ℓ (HasType.select (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (tail := tail) (ε := ε) (a := a))
+  | extend {lvl Γ l fieldTy row ε a} :
+      RTSubstReady ℓ (HasType.extend (m := m) (lvl := lvl) (Γ := Γ) (l := l) (fieldTy := fieldTy)
+        (row := row) (ε := ε) (a := a))
+  | overwrite {lvl Γ l newTy oldTy tail ε a} :
+      RTSubstReady ℓ (HasType.overwrite (m := m) (lvl := lvl) (Γ := Γ) (l := l) (newTy := newTy)
+        (oldTy := oldTy) (tail := tail) (ε := ε) (a := a))
+  | empty {lvl Γ ε a} :
+      RTSubstReady ℓ (HasType.empty (m := m) (lvl := lvl) (Γ := Γ) (ε := ε) (a := a))
+  | perform {lvl Γ l aa b μ ε ann} :
+      RTSubstReady ℓ (HasType.perform (m := m) (lvl := lvl) (Γ := Γ) (l := l) (a := aa) (b := b)
+        (μ := μ) (ε := ε) (ann := ann))
+  | handle {lvl Γ l lift reply tail ret ε ann} :
+      RTSubstReady ℓ (HasType.handle (m := m) (lvl := lvl) (Γ := Γ) (l := l) (lift := lift)
+        (reply := reply) (tail := tail) (ret := ret) (ε := ε) (ann := ann))
+  | conv {lvl Γ e τ τ' ε ε'} {h : HasType lvl Γ e τ ε}
+      (hτ : Ty.TyEquiv τ τ') (hε : Ty.TyEquiv ε ε') :
+      RTSubstReady ℓ h → RTSubstReady ℓ (HasType.conv h hτ hε)
+
+/-- **The RT-tracking companion to `hasType_substAt_le` (gap 1: closure-body re-typing).** From a
+`RTSubstReady ℓ h` (the level-`ℓ`-aware bound + carried `NoGenAt` witnesses) and a **ground** `σ`,
+produces a bundled re-typed derivation `h'` **together with** `HasTypeRT h'`. Single induction on
+`RTSubstReady`; every sub-witness is an arm variable. The `var`/`builtin` arms discharge the extra `ℓ`
+disjunct of the input args bound (`substAt ℓ σ` removes `ℓ` via `Ty.not_mem_levels_substAt`, introduces
+only `0` via `hσ`, so the output lands in `{0, s.level}`). The `lam`/`let_poly`-defn bodies are re-typed
+via `hasType_substAt_le` using the carried `NoGenAt`; RT-recursive positions use the IH. -/
+theorem hasTypeRT_subst {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
+    (hσ : ∀ i, ∀ l ∈ (σ i).levels, l = 0)
+    {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    {h : HasType lvl Γ e τ ε} (hr : RTSubstReady ℓ h) (hlt : ℓ ≤ lvl)
+    (hΓ : PolyAboveFV ℓ Γ e) :
+    ∃ h' : HasType lvl (substCtxAt ℓ σ Γ) e (Ty.substAt ℓ σ τ) (Ty.substAt ℓ σ ε), HasTypeRT h' := by
+  have hσle : ∀ i, ∀ l ∈ (σ i).levels, l = 0 ∨ l = ℓ := fun i l hl => Or.inl (hσ i l hl)
+  have hσleq : ∀ i, ∀ l ∈ (σ i).levels, l ≤ ℓ := fun i l hl => by rw [hσ i l hl]; exact Nat.zero_le ℓ
+  have hσℓ : ∀ i, ℓ ∉ (σ i).levels := fun i hmem => hℓ (hσ i ℓ hmem)
+  revert hlt hΓ
+  induction hr with
+  | @var lvl Γ x s args ε a hl hargs =>
+      intro hlt hΓ
+      have hdisj : s.arity = 0 ∨ (ℓ ≠ s.level ∧ ∀ i, ∀ j, j ∉ Ty.freeVarsAt s.level (σ i)) := by
+        by_cases h0 : s.arity = 0
+        · exact Or.inl h0
+        · obtain ⟨hlvl0, hlvlℓ⟩ :=
+            (hΓ x (by simp [Tree.Node.freeVars]) s hl).resolve_left h0
+          refine Or.inr ⟨Ne.symm hlvlℓ, ?_⟩
+          intro i j hj
+          exact hlvl0 (hσ i s.level (Ty.mem_levels_of_mem_freeVarsAt hj))
+      rw [substAt_instantiateV_scheme hdisj args]
+      refine ⟨HasType.var (substCtxAt_lookup hl), HasTypeRT.var (substCtxAt_lookup hl) ?_⟩
+      intro t ht l hl2
+      rw [List.mem_map] at ht; obtain ⟨t0, ht0, rfl⟩ := ht
+      have hlℓ : l ≠ ℓ := fun hh => Ty.not_mem_levels_substAt hσℓ t0 (hh ▸ hl2)
+      rcases Ty.mem_levels_substAt_strong hl2 with hl' | ⟨_, i, hi⟩
+      · rcases hargs t0 ht0 l hl' with h0 | hℓ2 | hsl
+        · exact Or.inl h0
+        · exact absurd hℓ2 hlℓ
+        · exact Or.inr hsl
+      · exact Or.inl (hσ i l hi)
+  | @builtin lvl Γ id s args ε a hs hargs =>
+      intro hlt hΓ
+      rw [substAt_instantiateV_closed (by rw [Builtins.scheme_level hs]; exact hℓ)
+            (Builtins.scheme_no_level hℓ hs) args,
+          Builtins.scheme_substSchemeVAt hℓ σ hs]
+      refine ⟨HasType.builtin hs, HasTypeRT.builtin hs ?_⟩
+      intro t ht l hl2
+      rw [List.mem_map] at ht; obtain ⟨t0, ht0, rfl⟩ := ht
+      have hlℓ : l ≠ ℓ := fun hh => Ty.not_mem_levels_substAt hσℓ t0 (hh ▸ hl2)
+      rcases Ty.mem_levels_substAt_strong hl2 with hl' | ⟨_, i, hi⟩
+      · rcases hargs t0 ht0 l hl' with h0 | hℓ2 | hsl
+        · exact Or.inl h0
+        · exact absurd hℓ2 hlℓ
+        · exact Or.inr hsl
+      · exact Or.inl (hσ i l hi)
+  | @lam lvl lvl' Γ x body argTy εb retTy ε a hle hfv hbody hng_body =>
+      intro hlt hΓ
+      have hfv' : ∀ l ∈ (Ty.substAt ℓ σ argTy).levels, l < lvl' := by
+        intro l hl
+        rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
+        · exact hfv l hl'
+        · exact Nat.lt_of_le_of_lt (hσleq i l hi) (hfv ℓ hm)
+      have hΓdb : PolyAboveFV ℓ ((x, Scheme.mono argTy) :: Γ) body :=
+        polyAboveFV_bind (Or.inl rfl) hΓ
+          (fun y hy hne => List.mem_filter.mpr ⟨hy, by simpa using hne⟩)
+      have hbody' := hasType_substAt_le hℓ σ hσle hng_body (le_trans hlt hle) hΓdb
+      simp only [Ty.substAt]
+      exact ⟨HasType.lam hle hfv' hbody', HasTypeRT.lam (hbody := hbody') hle hfv'⟩
+  | @app lvl Γ f arg argTy εf retTy ε a hf hw harg rf rarg ihf iharg =>
+      intro hlt hΓ
+      obtain ⟨hf', rf'⟩ := ihf hlt (polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy))
+      obtain ⟨harg', rarg'⟩ := iharg hlt (polyAboveFV_sub hΓ (fun y hy => List.mem_append_right _ hy))
+      exact ⟨HasType.app hf' (Ty.substAt_effWeaken ℓ σ hw) harg',
+        HasTypeRT.app (hw := Ty.substAt_effWeaken ℓ σ hw) rf' rarg'⟩
+  | @let_ lvl lvl' Γ x defn body defnTy bodyTy ε a hdefn hle hfv hbody rd rb ihdefn ihbody =>
+      intro hlt hΓ
+      have hfv' : ∀ l ∈ (Ty.substAt ℓ σ defnTy).levels, l < lvl' := by
+        intro l hl
+        rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
+        · exact hfv l hl'
+        · exact Nat.lt_of_le_of_lt (hσleq i l hi) (hfv ℓ hm)
+      obtain ⟨hd, rd'⟩ := ihdefn hlt (polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy))
+      obtain ⟨hb, rb'⟩ := ihbody (le_trans hlt hle)
+        (polyAboveFV_bind (Or.inl rfl) hΓ
+          (fun y hy hne => List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne⟩)))
+      exact ⟨HasType.let_ hd hle hfv' hb, HasTypeRT.let_ hle hfv' rd' rb'⟩
+  | @let_poly lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw hbody
+      hne hng_defn rb ihbody =>
+      intro hlt hΓ
+      have hlts : ℓ < lvl := lt_of_le_of_ne hlt (Ne.symm hne)
+      have hne' : ℓ ≠ lvl := Nat.ne_of_lt hlts
+      have hcleanlvl : ∀ i, lvl ∉ (σ i).levels := fun i hmem => absurd (hσ i lvl hmem) (by omega)
+      have hΓdefn : PolyAboveFV ℓ Γ ⟨.Lambda lx lbody, la⟩ :=
+        polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy)
+      have hΓdb : PolyAboveFV ℓ ((lx, Scheme.mono argTy) :: Γ) lbody :=
+        polyAboveFV_bind (Or.inl rfl) hΓdefn
+          (fun y hy hne2 => List.mem_filter.mpr ⟨hy, by simpa using hne2⟩)
+      have hbd := hasType_substAt_le hℓ σ hσle hng_defn (le_of_lt (lt_trans hlts hstrict)) hΓdb
+      have hfv' : ∀ l ∈ (Ty.substAt ℓ σ argTy).levels, l < lvl' := by
+        intro l hl
+        rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
+        · exact hfv l hl'
+        · exact Nat.lt_of_le_of_lt (hσleq i l hi) (hfv ℓ hm)
+      have hΓ1 : PolyAboveFV ℓ ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body :=
+        polyAboveFV_bind (Or.inr (by simp only [Scheme.genAtV]; omega)) hΓ
+          (fun y hy hne2 => List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne2⟩))
+      have key : ∃ hb : HasType (lvl + 1)
+          (substCtxAt ℓ σ ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ)) body
+          (Ty.substAt ℓ σ bodyTy) (Ty.substAt ℓ σ ε), HasTypeRT hb :=
+        ihbody (by omega : ℓ ≤ lvl + 1) hΓ1
+      rw [substCtxAt_cons_genAtV hne' hcleanlvl] at key
+      simp only [Ty.substAt] at key
+      obtain ⟨hbodyIH, rbody'⟩ := key
+      exact ⟨HasType.let_poly hstrict hfv' hbd (ctxWfV_substCtxAt hlts hσleq hcw) hbodyIH,
+        HasTypeRT.let_poly (hbodydefn := hbd) (hcw := ctxWfV_substCtxAt hlts hσleq hcw)
+          hstrict hfv' rbody'⟩
+  | int => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.int, HasTypeRT.int⟩
+  | str => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.str, HasTypeRT.str⟩
+  | bin => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.bin, HasTypeRT.bin⟩
+  | tail => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.tail, HasTypeRT.tail⟩
+  | cons => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.cons, HasTypeRT.cons⟩
+  | tag => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.tag, HasTypeRT.tag⟩
+  | nocases => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.nocases, HasTypeRT.nocases⟩
+  | case_ => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.case_, HasTypeRT.case_⟩
+  | select => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.select, HasTypeRT.select⟩
+  | extend => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.extend, HasTypeRT.extend⟩
+  | overwrite =>
+      intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.overwrite, HasTypeRT.overwrite⟩
+  | empty => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.empty, HasTypeRT.empty⟩
+  | perform => intro hlt hΓ; simp only [Ty.substAt]; exact ⟨HasType.perform, HasTypeRT.perform⟩
+  | @handle lvl Γ l lift reply tail ret ε a =>
+      intro hlt hΓ
+      have heq : Ty.substAt ℓ σ (handleTy l lift reply tail ret)
+          = handleTy l (Ty.substAt ℓ σ lift) (Ty.substAt ℓ σ reply) (Ty.substAt ℓ σ tail)
+              (Ty.substAt ℓ σ ret) := by
+        simp [handleTy, handlerTy, execTy, kontTy, Ty.substAt]
+      rw [heq]; exact ⟨HasType.handle, HasTypeRT.handle⟩
+  | @conv lvl Γ e τ τ' ε ε' h hτ hε rh ih =>
+      intro hlt hΓ
+      obtain ⟨h', rh'⟩ := ih hlt hΓ
+      exact ⟨HasType.conv h' (Ty.substAt_tyEquiv ℓ σ hτ) (Ty.substAt_tyEquiv ℓ σ hε),
+        HasTypeRT.conv (Ty.substAt_tyEquiv ℓ σ hτ) (Ty.substAt_tyEquiv ℓ σ hε) rh'⟩
+
 /-- **The var-preservation discharge lemma.** From a `HasTypeRT` control derivation on a bare
 variable node, recover the looked-up scheme, its instantiation args, the lookup, the equivalence (as
 `inv_var`) **and** the args side-condition needed to apply `envwf_lookup`'s conditional readiness
