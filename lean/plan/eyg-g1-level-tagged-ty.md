@@ -464,6 +464,36 @@ the datatype change itself.
       (`Substitution.lean`, untouched this session) to actually call the new keystone; gap 1
       (`HasTypeRT`, var-preservation runtime groundness) remains open and independent; the ~90-error
       mechanical `Soundness.lean` grind untouched. No `sorry`, no axioms, no rule change.
+      **Progress 2026-07-08 (Session G2 — gap 1's `HasTypeRT` DESIGNED + LANDED, wired into
+      `MStateWf.E`; three green additive commits `379c4d62`/`020e28ff`/`4d5fe793`, see
+      `progress/2026-07-08-G1-phase6-sessionG2-hastypeRT-landed-lam-nonrecursion-correction.md`):**
+      No LSP (script fallback). Built the runtime-restricted judgment `HasTypeRT` (indexed by a
+      `HasType` derivation, à la `NoGenAt` — NOT a 24-constructor standalone mirror, which would force
+      re-proving all typing plumbing at RT level). **Design correction over Session D's sketch** (found
+      + validated while building): the `lam` arm must **not** recurse into the lambda body, and
+      `let_poly` not into its lambda-defn. A lambda body is never evaluated as a control until its
+      closure is applied (re-typed by the keystone with ground args); recursing would wrongly reject the
+      *legitimate* whole referencing program (`hbody_ref`'s `\w. a w` body has non-ground arg
+      `[.var 2 0]`, level 2 ≠ `a.level` 1). Landed in `Typing.lean`: `HasTypeRT` + `inv_var_rt` (the
+      exact gap-1 discharge — extracts the args side-condition `∀ t ∈ args, ∀ l ∈ t.levels,
+      l = 0 ∨ l = s.level` that `envwf_lookup`'s conditional `hvty` needs) + `inv_builtin_rt` +
+      `hasTypeRT_lambda` (any lambda control is RT) + RT-inversions `inv_app_rt`/`inv_let_rt`
+      (preservation plumbing). Non-vacuously validated: RT of a lambda whose body is exactly
+      `hbody_ref` holds via `HasTypeRT.lam` (no body premise). Wired into `Machine.lean`: `MStateWf`'s
+      `.E` case now carries `HasTypeRT hty` of the control; `mStateWf_initial` gains a `HasTypeRT h`
+      premise (entry-point instance of the invariant). **Genuine finding on the "runtime args always
+      ground" hypothesis (Session D flagged "verify carefully"):** it holds only as a *threaded runtime
+      property* — the initial program is RT for closed programs of **ground result type** (an open-result
+      program like `id id` has non-ground top-level var args and is legitimately non-RT, hence
+      `mStateWf_initial`'s RT premise rather than a universal lemma), and preservation must
+      **re-establish** it at each step (via `hasTypeRT_lambda` / the keystone's `substAt`-grounding for
+      applied closures). Per-file green (Typing/Machine/Runtime/Generation/Substitution), axioms
+      `[propext]` only, no `sorry`. **Still open for the next (LSP) session:** (a) StackWf /
+      StackWfE / StackWfV **frame-RT threading** (Arg/Assign frames store expressions that become
+      controls — needed for preservation to re-establish `MStateWf.E`'s RT across frame pops; entangled
+      with the Soundness preservation proof, deferred); (b) wire `genAtV_closure_ready_value_node`
+      (`Substitution.lean`) to the Session-G1 keystone; (c) the ~90-error two-engine `Soundness.lean`
+      grind (var-preservation now discharges via `inv_var_rt`). Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
