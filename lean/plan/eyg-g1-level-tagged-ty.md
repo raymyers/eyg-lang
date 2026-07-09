@@ -855,6 +855,42 @@ the datatype change itself.
       bottom-up fresh-level assignment (G8 re-instantiation), decides whether `hasType_strictify` falls to
       a clean fresh-level mutual induction. Wants live LSP to build arm-by-arm. Soundness.lean left as
       found, no code change, HEAD `e1e7a742` unchanged. Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G15 — BUILT the raise induction; machine-confirmed the two-modes
+      wall is REAL and isolated to the `let_poly` defn-type relabel, not dodged by the existence
+      framing).** No LSP (canary failed); Read/Grep + `lake env lean` scratch. Drafted `hasType_raise`
+      (the derivation-level generalization-level raise: `LevelsBelow N h → HasType (lvl+o)
+      (raiseCtx t o Γ) e τ ε`, threshold `t`, offset `o ≥ N`, output type **held fixed**) with a
+      canonical-context invariant `∀ b∈Γ, t ≤ b.2.level → b.2 = genAtV b.2.level b.2.body ∧ body.levels < N`
+      (threads cleanly: initial `Γ` vacuous under `CtxWfV t Γ` since non-vacuous `genAtV k d` has
+      `k ∈ d.levels < t`; `lam`/`let_` add `mono` at level 0; `let_poly` adds `genAtV lvl defnTy` with
+      `defnTy.levels < N` from `LevelsBelow`). **All ~20 arms compile except `let_poly`** (var/lam/let_/
+      app/conv/atoms verified in a scratch import of `Typing`). The `let_poly` arm fails at exactly the
+      predicted spot: the reconstructed node's bound-variable scheme is `genAtV (lvl+o) (substAt lvl
+      (·↦var (lvl+o)) defnTy)` (raise re-tags the scheme body), so the **defn** sub-derivation must be
+      produced at the RELABELED type `substAt lvl (·↦var (lvl+o)) defnTy`, but the IH (`output fixed`)
+      hands back the defn at the ORIGINAL `defnTy`. **Definitive characterization of the wall:** within
+      `defnTy` every level-`lvl` tag is generalized by this `let_poly` (`genAtV lvl` captures ALL
+      level-`lvl` occurrences) so ALL must relabel; but within the `let_poly`'s OUTPUT type the level-`lvl`
+      tags are FREE (escaped via instantiation args, e.g. `escRetTy = var 1 0 → var 1 0`) and must STAY —
+      identical tag value `lvl`, opposite requirements, indistinguishable at the type level. Neither a
+      uniform "keep output fixed" nor "relabel output by `substAt t (·↦var (t+o))`" policy closes both
+      the inner-defn relabel and the outer-lambda/wrapper reconstruction. `hasType_substAt_le` cannot do
+      the defn relabel (its `σ` levels must be `∈ {0,ℓ}`; `var (lvl+o)` introduces a fresh level `lvl+o ∉
+      {0,lvl}`), so relabeling free level-`lvl` tags in a derivation IS the raise itself — **the raise is
+      genuinely self-referential/mutual**, not reducible to substitution. The `escLam_lvl2`/`advPerf_lvl2`
+      witnesses sidestep this only because their inner defn is a LEAF (`\z.z`) re-derived FRESH at the
+      target level; a general theorem must relabel free level-`t` tags in an arbitrary defn subtree, which
+      needs a mutual (relabel-free-tags ⋈ strictify-inner-`let_poly`) development. **Landed & committed:**
+      salvaged `ctxWfV_raiseCtx` (`CtxWfV lvl Γ → CtxWfV (lvl+o) (raiseCtx t o Γ)`) into `Typing.lean`
+      (per-file green, no `sorry`; genuine reusable infra for whichever raise formulation lands). Typing +
+      Substitution per-file green; Soundness.lean left EXACTLY as found (pre-existing 53-line partial
+      migration, 85 error sites, untouched — full green far off). Axioms unchanged, no `sorry` anywhere.
+      **Recommended next (with LSP):** formulate the raise as a MUTUAL pair — (a) `hasType_relabelFree`
+      (relabel free level-`t` tags `t↦t+o` in a derivation with `NoGenAt t`-below, i.e. no `let_poly`
+      generalizes at `t` inside) and (b) `hasType_raise` proper (bumps ambient/gen levels), with the
+      `let_poly` arm of (b) calling (a) on the defn — OR fold the whole re-instantiation into
+      `genAtV_closure_ready_value_node` per the G6 shape so the defn is re-derived fresh at the fresh
+      level rather than transformed. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

@@ -1453,6 +1453,29 @@ theorem raiseScheme_genAtV_instantiateV {t o k N : Nat} (hoN : N ≤ o) (hot : 0
   rw [hrs, instantiateV_genAtV_relabel hne hf hcov]
   exact instantiateV_pad_default args extra
 
+/-- **`CtxWfV` is stable (level-shifted) under the generalization-level raise.** A context whose every
+binding's body levels are `< lvl` still has every raised binding's body levels `< lvl + o`: bindings
+below the threshold `t` are fixed (`< lvl < lvl + o`); a raised binding `genAtV k d ↦
+genAtV (k+o) (substAt k (·↦var (k+o)) d)` has body levels either inherited from `d` (`< lvl < lvl+o`)
+or the relabel target `k+o` — and `k+o` occurs only if `k ∈ d.levels`, whence `k < lvl` (via the
+`CtxWfV` bound on `d`) so `k+o < lvl+o`. The `let_poly`-arm obligation of the generalization-level
+raise induction (`raiseCtx` re-tags the internally-introduced `genAtV` bindings; this keeps the
+recorded `CtxWfV` side-condition valid at the raised ambient). -/
+theorem ctxWfV_raiseCtx {lvl t o : Nat} {Γ : Ctx} (hΓ : CtxWfV lvl Γ) :
+    CtxWfV (lvl + o) (raiseCtx t o Γ) := by
+  intro b hb l hl
+  simp only [raiseCtx, List.mem_map] at hb
+  obtain ⟨⟨y, s⟩, hmem, rfl⟩ := hb
+  simp only [raiseScheme] at hl
+  by_cases hts : t ≤ s.level
+  · simp only [if_pos hts, Scheme.genAtV] at hl
+    rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hsl, i, hi⟩
+    · exact Nat.lt_of_lt_of_le (hΓ (y, s) hmem l hl') (Nat.le_add_right _ _)
+    · simp only [Ty.levels, List.mem_singleton] at hi; subst hi
+      exact Nat.add_lt_add_right (hΓ (y, s) hmem s.level hsl) o
+  · simp only [if_neg hts] at hl
+    exact Nat.lt_of_lt_of_le (hΓ (y, s) hmem l hl) (Nat.le_add_right _ _)
+
 /-! ## Sanity checks -/
 
 section Examples
