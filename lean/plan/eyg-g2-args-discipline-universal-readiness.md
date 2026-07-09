@@ -173,8 +173,12 @@ fully-unconstrained-args entry premise is not witnessable by any level-bounded i
       - [x] V1–V6 consumption-side witnesses landed as a permanent regression module
             (`Eyg/Types/G2Validation.lean`, builds clean, axioms `[propext, Quot.sound]`). Pins the
             plan premise: universal readiness is TRUE at the exact G30/G31 fatal instantiations.
-      - [ ] `hasType_substAt_multi` proof (the genuinely-new math — in progress).
-      - [ ] ambient-monotonicity / floor-nesting lemma.
+      - [x] **`hasType_substAt_multi` PROVEN — go/no-go gate GREEN** (`Eyg/Types/G2Spike.lean`, no
+            sorry, standard axioms). The winning σ-condition is *simpler* than §3's tentative form:
+            `l = 0 ∨ (l < lvl ∧ PolyAboveFV l Γ e)` — `NoGenAt l h` need NOT be threaded (free via
+            `noGenAt_of_lt` for `l < lvl`). See `plan/progress/2026-07-09-G2-phase1-substAt-multi-GREEN.md`;
+            fold the simplification into §2/§3's promise phrasing at Phase 2.
+      - [x] ambient-monotonicity is already `noGenAt_of_lt`; floor-nesting reduces to it (no new lemma).
 - [ ] **Phase 2 — `ArgsDisc` + readiness keystone.** Define `ArgsDisc` (+ floor carrier decision),
       its inversions, `ctxConv`/`weakenEff` transport, and substAt-preservation companion; strengthen
       `genAtV_closure_ready_value_node` to the floor-conditioned promise. Per-file green, additive.
