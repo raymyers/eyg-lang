@@ -244,12 +244,14 @@ inductive StackSegWf {m : Type} : Stack m → Ty → Ty → Ty → Ty → Prop w
       StackSegWf ((Kontinue.Trace w, a) :: rest) σin εin σout εout
   | assign {a x body fenv Γ defnTy bodyTy εin σout εout rest lvl} :
       EnvWf fenv Γ →
-      HasType lvl ((x, .mono defnTy) :: Γ) body bodyTy εin →
+      (hbody : HasType lvl ((x, .mono defnTy) :: Γ) body bodyTy εin) →
+      HasTypeRT hbody →
       StackSegWf rest bodyTy εin σout εout →
       StackSegWf ((Kontinue.Assign x body fenv, a) :: rest) defnTy εin σout εout
   | arg {a arg fenv Γ argTy εf retTy εin σout εout rest lvl} :
       EnvWf fenv Γ →
-      HasType lvl Γ arg argTy εin →
+      (harg : HasType lvl Γ arg argTy εin) →
+      HasTypeRT harg →
       Ty.EffWeaken εf εin →
       StackSegWf rest retTy εin σout εout →
       StackSegWf ((Kontinue.Arg arg fenv, a) :: rest) (.fun argTy εf retTy) εin σout εout
@@ -329,8 +331,8 @@ theorem stackSeg_conv_output {m : Type} {seg : Stack m} :
       obtain ⟨kont, ann⟩ := hd
       cases h with
       | trace h' => exact .trace (ih h' hσ hε)
-      | assign henv hbody h' => exact .assign henv hbody (ih h' hσ hε)
-      | arg henv harg hw h' => exact .arg henv harg hw (ih h' hσ hε)
+      | assign henv hbody hrt h' => exact .assign henv hbody hrt (ih h' hσ hε)
+      | arg henv harg hrt hw h' => exact .arg henv harg hrt hw (ih h' hσ hε)
       | applyf hf hw h' => exact .applyf hf hw (ih h' hσ hε)
       | callwith harg hw h' => exact .callwith harg hw (ih h' hσ hε)
       | delimit hh he hweak h' => exact .delimit hh he hweak (ih h' hσ hε)
@@ -351,16 +353,18 @@ theorem stackSeg_conv_input {m : Type} {seg : Stack m} :
       obtain ⟨kont, ann⟩ := hd
       cases h with
       | trace h' => exact .trace (ih h' hσ hε)
-      | assign henv hbody h' =>
-          exact .assign henv ((hasType_ctxHead_conv hbody hσ).conv (.refl _) hε.symm)
-            (ih h' (.refl _) hε)
-      | @arg _ arg fenv Γ argTy εf retTy εin₀ _ _ rest' _ henv harg hw h' =>
+      | assign henv hbody hrt h' =>
+          obtain ⟨hbody', hrt'⟩ := hasTypeRT_ctxHead_conv hrt hσ
+          exact .assign henv (hbody'.conv (.refl _) hε.symm)
+            (hrt'.conv (.refl _) hε.symm) (ih h' (.refl _) hε)
+      | @arg _ arg fenv Γ argTy εf retTy εin₀ _ _ rest' _ henv harg hrt hw h' =>
           obtain ⟨a', e', r', rfl, ha', he', hr'⟩ := Ty.tyEquiv_fun_inv' hσ
           have hw' : Ty.EffWeaken e' εin' := by
             rcases Ty.effWeaken_tyEquiv_right hw hε.symm with h | h
             · exact .inl (he'.trans h)
             · exact .inr (he'.trans h)
-          exact .arg henv (harg.conv ha'.symm hε.symm) hw' (ih h' hr' hε)
+          exact .arg henv (harg.conv ha'.symm hε.symm) (hrt.conv ha'.symm hε.symm) hw'
+            (ih h' hr' hε)
       | @applyf _ f fenv argTy εf retTy εin₀ _ _ rest' hf hw h' =>
           have hf' : HasTypeV f (.fun σin' εf retTy) :=
             hf.conv (.congrFun hσ.symm (.refl _) (.refl _))
@@ -391,8 +395,8 @@ theorem stackSeg_append {m : Type} {seg k : Stack m} {σin εin σmid εmid σou
       obtain ⟨kont, ann⟩ := hd
       cases hseg with
       | trace h => exact .trace (ih h)
-      | assign henv hbody h => exact .assign henv hbody (ih h)
-      | arg henv harg hw h => exact .arg henv harg hw (ih h)
+      | assign henv hbody hrt h => exact .assign henv hbody hrt (ih h)
+      | arg henv harg hrt hw h => exact .arg henv harg hrt hw (ih h)
       | applyf hf hw h => exact .applyf hf hw (ih h)
       | callwith harg hw h => exact .callwith harg hw (ih h)
       | delimit hh he hweak h => exact .delimit hh he hweak (ih h)
