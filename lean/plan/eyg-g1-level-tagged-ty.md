@@ -955,6 +955,42 @@ the datatype change itself.
       `hasType_strictify` = the two-modes wall; needs invariant (i) "`defnTy` nests no foreign cross-level
       `let_poly`" (may be false) or (ii) a mutual structural-`termination_by` freshening induction. Wants
       live LSP, multi-session. Soundness.lean left EXACTLY as found. Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G18 — STRATEGIC PIVOT; the raise/strictify wall DISSOLVED, not
+      climbed, by an additive-`NoGenAt`-on-`let_poly` route; analysis + doc only, no code change; see
+      `progress/2026-07-09-G1-phase6-sessionG18-strategic-pivot-additive-noGenAt-on-let_poly-dissolves-wall.md`):**
+      No LSP. Per task, STOPPED trying to prove the type-fixed `hasType_strictify`/raise theorem (G7–G17
+      convergent wall) and investigated genuinely different routes. **Key reframing:** `HasType` is a
+      `Prop`, so by proof irrelevance `NoGenAt ℓ h` is a property of the JUDGMENT, not the surface
+      derivation (this is exactly what `escLam_lvl1_noGenAt := escLam_lvl2_noGenAt`, Typing.lean:2113,
+      already uses); `hasType_strictify` is thus "every judgment admits a `NoGenAt lvl` derivation", and
+      the wall is proving it for an adversarial `lvl'=lvl` derivation where escaped-vs-bound level-`lvl`
+      vars are the same leaf. **Root cause:** the `lam` rule (Typing.lean:111) permits non-strict
+      `lvl ≤ lvl'`, so the `lvl'=lvl` collision is even constructible; `noGenAt_of_lt` (Typing.lean:768)
+      shows `lvl'>lvl` gives `NoGenAt` free. Real algorithmic let-gen (Rémy/OCaml levels) uses strictly
+      increasing fresh levels; the codebase's own canonical examples already do (Generalization.lean:651/667
+      use `lvl':=2` under ambient `1`). **The route (Route 1):** make `HasType.let_poly` (Typing.lean:132)
+      additively record `NoGenAt lvl hdefn` at construction. This is **self-enforcing** — `NoGenAt.let_poly`
+      (Typing.lean:531) needs `lvl ≠ inner-gen-level`, so a `let_poly` nesting a same-level `let_poly`
+      becomes UNCONSTRUCTABLE, removing the exact collision from the relation. Then `inv_let` at the
+      Soundness `let_poly` site (Soundness.lean:236-243) hands the wrapper's `hng`
+      (Substitution.lean:170) for free, with NO raise theorem. Every OTHER `let_poly` construction site
+      (~15: subst arms 411/657, ctxConv 1063, effWeaken Soundness:73, examples, Generalization) supplies
+      the field via companion `NoGenAt`-PRESERVATION lemmas (all these transformations FIX generalization
+      levels, so `NoGenAt lvl` is preserved, never RE-derived — the crucial difference from the wall).
+      **De-risked:** `lake exe spec` root `Eyg.Spec.Harness` has NO `HasType` (104/104 is pure runtime →
+      spec-adequacy risk zero); canonical derivations already satisfy the field. **Blocking caveat:** this
+      is a `HasType` SPEC change → per hard constraints needs parent/user approval (NOT shipped this
+      session). Honest narrowing verdict: rejects same-level-nested `let_poly` nodes, conjecturally
+      re-typable at fresh levels (proving that IS strictify, stays unproven); soundness fully proved for
+      the new relation, statement non-trivial, spec intact — a defensible spec REFINEMENT to canonical
+      fresh levels, but a genuine spec change. Routes 2 (weaker conclusion — readiness needed at full `∀
+      args` generality via `envwf_lookup`), 3 (runtime freshness — strictly larger), 4 (unreachability —
+      collision is constructible) investigated and rejected as primary. **Recommendation:** seek approval
+      for the additive-`NoGenAt` `let_poly` field, then execute incrementally with live LSP (preservation
+      lemmas first, per-file green; constructor change + Soundness discharge last). If approval withheld,
+      document Caveat 5 OPEN with this route recorded as the recommended resolution rather than budgeting
+      further sessions against the type-fixed strictify wall. Soundness.lean left EXACTLY as found.
+      Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
