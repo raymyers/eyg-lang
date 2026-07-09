@@ -756,6 +756,46 @@ theorem inv_lambda_noGenAt {ℓ lvl : Nat} {Γ : Ctx} {x : String} {body : Tree.
       exact ⟨lvl', argTy, εb, retTy, hbody, hle, hfv, nghbody, heq.trans hτ⟩
   | _ => intro he; exact absurd he (by simp)
 
+/-- **Level-monotone `NoGenAt`.** The ambient level of a `HasType` derivation only ever *increases*
+as one descends (`lam`/`let_` keep the body at `≥` level; `let_poly` bumps its body to `lvl+1`;
+`app`/`conv` keep it fixed), so every reachable `let_poly` generalizes at a level `≥` the root's —
+whence a derivation typed at level `lvl` satisfies `NoGenAt ℓ` for **every** `ℓ < lvl`. This is the
+non-narrowing tool that discharges the closure-readiness wrapper's `NoGenAt lvl` obligation whenever
+the value-restricted lambda's body sublevel is *strictly* above the generalization level
+(`lvl' > lvl`), with **no** external `NoGenAt` witness. (The residual `lvl' = lvl` case — e.g. the
+`defnPerf` effect-tail witness in `section Examples` — still needs a genuine `NoGenAt`, so this
+does not by itself close the `let_poly` preservation site.) -/
+theorem noGenAt_of_lt {ℓ : Nat} :
+    ∀ {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+      (h : HasType lvl Γ e τ ε), ℓ < lvl → NoGenAt ℓ h := by
+  intro lvl Γ e τ ε h
+  induction h with
+  | var hl => exact fun _ => NoGenAt.var hl
+  | lam hle hfv hbody ih => exact fun hlt => NoGenAt.lam hle hfv (ih (lt_of_lt_of_le hlt hle))
+  | app hf hw harg ihf iharg => exact fun hlt => NoGenAt.app (hw := hw) (ihf hlt) (iharg hlt)
+  | let_ hdefn hle hfv hbody ihd ihb =>
+      exact fun hlt => NoGenAt.let_ hle hfv (ihd hlt) (ihb (lt_of_lt_of_le hlt hle))
+  | let_poly hdefn hcw hbody ihd ihb =>
+      exact fun hlt =>
+        NoGenAt.let_poly (hcw := hcw) (Nat.ne_of_lt hlt).symm (ihd hlt)
+          (ihb (Nat.lt_succ_of_lt hlt))
+  | int => exact fun _ => NoGenAt.int
+  | str => exact fun _ => NoGenAt.str
+  | bin => exact fun _ => NoGenAt.bin
+  | builtin hs => exact fun _ => NoGenAt.builtin hs
+  | tail => exact fun _ => NoGenAt.tail
+  | cons => exact fun _ => NoGenAt.cons
+  | tag => exact fun _ => NoGenAt.tag
+  | nocases => exact fun _ => NoGenAt.nocases
+  | case_ => exact fun _ => NoGenAt.case_
+  | select => exact fun _ => NoGenAt.select
+  | extend => exact fun _ => NoGenAt.extend
+  | overwrite => exact fun _ => NoGenAt.overwrite
+  | empty => exact fun _ => NoGenAt.empty
+  | perform => exact fun _ => NoGenAt.perform
+  | handle => exact fun _ => NoGenAt.handle
+  | conv _ hτ hε ih => exact fun hlt => NoGenAt.conv hτ hε (ih hlt)
+
 /-! ## The runtime-restricted judgment `HasTypeRT` (gap 1: var-preservation groundness)
 
 At the var-preservation site (`Soundness.lean`, both engines), the control is a **bare** variable
