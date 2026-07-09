@@ -1380,6 +1380,53 @@ the datatype change itself.
       NOT attempted — it would only deepen the near-green tree's breakage. Caveat 5 OPEN; substitution
       infra (G25 `hasTypeRT_subst`) still complete and correct; the discharge recipe (single grounding at
       `lvl'`) unchanged — only the CARRIER + readiness SOURCE remain to be built.
+      **Progress 2026-07-09 (Session G29 — design correction: the crux needs `HasTypeRT hbody`, NOT
+      `RTSubstReady lvl' hbody`; the forward-readiness-on-arg-frame (G28) shown to relocate rather than
+      solve; true obstruction localized to ONE site + ONE invariant; no code landed, Soundness.lean
+      preserved byte-identical). See
+      `progress/2026-07-09-G1-phase6-sessionG29-hasTypeRT-not-RTSubstReady-correction.md`.** No LSP
+      (canary failed). HEAD `96e68baf`; no edits (G26/G28 working tree preserved, `diff -q` IDENTICAL vs
+      `/tmp/Soundness.G28start.backup.lean`); `grep -rn sorry` empty. Error state unchanged (A-engine red
+      ONLY at 874-877/1036-1039; B-engine un-migrated ≥ 2460). **RESULT 1 — the crux needs `HasTypeRT
+      hbody`, not `RTSubstReady lvl' hbody` (corrects G27):** traced `MStateWf.E`'s missing slot at the
+      Apply-frame closure case — it is `HasTypeRT hty` for `hty = weakenEff (HasType.conv hbody …) …`,
+      i.e. after peeling `weakenEff`/`conv` (two small Soundness-local wrappers, not yet built) the real
+      need is **`HasTypeRT hbody`**, a `HasTypeRT` not an `RTSubstReady`. `HasTypeRT.var` bounds arg
+      levels by `{0, s.level}` (the var's OWN scheme level); `RTSubstReady` adds an `ℓ` disjunct +
+      `lvl≠ℓ`/`NoGenAt`. **G27's two rejection witnesses are HasTypeRT-fine:** `\u.\w. a u` (inner body
+      `a u`, `a` at `[.var L1 0]`, `a.level=L1`) satisfies `HasTypeRT.var` (`L1 ∈ {0,L1}`); the escape
+      witness `\x.(let h=\z.z in h)` satisfies `HasTypeRT.let_poly` (needs only `HasTypeRT` of the
+      let-body var `h`, instantiated at `[.var lvl' 0]`, `h.level=lvl'`). Both FAIL `RTSubstReady lvl'`
+      but that predicate was never what the crux needed. **This dissolves the entire G6-G9
+      escape/level-normalization/raise-sublevel line** for the crux (no grounding, no `hasTypeRT_subst`,
+      no level-raise metatheorem needed for these bodies). **RESULT 2 — the G28 forward-readiness-on-arg
+      -frame does NOT reduce to the StackWfE-Assign template:** the Assign obligation is about the
+      IMMEDIATE control being a lambda (closure one step away, body available at `stackWf_toStackWfE`);
+      the arg frame's function slot is filled by a value produced by ARBITRARY evaluation of `f`, so the
+      obligation must survive `f`'s whole evaluation — not derivable from `rf` (`HasTypeRT.lam` has no
+      body premise, re-confirmed) and inexpressible as a one-step forward clause. To survive arbitrary
+      evaluation it must ride the VALUE judgment ⇒ **it relocates onto `HasTypeV.closure`, it does not
+      solve the problem.** G28's design is a detour. **RESULT 3 — true minimal obstruction: env-groundness
+      at the plain lambda-eval site.** Put `HasTypeRT hbody` on `HasTypeV.closure`. Poly-let discharge:
+      closures are only materialized by the readiness function (`genAtV_closure_ready_value_node`) at
+      GROUND args ⇒ grounded body ⇒ `HasTypeRT` via the G25 `hasTypeRT_subst` infra. Mono-let: via
+      `closure_typed_of_lambda`. The SINGLE genuine gap is the plain lambda-eval site (Soundness 211-215),
+      where `HasTypeV.closure` is built from `inv_lambda hty` but the only RT in scope is
+      `hrt=HasTypeRT.lam` (no body premise) ⇒ `HasTypeRT hbody` is not locally available. `HasTypeRT
+      hbody` fails exactly for a body instantiating a captured var off its own scheme level (e.g. `\w. a w`
+      at `[.var 2 0]`, `a.level=1`), which arises only as a static poly-let DEFN inside a live
+      generalization — but by the time any lambda is evaluated as a plain CONTROL the enclosing
+      generalization has been instantiated to ground. **That is exactly a runtime env/context-groundness
+      invariant (G26's `CtxGround`/`EnvGround`), threaded on `EnvWf`/`HasTypeV.closure`, whose one payoff
+      is `HasTypeRT hbody` at lambda-eval; the crux then closes by `cases hf` projecting the stored field
+      — no arg-frame forward-readiness, no apply-site grounding, no level-normalization.** **Net for next
+      session:** (1) field = `HasTypeRT hbody` on `HasTypeV.closure`; (2) design+prove the env-groundness
+      invariant (its construction at lambda-eval + preservation) — the real remaining metatheory, a
+      runtime-judgment strengthening (flag for sign-off); (3) poly/mono discharge reuse existing infra;
+      (4) keep `RTSubstReady`/`hasTypeRT_subst` (still needed for the poly-let ground re-typing, just NOT
+      at the apply site). Nothing independently committable (field change breaks Runtime+Machine+both
+      engines at once; wrappers Soundness-local; invariant unbuilt) — tree preserved byte-identical,
+      G25 infra intact. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
