@@ -827,6 +827,34 @@ the datatype change itself.
       `raiseTy_eq_substAt_of_single`; the two modes stay irreducibly distinct because the residual case's
       `lvl ∈ retTy.levels` — level exactly `t` — WOULD move under `raiseTy`). Per-file green (Scheme),
       axioms unchanged, no `sorry`. Soundness.lean left as found. Caveat 5 OPEN. Wants live LSP.
+
+      **Progress 2026-07-09 (Session G14 — answered "is the narrow version sufficient?": NO, but
+      re-targeted the crux to a strictly weaker, obstruction-free existence statement; no commit; see
+      `progress/2026-07-09-G1-phase6-sessionG14-narrow-insufficient-strictify-is-real-target.md`):** No
+      LSP (canary failed). Traced the ACTUAL call site (Soundness.lean:243) instead of the maximal-
+      generality raise theorem. **`genAtV_closure_ready_value_node` (Substitution.lean:167) is already
+      proven and consumes NO raise/relabel theorem** — it uses the `NoGenAt` + `..._le` keystone route.
+      Its three still-open premises at the call site: **(1)** `hlvl0 : lvl ≠ 0` (easy — enter soundness at
+      ambient `≥ 1`); **(2)** `hΓpa : PolyAboveFV lvl Γ ⟨.Lambda…⟩` (mostly easy — from `CtxWfV lvl Γ`
+      via a new `polyAboveFV_of_ctxWfV`, residual `s.level ≠ 0` needs gen-levels-`≥ 1`, same invariant as
+      (1)); **(3)** `hng : NoGenAt lvl hdefn` — **THE CRUX** (call currently mis-passes `hdefn` here).
+      **NoGenAt lvl hdefn is genuinely the general problem:** `noGenAt_of_lt` needs `ℓ < root-level`, but
+      here both `= lvl`; via `inv_lambda_noGenAt` it reduces to `NoGenAt lvl hbody` at the defn lambda's
+      body sublevel `lvl'` (`lvl ≤ lvl'`, **non-strict**), free iff `lvl' > lvl`, and the declarative
+      system permits `lvl' = lvl` with an inner same-level `let_poly` — which soundness (quantifying over
+      all `h`/`hrt`) must handle. The task's "raise past one binder under `CtxWfV`" narrowing *is* the G13
+      two-modes conflict, not an escape. **Sharper target isolated (route (a), G7/G8, never lifted to a
+      theorem):** `HasType` is a `Prop`, so by proof irrelevance `NoGenAt lvl hdefn = NoGenAt lvl hdefn'`
+      for any same-judgment `hdefn'`; it SUFFICES to prove the **existence** of a level-strict derivation
+      of the *identical* judgment — `hasType_strictify (h) : ∃ h' : HasType lvl Γ e τ ε, StrictSub h'`
+      (a new `NoGenAt`-shaped `StrictSub` recording `lvl < lvl'` at every lam/let_/let_poly), whence
+      `NoGenAt ℓ h'` for all `ℓ ≤ lvl`. Crucially this holds `lvl`/`Γ`/`τ`/`ε` **FIXED** (only internal
+      sublevels move), so it needs **no `raiseCtx`** and therefore dodges the G13 shared-context conflict
+      entirely — a re-attack the functorial-raise sessions (G9–G13) never tried. Residual risk: the
+      two-same-level-`let_poly`-with-intertwined-escaping-vars arm (depth ≥ 2) — plausibly separable by
+      bottom-up fresh-level assignment (G8 re-instantiation), decides whether `hasType_strictify` falls to
+      a clean fresh-level mutual induction. Wants live LSP to build arm-by-arm. Soundness.lean left as
+      found, no code change, HEAD `e1e7a742` unchanged. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
