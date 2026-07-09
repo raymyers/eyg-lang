@@ -766,6 +766,36 @@ the datatype change itself.
       `LevelsBelow`+`∃N`; `raiseCtx`+lemmas; the two mutually-recursive 21-arm raise inductions;
       wire-in (drop `NoGenAt`, strict keystone); then the Soundness grind + Phase 7. Architecture now
       precise and math de-risked; the two inductions want live LSP goal-state. Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G12 — THREE of G11's four remaining pieces landed; relabel
+      re-entrancy insight; three green additive commits `5413665c`/`fe30f615`/`a9a80052`, Typing.lean;
+      see `progress/2026-07-09-G1-phase6-sessionG12-levelsBelow-raiseCtx-varArm-landed-relabel-
+      reentrancy.md`):** No LSP/MCP (canary failed). **(1) `LevelsBelow N h` + `LevelsBelow.mono` +
+      `exists_levelsBelow`** (`5413665c`) — G11's threaded global freshness cap as a `NoGenAt`-shaped
+      21-arm inductive (only the `let_poly` arm bounds `defnTy.levels < N`); `∃N` by per-node max. A
+      single offset `o ≥ N` relabels every gen level to a fresh `k+o ∉ defnTy.levels`. **(2) `raiseScheme
+      t o` + `raiseCtx t o` + `raiseCtx_lookup`/`_fix`/`raiseScheme_mono`/`_of_level_lt`** (`fe30f615`) —
+      `raiseScheme t o (genAtV k d)` for `k ≥ t` = `genAtV (k+o) (substAt k (·↦var(k+o)) d)` (the exact
+      input of `instantiateV_genAtV_relabel`), identity below `t`; `raiseCtx_fix` fixes a
+      below-threshold context. **(3) `raiseScheme_genAtV_instantiateV`** (`a9a80052`) — the var-arm crux,
+      now a *concrete proven lemma* (G11 had prose only): explicit padded `args' = args ++ (range extra).
+      map (var k …)` under which `(raiseScheme t o (genAtV k d)).instantiateV args' = (genAtV k d).
+      instantiateV args`, composing `instantiateV_pad_default` + `instantiateV_genAtV_relabel`, freshness
+      from `N ≤ o`. Concretely decouples the escaped var (stays at `k`, in `args`) from the scheme body's
+      gens (move to `k+o`). **(4) New structural insight (sharpens G7 Fdg 3):** `hasType_relabel_raise`,
+      called on a `let_poly`-defn (lambda at ambient `k`, relabel level `k`), is **NOT** a clean
+      distinct-level induction — a ground-arg defn's `lam` body sits at sublevel exactly `k` and may hold
+      an inner `let_poly` at exactly `k`, so the relabel-at-`k` re-collides same-level, *one layer down*.
+      The two theorems are therefore **re-entrant on the collision**, so the `mutual` block's termination
+      must be **structural on the derivation**, not a level measure. This also proves a single "relabel
+      ≥ t in both type and derivation" theorem cannot subsume both (an escaped threshold-level tag must
+      STAY via the var arm while a sibling `let_poly` at that level MOVES — decoupled only structurally).
+      **Remaining (the LAST piece):** the two mutually-recursive 21-arm inductions `hasType_raise`
+      (type-fixed) / `hasType_relabel_raise` (fresh-level, relabel level = node gen level), context
+      invariant `CtxLevelsBelow N Γ` (bind-BODY levels < N, not `CtxWfV`), as a `mutual` block with
+      derivation-structural `termination_by`; then wire-in (`raiseCtx_fix` for the fixed context, strict
+      keystone) + the Soundness grind + Phase 7. All statements + arm recipes recorded in the note. Wants
+      live LSP. Per-file green (Typing), axioms unchanged, no `sorry`. Soundness.lean left as found.
+      Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
