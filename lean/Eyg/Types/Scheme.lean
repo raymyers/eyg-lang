@@ -1143,6 +1143,92 @@ theorem length_filter_levels_substAt {ℓ k : Nat} (hne : ℓ ≠ k) {σ : Nat �
       simp only [substAt, levels, List.filter_append, List.length_append, iha, ihb, iht]
   | _ => rfl
 
+/-- **Relabeling level `ℓ` to a fresh level `f`** (`f ∉ d.levels`) turns the level-`ℓ` occurrence
+count into the level-`f` occurrence count. The `genAtV`-arity-preservation core for a
+generalization-level *relabel* (as opposed to `length_filter_levels_substAt`, which preserves the
+count of an *untouched* level under a level-clean substitution — the two are complementary: this one
+covers the deliberately-introduced target level `f`). -/
+theorem length_filter_levels_relabel {ℓ f : Nat} {d : Ty} (hf : f ∉ d.levels) :
+    ((substAt ℓ (fun i => var f i) d).levels.filter (· = f)).length
+      = (d.levels.filter (· = ℓ)).length := by
+  induction d with
+  | var l i =>
+      have hfl : f ≠ l := by simp only [levels, List.mem_singleton] at hf; exact hf
+      by_cases hl : l = ℓ
+      · simp [substAt, levels, hl]
+      · simp [substAt, levels, hl, Ne.symm hfl]
+  | «fun» a e r iha ihe ihr =>
+      simp only [levels, List.mem_append, not_or] at hf
+      simp only [substAt, levels, List.filter_append, List.length_append,
+        iha hf.1.1, ihe hf.1.2, ihr hf.2]
+  | list a ih => simp only [levels] at hf ⊢; simp only [substAt, levels, ih hf]
+  | record r ih => simp only [levels] at hf ⊢; simp only [substAt, levels, ih hf]
+  | union r ih => simp only [levels] at hf ⊢; simp only [substAt, levels, ih hf]
+  | promise a ih => simp only [levels] at hf ⊢; simp only [substAt, levels, ih hf]
+  | rowExtend l f' t ihf iht =>
+      simp only [levels, List.mem_append, not_or] at hf
+      simp only [substAt, levels, List.filter_append, List.length_append, ihf hf.1, iht hf.2]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [levels, List.mem_append, not_or] at hf
+      simp only [substAt, levels, List.filter_append, List.length_append,
+        iha hf.1.1, ihb hf.1.2, iht hf.2]
+  | _ => rfl
+
+/-- **The pure re-instantiation equality (fresh-level form).** Relabeling a generalization body `d`'s
+level-`ℓ` variables to a fresh level `f` (`f ∉ d.levels`, `f ≠ ℓ`) and then re-substituting at `f`
+with `args` reproduces the original level-`ℓ` substitution at `args` — **provided every level-`ℓ`
+index of `d` is supplied by `args`** (`hcov`). The coverage hypothesis is exactly Session G9's
+Finding 2(a)/(c): under-application would leave the two sides' *default* leaves at different levels
+(`var f i` vs `var ℓ i`), so the caller must extend `args` to cover every generalized index. This is
+the body-level heart of a generalization-level shift; the scheme-level packaging is
+`instantiateV_genAtV_relabel`. -/
+theorem substAt_relabel_getD {ℓ f : Nat} (hne : f ≠ ℓ) {d : Ty} (hf : f ∉ d.levels)
+    {args : List Ty} (hcov : ∀ i ∈ freeVarsAt ℓ d, i < args.length) :
+    substAt f (fun i => args.getD i (var f i)) (substAt ℓ (fun i => var f i) d)
+      = substAt ℓ (fun i => args.getD i (var ℓ i)) d := by
+  induction d with
+  | var l i =>
+      by_cases hl : l = ℓ
+      · subst hl
+        have hi : i < args.length := hcov i (by simp [freeVarsAt])
+        simp only [substAt, ↓reduceIte]
+        simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
+      · have hlf : l ≠ f := by simp only [levels, List.mem_singleton] at hf; exact Ne.symm hf
+        simp only [substAt, if_neg hl, if_neg hlf]
+  | «fun» a e r iha ihe ihr =>
+      simp only [levels, List.mem_append, not_or] at hf
+      simp only [freeVarsAt, List.mem_append] at hcov
+      simp only [substAt,
+        iha hf.1.1 (fun i hi => hcov i (Or.inl (Or.inl hi))),
+        ihe hf.1.2 (fun i hi => hcov i (Or.inl (Or.inr hi))),
+        ihr hf.2 (fun i hi => hcov i (Or.inr hi))]
+  | list a ih =>
+      simp only [levels] at hf; simp only [freeVarsAt] at hcov
+      simp only [substAt, ih hf hcov]
+  | record r ih =>
+      simp only [levels] at hf; simp only [freeVarsAt] at hcov
+      simp only [substAt, ih hf hcov]
+  | union r ih =>
+      simp only [levels] at hf; simp only [freeVarsAt] at hcov
+      simp only [substAt, ih hf hcov]
+  | promise a ih =>
+      simp only [levels] at hf; simp only [freeVarsAt] at hcov
+      simp only [substAt, ih hf hcov]
+  | rowExtend l fld t ihf iht =>
+      simp only [levels, List.mem_append, not_or] at hf
+      simp only [freeVarsAt, List.mem_append] at hcov
+      simp only [substAt,
+        ihf hf.1 (fun i hi => hcov i (Or.inl hi)),
+        iht hf.2 (fun i hi => hcov i (Or.inr hi))]
+  | effectExtend l a b t iha ihb iht =>
+      simp only [levels, List.mem_append, not_or] at hf
+      simp only [freeVarsAt, List.mem_append] at hcov
+      simp only [substAt,
+        iha hf.1.1 (fun i hi => hcov i (Or.inl (Or.inl hi))),
+        ihb hf.1.2 (fun i hi => hcov i (Or.inl (Or.inr hi))),
+        iht hf.2 (fun i hi => hcov i (Or.inr hi))]
+  | _ => rfl
+
 end Ty
 
 /-- `substSchemeVAt` on a monomorphic scheme is `substAt` on its body. -/
@@ -1156,6 +1242,32 @@ theorem substSchemeVAt_genAtV {ℓ k : Nat} (hne : ℓ ≠ k) {σ : Nat → Ty}
   refine Scheme.ext' ?_ rfl rfl
   simp only [Scheme.substSchemeVAt, Scheme.genAtV]
   exact (Ty.length_filter_levels_substAt hne hclean d).symm
+
+/-- **The generalization-level relabel is instantiation-invariant.** Generalizing `d` at level `ℓ`
+and generalizing its fresh-relabel `substAt ℓ (·↦ var f) d` at the fresh level `f` (`f ∉ d.levels`,
+`f ≠ ℓ`) instantiate at the *same* `args` to the *same* type — provided `args` supplies every
+level-`ℓ` index of `d` (`hcov`, Session G9 Finding 2(a)/(c)). This is the scheme-level statement that
+"the level at which a scheme quantifies is a free choice": the escape/collision witnesses
+(`escLam_lvl1` vs `escLam_lvl2`, `advPerf_lvl1` vs `advPerf_lvl2`) are the by-hand `arity ≤ 2`
+instances. It is the pure-equality core (no derivations) that a general generalization-level *shift*
+sub-lemma re-instantiates each use of a let-bound variable with. -/
+theorem instantiateV_genAtV_relabel {ℓ f : Nat} (hne : f ≠ ℓ) {d : Ty} (hf : f ∉ d.levels)
+    {args : List Ty} (hcov : ∀ i ∈ Ty.freeVarsAt ℓ d, i < args.length) :
+    (Scheme.genAtV f (Ty.substAt ℓ (fun i => Ty.var f i) d)).instantiateV args
+      = (Scheme.genAtV ℓ d).instantiateV args := by
+  have hcount : ((Ty.substAt ℓ (fun i => Ty.var f i) d).levels.filter (· = f)).length
+      = (d.levels.filter (· = ℓ)).length := Ty.length_filter_levels_relabel hf
+  simp only [Scheme.instantiateV, Scheme.genAtV]
+  by_cases h0 : (d.levels.filter (· = ℓ)).length = 0
+  · rw [if_pos (hcount.trans h0), if_pos h0]
+    have hℓnm : ℓ ∉ d.levels := by
+      intro hmem
+      have : ℓ ∈ d.levels.filter (· = ℓ) := List.mem_filter.mpr ⟨hmem, by simp⟩
+      exact absurd (List.length_eq_zero_iff.mp h0 ▸ this) (by simp)
+    exact Ty.substAt_eq_self_of_not_mem
+      (fun i hi => hℓnm (Ty.mem_levels_of_mem_freeVarsAt hi))
+  · rw [if_neg (fun c => h0 (hcount ▸ c)), if_neg h0]
+    exact Ty.substAt_relabel_getD hne hf hcov
 
 /-- **General scheme-instantiation commutation under an outer level-`ℓ` substitution.** -/
 theorem substAt_instantiateV_scheme {ℓ : Nat} {σ : Nat → Ty} {s : Scheme}
