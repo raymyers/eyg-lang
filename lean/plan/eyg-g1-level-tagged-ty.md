@@ -553,6 +553,31 @@ the datatype change itself.
       `HasTypeRT` witness to also carry `NoGenAt` of the control). Full-green Soundness is a multi-session
       grind + this gap-2 design resolution; **not** reachable blind this session. Soundness.lean left as
       found. Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G5 — NoGenAt-provenance question DECOMPOSED, prev session's
+      leading hypothesis REFUTED; one green additive commit `8339200d` to `Typing.lean`; see
+      `progress/2026-07-09-G1-phase6-sessionG5-noGenAt-of-lt-provenance-decomposed.md`):** No LSP.
+      (1) **Route A refuted.** "Strengthen `HasTypeRT.let_poly` to carry `NoGenAt lvl hdefn`" (Session
+      G4's lead) is **not** universally true for well-typed runtime let_poly controls and would
+      *narrow* soundness coverage: witness a valid derivation `\x. pair (g[a:=.var lvl 0]) (let h=\y.y
+      in h)` — `defnTy` mentions `lvl` (`arity≠0`) via an internal level-`lvl` instantiation arg AND an
+      inner `let_poly` generalizes at exactly `lvl`, so `NoGenAt lvl hbody` is *false*, yet the current
+      un-strengthened `HasTypeRT` (which does NOT recurse into defn-lambda bodies) still accepts it. NB
+      the Phase-7 target `let f=\x.(let g=\y.y in g x) in …` is NOT a counterexample (its `defnTy` is
+      ground, `arity 0`). (2) **Correct decomposition of the wrapper's `NoGenAt lvl hbody` need:**
+      `arity 0` → `closure_typed_of_lambda`, no NoGenAt (covers all ground-generalization nested lets);
+      `lvl' > lvl` → NoGenAt **for free** via the new `noGenAt_of_lt`; residual `arity≠0 ∧ lvl'=lvl`
+      genuinely needs it (benign `defnPerf` — derivable; pathological Route-A shape — unprovable from the
+      site's data). (3) **Landed `noGenAt_of_lt`** (`Typing.lean`, commit `8339200d`): a HasType
+      derivation at level `lvl` satisfies `NoGenAt ℓ` for every `ℓ < lvl` (ambient levels only increase
+      on descent). Clean 21-arm induction, non-narrowing, per-file green, axioms `[propext]`, no
+      `sorry`. (4) **Full green confirmed NOT blind-reachable** (independently, not time): the residual
+      3b corner needs a genuine **level-normalization theorem** (nested `let_poly` at strictly
+      increasing levels — collapses the residual into the `lvl'>lvl` case with ZERO soundness narrowing)
+      OR a deeper let_poly-defn runtime invariant (narrows coverage); plus the whole **B-engine**
+      (`~2694–3862`) is still on old non-level-tagged `HasType`, and `soundness_evalR` still carries the
+      old statement (needs `HasTypeRT` premise + nonzero ambient level). Soundness.lean left as found.
+      Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
