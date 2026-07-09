@@ -1427,6 +1427,49 @@ the datatype change itself.
       at the apply site). Nothing independently committable (field change breaks Runtime+Machine+both
       engines at once; wrappers Soundness-local; invariant unbuilt) — tree preserved byte-identical,
       G25 infra intact. Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G30 — G29 env-groundness design REFUTED by a machine-checked
+      counterexample; workable path needs a DIFFERENT (unauthorized) strengthening ⇒ STOP + flag for
+      sign-off). Had fresh, specific user authorization for the `HasTypeRT hbody` field on
+      `HasTypeV.closure` + an `EnvWf`-groundness invariant. That EXACT change is proven unworkable.** No
+      LSP (canary failed). HEAD `a644b934`; NO source edits (Soundness.lean `diff -q` IDENTICAL vs
+      `/tmp/Soundness.backup.lean`); `grep -rn sorry` empty. Error state re-confirmed unchanged (A-engine
+      red ONLY at the two closure-apply crux sites 874-877/1036-1039; B-engine un-migrated ≥ 2460).
+      **THE REFUTATION (machine-checked, `lake env lean` scratch, `decide`):** the program
+      `let a = \x.x in \w. a w` (NOT the canonical `let a=\x.x in let c=\w. a w in c` — here `\w. a w` is
+      the OUTER poly-let's BODY, not a poly-let defn) type-checks at `HasType (m:=Unit) 1 []` with the
+      body `\w. a w` typed via `HasType.lam` at ambient level 2 and its body derivation `a w` typing at
+      level 3 under `[(w,.mono(.var 2 0)),(a,genAtV 1 (α→α))]`, with `a` (scheme level 1) instantiated at
+      `args=[.var 2 0]` (level 2). Operationally `\w. a w` is reached as a **plain lambda-eval control**
+      (E-state → `HasTypeV.closure`) after `a` is bound — NOT through the readiness function (which only
+      handles poly-let DEFNs). At that site the `HasTypeRT hbody` field would need `HasTypeRT` of `a w`,
+      whose `var`-arm side-condition `∀ l ∈ (.var 2 0).levels={2}, l=0 ∨ l=s.level=1` is `decide`-PROVED
+      **FALSE**. The captured env `[(a, Closure "x" x [])]` is **fully ground**, yet the obstruction lives
+      in the body's *static instantiation levels* (`[.var 2 0]`), which no env/context-groundness property
+      can touch. **⇒ G29 RESULT 3 is wrong: env-groundness is NOT the missing invariant; the unconditional
+      `HasTypeRT hbody` field is simply not constructible at plain lambda-eval.** (G29 RESULT 1's "crux
+      needs only `HasTypeRT hbody`" checked only the witnesses `\u.\w. a u` / `\x.(let h=\z.z in h)`, both
+      of which instantiate their captured var AT its own scheme level; it missed the off-level
+      `let a=\x.x in \w. a w`, where the plain-control closure body is genuinely non-`HasTypeRT`.)
+      **WHY the field is nonetheless "the right home" but must be CONDITIONAL:** the non-`HasTypeRT`
+      closures (domain `.var 2 0`, an uninstantiated tyvar) are exactly the ones that can only be APPLIED
+      after their domain is instantiated to ground by the surrounding context — i.e. the σ that makes an
+      argument value exist also grounds the level (here 2) that breaks `HasTypeRT`. Machine-checked
+      corroboration: the same `a @ [.var 2 0]` node that FAILS `HasTypeRT.var` SATISFIES `RTSubstReady 2`'s
+      var side-condition `l=0 ∨ l=ℓ=2 ∨ l=s.level=1` (`decide`-TRUE). So the constructible-at-lambda-eval
+      field is `RTSubstReady ℓ hbody` at ℓ = the closure domain's top level, discharged at the crux by
+      `hasTypeRT_subst` with the apply-supplied ground arg — **resurrecting the G6-G27 `RTSubstReady`-on-
+      closure line that G28/G29 declared a "detour."** That line was not wrong about the predicate; it was
+      abandoned prematurely on G29's incomplete witness survey. **DECISION (per the closing-brief rule
+      "if it requires yet another distinct judgment-strengthening beyond what's authorized, STOP and
+      flag"):** the workable field is `RTSubstReady`-conditional, NOT the authorized unconditional
+      `HasTypeRT hbody`, and it needs NO `EnvWf`-groundness invariant (also authorized, also unneeded).
+      This is a materially different judgment-strengthening ⇒ STOP, preserve tree byte-identical, request
+      fresh authorization for the `RTSubstReady ℓ hbody`-on-`HasTypeV.closure` design (open sub-questions
+      for that design: exact ℓ = closure-domain top level and its invariance across the readiness
+      function; confirming the crux's applied arg is genuinely ground/σ grounds ℓ; the two small
+      `hasTypeRT_subst`-wrapper obligations at the crux). Nothing committable (no source edits). Caveat 5
+      OPEN. See `progress/2026-07-09-G1-phase6-sessionG30-envgroundness-refuted-rtsubstready-needed.md`.**
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
