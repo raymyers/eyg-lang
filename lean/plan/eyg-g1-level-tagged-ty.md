@@ -1193,6 +1193,42 @@ the datatype change itself.
       by the same closure-body-RT gap. **Decision:** committed the two validated green-cone increments;
       left `Soundness.lean` uncommitted (red, first engine complete-bar-closure-RT). Caveat 5 OPEN
       (poly-let preservation itself DISCHARGED; closure-body-RT is now the sole remaining soundness gap).
+    - **Session G24 (2026-07-09) — closure-RT gap analyzed; corrected mechanism; no code landed.**
+      No LSP/MCP (canary failed). HEAD `1065877d`; `Soundness.lean` uncommitted-red as G23 left it
+      (52+/42−, no `sorry`, verified intact). Deliberately landed **no** speculative code — the gap is
+      a genuine multi-piece design item, not the "mirror ~100-line induction" the G23 note assumed, and
+      a half-written `hasTypeRT_subst` would have left `Soundness.lean` mangled with no committable green.
+      **Corrected the central technical misconception in the G23 sketch:** `substAt ℓ σ`-re-typing DOES
+      ground a var node's instantiation args — `substAt_instantiateV_scheme` (Scheme.lean:1535) rewrites
+      the produced var to carry `args.map (Ty.substAt ℓ σ)`, not the original `args` (I had first read it
+      as arg-preserving; it is arg-mapping). So the plan's "grounds `[var 2 0]` to `[integer]`" (line ~396)
+      is real and the design is sound in principle. **The actual remaining obstruction (the true reason
+      33 sessions did not close it):** a HasTypeRT of the output var needs its args' levels `⊆ {0, s.level}`;
+      `substAt ℓ (ground σ)` yields levels `⊆ (t.levels \ {ℓ}) ∪ {0}`, so this holds **only if the input
+      var's args' levels are `⊆ {0, ℓ, s.level}`** — a boundedness precondition that `HasType.var` records
+      **nothing** about and `HasTypeRT` does **not** carry (its var arm bounds by `{0, s.level}`, no `ℓ`).
+      Hence `hasTypeRT_subst` needs, as its hypothesis, a NEW predicate `HasTypeRTAt ℓ h` (HasTypeRT with
+      the var/builtin arm relaxed to `l = 0 ∨ l = ℓ ∨ l = s.level`) — an additional ~21-arm inductive, not
+      just an induction. **And the deeper blocker (the part that plausibly warrants sign-off):** at the
+      closure-apply site (`preservation_V`, Apply-frame, closure case) there is **no available fact that
+      the argument type `argTy` (or any body level) is ground/bounded** — `MStateWf.V`/`HasTypeV`/`EnvWf`
+      carry no groundness (mono `EnvWf.cons` binds a value at *any* type; `HasTypeV.closure` stores an
+      existential `lvl'` and an arbitrarily-non-ground arrow). So even a proven `hasTypeRT_subst` cannot
+      fire there without first **threading a runtime groundness / level-bound invariant** (values/env bind
+      at levels bounded by the closure's abstraction level; the "nonzero-ambient-level invariant" the
+      Caveat-5 narrative names is the first of these fields, already threaded in G23, but the *body-var-args
+      boundedness* one is not). That threading is a **load-bearing runtime-judgment strengthening across
+      `MStateWf`/`HasTypeV.closure`/`StackWf*` in both engines** — the kind of change the closing-session
+      brief says to FLAG rather than assume. **Also surfaced (separate, first-engine):** the G23
+      `HasTypeV.partialBuiltin → instantiateV` move left `builtinApp_arity2`'s `hbase`/`rw` (Soundness
+      ~1938) and the `fix` case (~2050), plus B-mirrors (~3801/~3858), typed at `s.instantiate` while the
+      goal now needs `s.instantiateV` — mechanical, but only committable once the engine reaches green, so
+      not landed this session. **Concrete recommended next step:** (1) add `HasTypeRTAt ℓ` to `Typing.lean`
+      and prove `hasTypeRT_subst : HasTypeRTAt ℓ h → (σ ground) → NoGenAt ℓ h → ℓ ≤ lvl → PolyAboveFV … →
+      HasTypeRT (hasType_substAt_le hℓ σ hσ hng hlt hΓ)` (per-file-green, committable in isolation); (2)
+      SEPARATELY decide/sign-off the runtime groundness invariant that supplies `HasTypeRTAt ℓ hbody` +
+      ground `σ` at the four closure-apply sites, which is the genuine open design question. Caveat 5 stays
+      OPEN (poly-let preservation DISCHARGED; closure-body-RT open, now precisely characterized).
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
