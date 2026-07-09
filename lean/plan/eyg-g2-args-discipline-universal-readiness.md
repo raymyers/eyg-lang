@@ -170,6 +170,11 @@ fully-unconstrained-args entry premise is not witnessable by any level-bounded i
       ambient-monotonicity/floor-nesting lemma and re-verify the canonical examples
       (referencing program, sequential lets, `id 5`) admit `ArgsDisc`-style derivations —
       permanent regressions à la `section Examples`. **Go/no-go gate for everything below.**
+      - [x] V1–V6 consumption-side witnesses landed as a permanent regression module
+            (`Eyg/Types/G2Validation.lean`, builds clean, axioms `[propext, Quot.sound]`). Pins the
+            plan premise: universal readiness is TRUE at the exact G30/G31 fatal instantiations.
+      - [ ] `hasType_substAt_multi` proof (the genuinely-new math — in progress).
+      - [ ] ambient-monotonicity / floor-nesting lemma.
 - [ ] **Phase 2 — `ArgsDisc` + readiness keystone.** Define `ArgsDisc` (+ floor carrier decision),
       its inversions, `ctxConv`/`weakenEff` transport, and substAt-preservation companion; strengthen
       `genAtV_closure_ready_value_node` to the floor-conditioned promise. Per-file green, additive.

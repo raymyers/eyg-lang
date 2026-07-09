@@ -1,0 +1,182 @@
+import Eyg.Types.Runtime
+
+/-!
+# G2 keystone regressions — universal readiness at the off-scheme instantiations
+
+Permanent machine-checked witnesses for the `eyg-g2-args-discipline-universal-readiness` plan
+(Phase 1). These are the *consumption-side* facts that the G1 Phase-6 wall (G27–G31) proved could
+not be routed through any `{0, s.level}`-bounded `HasTypeRT`/readiness architecture — yet which are
+plainly **true** of the exact counterexample values at their fatal instantiations. Landing them here
+pins the plan's premise: the old architecture was not asking for something false; it merely could not
+witness it. See `plan/eyg-g2-args-discipline-universal-readiness.md` §1 and its appendix.
+
+- **V1** — the G30 counterexample value `\x.x` typed at `(genAtV 1 (α→α)).instantiateV [.var 2 0]`
+  (the single off-level instantiation `HasTypeRT` could not witness).
+- **V2** — the G31 value `\x.\y.x` typed at `(genAtV 1 (α→β→α)).instantiateV [.var 2 0, .var 5 0]`
+  (two independent off-scheme levels, one escaping into the result type). Universal readiness is
+  TRUE at exactly the args that refuted every bounded design.
+- **V3** — necessity of per-level freshness: a σ-range level hitting an inner gen level genuinely
+  captures (`genAtV` arity changes), so the `{0, ℓ}` bound really was capture-avoidance in disguise.
+- **V4** — sufficiency at fresh level: with σ at a fresh level the arity is stable and the
+  `substAt`/`instantiateV` commutation holds.
+- **V5** — the G31 *program* admits a **disciplined** derivation (defn sublevel/floor chosen above
+  all lookup arg levels); the escaping level-5 choice was gratuitous.
+- **V6** — readiness also covers V5's disciplined instantiation.
+-/
+
+namespace Eyg.Types.G2Validation
+
+open Eyg.Types Eyg.Ir Eyg.Ir.Tree
+
+abbrev defnA : Ty := .fun (.var 1 0) .empty (.var 1 0)
+abbrev defnAB : Ty := .fun (.var 1 0) .empty (.fun (.var 1 1) .empty (.var 1 0))
+
+-- V1
+example : (Scheme.genAtV 1 defnA).instantiateV [.var 2 0]
+    = .fun (.var 2 0) .empty (.var 2 0) := by decide
+
+/-- **V1.** The G30 counterexample value `Closure "x" x []` is typeable at the off-scheme
+instantiation `(genAtV 1 (α→α)).instantiateV [.var 2 0]` that `HasTypeRT` could not witness. -/
+theorem v1 : HasTypeV (m := Unit) (.Closure "x" (variable_ "x") [])
+    ((Scheme.genAtV 1 defnA).instantiateV [.var 2 0]) := by
+  have hinst : (Scheme.genAtV 1 defnA).instantiateV [.var 2 0]
+      = .fun (.var 2 0) .empty (.var 2 0) := by decide
+  rw [hinst]
+  have hbody : HasType (m := Unit) 3 [("x", Scheme.mono (.var 2 0))]
+      (variable_ "x") (.var 2 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 3) (Γ := [("x", Scheme.mono (.var 2 0))])
+      (x := "x") (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  exact HasTypeV.closure (lvl' := 3) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbody (.refl _)
+
+-- V2
+example : (Scheme.genAtV 1 defnAB).instantiateV [.var 2 0, .var 5 0]
+    = .fun (.var 2 0) .empty (.fun (.var 5 0) .empty (.var 2 0)) := by decide
+
+/-- **V2.** The G31 value `Closure "x" (\y.x) []` typed at two independent off-scheme levels
+`[.var 2 0, .var 5 0]`, one (level 5) escaping into the result type — the exact multiplicity that
+refuted every single-level bounded design. -/
+theorem v2 : HasTypeV (m := Unit) (.Closure "x" (lambda "y" (variable_ "x")) [])
+    ((Scheme.genAtV 1 defnAB).instantiateV [.var 2 0, .var 5 0]) := by
+  have hinst : (Scheme.genAtV 1 defnAB).instantiateV [.var 2 0, .var 5 0]
+      = .fun (.var 2 0) .empty (.fun (.var 5 0) .empty (.var 2 0)) := by decide
+  rw [hinst]
+  have hx : HasType (m := Unit) 6
+      [("y", Scheme.mono (.var 5 0)), ("x", Scheme.mono (.var 2 0))]
+      (variable_ "x") (.var 2 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 6)
+      (Γ := [("y", Scheme.mono (.var 5 0)), ("x", Scheme.mono (.var 2 0))])
+      (x := "x") (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hbody : HasType (m := Unit) 6 [("x", Scheme.mono (.var 2 0))]
+      (lambda "y" (variable_ "x")) (.fun (.var 5 0) .empty (.var 2 0)) .empty :=
+    HasType.lam (le_refl 6)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hx
+  exact HasTypeV.closure (lvl' := 6) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbody (.refl _)
+
+-- V3
+abbrev dCap : Ty := .fun (.var 1 0) .empty (.var 2 0)
+
+/-- **V3.** Necessity of per-level freshness: substituting `.var 2 0` at level 1 into a scheme body
+with an inner gen level 2 changes `genAtV 2`'s arity 1→2 (capture). The `{0, ℓ}` bound really was
+capture-avoidance; `hasType_substAt_multi` must (and need only) demand σ-range levels avoid
+gen/scheme levels. -/
+example : (Scheme.genAtV 2 dCap).arity = 1 := by decide
+example : (Scheme.genAtV 2 (Ty.substAt 1 (fun _ => .var 2 0) dCap)).arity = 2 := by decide
+example : Scheme.genAtV 2 (Ty.substAt 1 (fun _ => .var 2 0) dCap)
+    ≠ Scheme.genAtV 2 dCap := by decide
+
+-- V4
+/-- **V4.** Sufficiency at a fresh level: with σ at level 3 (fresh) the arity is stable and the
+`substAt`/`instantiateV` commutation holds. -/
+example : (Scheme.genAtV 2 (Ty.substAt 1 (fun _ => .var 3 0) dCap)).arity
+    = (Scheme.genAtV 2 dCap).arity := by decide
+
+example :
+    Ty.substAt 1 (fun _ => .var 3 0)
+      ((Scheme.genAtV 2 dCap).instantiateV [.integer])
+    = (Scheme.genAtV 2 (Ty.substAt 1 (fun _ => .var 3 0) dCap)).instantiateV
+        [Ty.substAt 1 (fun _ => .var 3 0) .integer] := by decide
+
+-- V5
+abbrev ΓAB' : Ctx := [("a", Scheme.genAtV 1 defnAB)]
+abbrev ΓABw' : Ctx := ("w", Scheme.mono (.var 2 0)) :: ΓAB'
+
+theorem v5_body : HasType (m := Unit) 3 ΓABw'
+    (apply (variable_ "a") (variable_ "w"))
+    (.fun (.var 2 1) .empty (.var 2 0)) .empty := by
+  have haType : (Scheme.genAtV 1 defnAB).instantiateV [.var 2 0, .var 2 1]
+      = .fun (.var 2 0) .empty (.fun (.var 2 1) .empty (.var 2 0)) := by decide
+  have ha : HasType (m := Unit) 3 ΓABw' (variable_ "a")
+      (.fun (.var 2 0) .empty (.fun (.var 2 1) .empty (.var 2 0))) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 3) (Γ := ΓABw') (x := "a")
+      (s := Scheme.genAtV 1 defnAB) (args := [.var 2 0, .var 2 1]) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [haType] at h
+  have hw : HasType (m := Unit) 3 ΓABw' (variable_ "w") (.var 2 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 3) (Γ := ΓABw') (x := "w")
+      (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  exact HasType.app ha (Ty.effWeaken_refl _) hw
+
+/-- **V5.** The G31 program admits a **disciplined** derivation: same program, lookup args
+`[.var 2 0, .var 2 1]`, defn sublevel (floor) chosen `lvl' = 3 >` all lookup arg levels. The
+escaping level-5 choice of the naive derivation was gratuitous. -/
+theorem v5 : HasType (m := Unit) 1 []
+    (let_ "a" (lambda "x" (lambda "y" (variable_ "x")))
+      (lambda "w" (apply (variable_ "a") (variable_ "w"))))
+    (.fun (.var 2 0) .empty (.fun (.var 2 1) .empty (.var 2 0))) .empty := by
+  have hx : HasType (m := Unit) 3
+      [("y", Scheme.mono (.var 1 1)), ("x", Scheme.mono (.var 1 0))]
+      (variable_ "x") (.var 1 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 3)
+      (Γ := [("y", Scheme.mono (.var 1 1)), ("x", Scheme.mono (.var 1 0))])
+      (x := "x") (s := Scheme.mono (.var 1 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hbodydefn : HasType (m := Unit) 3 [("x", Scheme.mono (.var 1 0))]
+      (lambda "y" (variable_ "x")) (.fun (.var 1 1) .empty (.var 1 0)) .empty :=
+    HasType.lam (le_refl 3)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hx
+  have hlamw : HasType (m := Unit) 2 ΓAB'
+      (lambda "w" (apply (variable_ "a") (variable_ "w")))
+      (.fun (.var 2 0) .empty (.fun (.var 2 1) .empty (.var 2 0))) .empty :=
+    HasType.lam (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+      v5_body
+  exact HasType.let_poly (by omega)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbodydefn (by intro b hb; cases hb) hlamw
+
+-- V6
+/-- **V6.** Readiness also covers V5's disciplined instantiation: the closure `\x.\y.x` typed at
+`(genAtV 1 (α→β→α)).instantiateV [.var 2 0, .var 2 1]` (all lookup arg levels below the floor). -/
+theorem v6 : HasTypeV (m := Unit) (.Closure "x" (lambda "y" (variable_ "x")) [])
+    ((Scheme.genAtV 1 defnAB).instantiateV [.var 2 0, .var 2 1]) := by
+  have hinst : (Scheme.genAtV 1 defnAB).instantiateV [.var 2 0, .var 2 1]
+      = .fun (.var 2 0) .empty (.fun (.var 2 1) .empty (.var 2 0)) := by decide
+  rw [hinst]
+  have hx : HasType (m := Unit) 3
+      [("y", Scheme.mono (.var 2 1)), ("x", Scheme.mono (.var 2 0))]
+      (variable_ "x") (.var 2 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 3)
+      (Γ := [("y", Scheme.mono (.var 2 1)), ("x", Scheme.mono (.var 2 0))])
+      (x := "x") (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hbody : HasType (m := Unit) 3 [("x", Scheme.mono (.var 2 0))]
+      (lambda "y" (variable_ "x")) (.fun (.var 2 1) .empty (.var 2 0)) .empty :=
+    HasType.lam (le_refl 3)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hx
+  exact HasTypeV.closure (lvl' := 3) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbody (.refl _)
+
+end Eyg.Types.G2Validation
