@@ -1265,10 +1265,29 @@ the datatype change itself.
       `let_poly` bodies/defns, and everything in the strict `ℓ < lvl` case); only the non-strict `ℓ = lvl`
       boundary needs the genuine witness, available at the keystone from `inv_let`'s `NoGenAt lvl hdefn`.
       Construction sites (keystone + 4 closure-apply) build `RTSubstReady` from that same `NoGenAt` +
-      `noGenAt_of_lt`. This is the concrete Session-G26 deliverable; the runtime groundness/level-bound
-      invariant (G24 item 2) that SUPPLIES `RTSubstReady`+ground `σ` at the four closure sites remains the
-      separate open design item. Caveat 5 OPEN (poly-let preservation DISCHARGED; closure-body-RT: infra
-      landed, `hasTypeRT_subst` blocked on the single-predicate merge, then runtime threading).
+      `noGenAt_of_lt`. **UPDATE (same session, LANDED — commit `93e07b91`): the `RTSubstReady` fix WORKED
+      in batch mode, no LSP needed after all.** Defined `RTSubstReady ℓ h` exactly as designed and proved
+      `hasTypeRT_subst : RTSubstReady ℓ h → (∀ i, ∀ l ∈ (σ i).levels, l = 0) → ℓ ≤ lvl → PolyAboveFV ℓ Γ e
+      → ∃ h' : HasType lvl (substCtxAt ℓ σ Γ) e (substAt ℓ σ τ) (substAt ℓ σ ε), HasTypeRT h'` by a single
+      induction on `RTSubstReady` — every sub-witness an arm variable, zero inversions. The ONLY fixes the
+      designed proof needed were four `HasTypeRT.{lam,app,let_poly,conv}` constructor calls that had to be
+      handed their implicit derivation/EffWeaken/TyEquiv args explicitly (`(hbody := …)`, `(hw := …)`,
+      `(hbodydefn := …)(hcw := …)`, `(hτ … )(hε …)`) — proof irrelevance leaves those implicits
+      unsynthesized otherwise. Per-file green (Typing + full non-Soundness cone, 1762 jobs), no `sorry`,
+      axioms untouched. **So the ENTIRE gap-1 substitution infrastructure is now COMPLETE**
+      (`Ty.not_mem_levels_substAt` + `HasTypeRTAt` + `RTSubstReady` + `hasTypeRT_subst`, three green
+      commits `371918d7`/`be7c3eec`/`93e07b91`). `HasTypeRTAt` is now superseded by `RTSubstReady` as the
+      working predicate (kept as the clean "pure args-bound" statement; harmless, a future session may
+      drop it). **What remains for gap 1 (the genuine open architectural item, G24 item 2, unchanged):**
+      thread a runtime groundness/level-bound invariant through `HasTypeV.closure`/`MStateWf`/`StackWf*`
+      (both engines) so the 4 closure-apply sites can SUPPLY `RTSubstReady ℓ hbody` + a ground `σ` when
+      invoking `hasTypeRT_subst`, then add an RT-producing variant of `genAtV_closure_ready_value_node`
+      and wire the sites. That threading is the load-bearing runtime-judgment strengthening; it ramifies
+      across two inductive-definition files + both engines and can only be validated once `Soundness.lean`
+      goes green (so not committable in isolation). Also still pending: `builtinApp_arity2`/`instantiateV`
+      mechanical regression (Soundness ~1938/~2050 + B-mirrors) and the ~66-error B-engine grind. Caveat 5
+      OPEN (poly-let preservation DISCHARGED; closure-body-RT: **substitution infra COMPLETE**, runtime
+      threading + wiring remain).
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

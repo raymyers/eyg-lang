@@ -108,3 +108,35 @@ runtime-judgment strengthening. Plus: the `builtinApp_arity2`/`instantiateV` mec
 - `Soundness.lean`: uncommitted, red, unchanged from G23/G24 (52+/42−, no sorry, verified intact).
 - `plan/eyg-g1-level-tagged-ty.md`: Session G25 entry appended under Phase 6. This note added.
 - Caveat 5 OPEN.
+
+## ADDENDUM (same session) — `hasTypeRT_subst` LANDED via `RTSubstReady` (commit `93e07b91`)
+
+The designed combined-inductive fix WORKED in batch mode (no LSP needed after all). Landed:
+
+- **`RTSubstReady ℓ h`** (Typing.lean, after `HasTypeRTAt`) — exactly as designed: the `var`/`builtin`
+  `{0,ℓ,s.level}` args bound, `NoGenAt ℓ hbody` carried at `lam`, `hne : lvl ≠ ℓ` + `NoGenAt ℓ hbodydefn`
+  carried at `let_poly` (body recursed), `app`/`let_`/`conv` recursed, leaves nullary.
+- **`hasTypeRT_subst`** — single induction on `RTSubstReady`, bundling `∃ h', HasTypeRT h'`. Every
+  sub-witness is an arm variable (no inversion, no existential mismatch, no dead disjunct — the whole
+  wall dissolved). `var`/`builtin` arms discharge the `ℓ` disjunct via `Ty.not_mem_levels_substAt` +
+  `mem_levels_substAt_strong` + groundness; `lam`/`let_poly`-defn bodies re-typed via
+  `hasType_substAt_le` on the carried `NoGenAt`; `let_poly` context rewritten via a packaged-existential
+  `rw [substCtxAt_cons_genAtV]`; mono/arrow reshaping by defeq (`substCtxAt_cons`/`substSchemeVAt_mono`
+  are `rfl`).
+
+**The only fixes the designed proof needed:** four `HasTypeRT.{lam,app,let_poly,conv}` constructor
+calls whose implicit derivation / `EffWeaken` / `TyEquiv` arguments proof-irrelevance leaves
+unsynthesized — supplied explicitly (`(hbody := hbody')`, `(hw := Ty.substAt_effWeaken ℓ σ hw)`,
+`(hbodydefn := hbd)(hcw := ctxWfV_substCtxAt …)`, `(Ty.substAt_tyEquiv ℓ σ hτ)(… hε)`). Four one-line
+fixes; ~4 s compile each.
+
+**So gap-1's substitution infrastructure is COMPLETE** (`not_mem_levels_substAt` + `HasTypeRTAt` +
+`RTSubstReady` + `hasTypeRT_subst`, commits `371918d7`/`be7c3eec`/`93e07b91`, all green, no sorry, axioms
+untouched, Soundness.lean untouched throughout). `HasTypeRTAt` is superseded by `RTSubstReady` as the
+working predicate (kept as the clean pure-bound statement; a future session may drop it).
+
+**Remaining for gap 1 (unchanged, the genuine architectural item):** thread the runtime
+groundness/level-bound invariant through `HasTypeV.closure`/`MStateWf`/`StackWf*` (both engines) so the
+4 closure-apply sites can supply `RTSubstReady ℓ hbody` + ground `σ`, add an RT-producing variant of
+`genAtV_closure_ready_value_node`, wire the sites. Validatable only with Soundness green (not isolable).
+Plus the `builtinApp_arity2`/`instantiateV` regression and the ~66-error B-engine grind.
