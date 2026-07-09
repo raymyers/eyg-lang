@@ -611,6 +611,38 @@ the datatype change itself.
       normalization *into* `genAtV_closure_ready_value_node`, dropping its `NoGenAt lvl h` premise so the
       Soundness site never supplies it. `Typing.lean` per-file green, no `sorry`, no new axioms.
       Soundness.lean left as found. Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G7 — the renaming metatheorem's residual corner SHARPENED: a
+      uniform tag-shift is ill-defined there, the entanglement is not excluded by `HasTypeRT` and DOES
+      occur in sound RT-valid derivations, precise obstruction = same-level non-commutation; one green
+      additive commit `c50bbfe9` to `Scheme.lean`; see
+      `progress/2026-07-09-G1-phase6-sessionG7-renaming-entanglement-sharpened.md`):** No LSP.
+      (1) **A tag-uniform level shift is ILL-DEFINED in the residual corner** (`arity≠0 ∧ lvl'=lvl`).
+      The OUTER lambda's gen vars (level `lvl` in `retTy`/`εb`, quantified by `genAtV lvl defnTy`) must
+      STAY at `lvl`; the INNER `let_poly`'s gen vars (also level `lvl`) must MOVE to a fresh `f` to
+      decouple from the keystone's `substAt lvl`. Both are the identical leaf `var lvl i` —
+      indistinguishable by tag — so no `substAt lvl (·↦var f)` moves one and fixes the other. This
+      corrects G6's "renaming is a straightforward `≥ℓ`-shift induction, likely TRUE": as a *global tag
+      shift* it is not well-defined. `CtxWfV lvl Γ_inner` localizes the inner vars to the let's subtree
+      but does NOT keep them out of the let's RESULT type. (2) **The escape into the result type occurs
+      in sound, `HasTypeRT`-valid derivations.** Witness `\x. (let h = \z.z in h) : α → (β → β)`: the
+      inner `id`'s gen var re-surfaces in `retTy = β→β`, giving `arity(genAtV lvl defnTy) ≥ 1` AND an
+      inner `let_poly` at exactly `lvl`; the let-body is the var `h` with args `[var lvl 0]`
+      (`level = h.level`), so `HasTypeRT.var` accepts it — gap-1 groundness does NOT exclude the escape.
+      (Independently re-confirms G5's Route-A refutation.) (3) **The precise mechanical obstruction is
+      same-level non-commutation.** The escape is semantically benign (specializing the inner `id` when
+      the outer lambda is called is sound), but pushing `substAt lvl σ` through an inner `genAtV lvl`
+      node requires the outer-specialization `σ` and the inner-instantiation `args` to commute at the
+      SAME level, which they do not (opposite application orders) — exactly why the `let_poly` arm
+      demands `ℓ ≠ lvl`. (4) **Re-characterized correct metatheorem:** NOT a global shift, but a
+      **per-`let_poly` fresh-level normalization** — rewrite so every `let_poly` generalizes at a
+      globally-unique level `>` every interface level and every sibling gen level; then tags identify
+      binders, `substAt` never collides, and `noGenAt_of_lt` discharges the wrapper premise for free.
+      Induction allocates fresh per node top-down; per-node step is `substAt oldLvl (·↦var freshLvl)`,
+      bookkeeping = the new `substAt_substAt_same` + `substAt_substAt_comm`. Multi-session, wants LSP.
+      (5) **Landed `Ty.substAt_substAt_same`** (`Scheme.lean`, `c50bbfe9`): same-level substitution
+      composition, unconditional — the renaming-step building block. Per-file green, no `sorry`, axioms
+      unchanged. Soundness.lean left as found. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
