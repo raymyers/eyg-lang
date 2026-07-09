@@ -1269,6 +1269,52 @@ theorem instantiateV_genAtV_relabel {ℓ f : Nat} (hne : f ≠ ℓ) {d : Ty} (hf
   · rw [if_neg (fun c => h0 (hcount ▸ c)), if_neg h0]
     exact Ty.substAt_relabel_getD hne hf hcov
 
+/-- **Instantiation depends on `args` only through the padded lookup `fun i => args.getD i (var ℓ i)`.**
+Two arg lists inducing the *same* such lookup instantiate any level-`ℓ` scheme identically — the
+congruence a generalization-level-shift induction's `var` arm uses to *pad* an under-applied use
+(supplying the floating `var ℓ i` defaults explicitly, Session G9 Finding 2(a)) without changing the
+produced type, so `instantiateV_genAtV_relabel`'s coverage bound `hcov` can be met. -/
+theorem instantiateV_congr_getD {ℓ : Nat} {d : Ty} {args args' : List Ty}
+    (h : ∀ i, args'.getD i (Ty.var ℓ i) = args.getD i (Ty.var ℓ i)) :
+    (Scheme.genAtV ℓ d).instantiateV args' = (Scheme.genAtV ℓ d).instantiateV args := by
+  simp only [Scheme.instantiateV, Scheme.genAtV]
+  by_cases h0 : (d.levels.filter (· = ℓ)).length = 0
+  · rw [if_pos h0, if_pos h0]
+  · rw [if_neg h0, if_neg h0]
+    exact congrArg (fun f => Ty.substAt ℓ f d) (funext h)
+
+/-- **Padding `args` on the right with the default leaves `var ℓ (args.length + j)`** leaves the
+induced lookup — hence any level-`ℓ` instantiation — unchanged, while extending the length by `extra`
+arbitrarily. This is the constructive half of the `var`-arm padding: the caller picks `extra` large
+enough that every level-`ℓ` index of the scheme body is `< args.length + extra`, meeting the coverage
+hypothesis of `substAt_relabel_getD`/`instantiateV_genAtV_relabel`, without disturbing the type the
+under-applied use originally produced. -/
+theorem instantiateV_pad_default {ℓ : Nat} {d : Ty} (args : List Ty) (extra : Nat) :
+    (Scheme.genAtV ℓ d).instantiateV
+        (args ++ (List.range extra).map (fun j => Ty.var ℓ (args.length + j)))
+      = (Scheme.genAtV ℓ d).instantiateV args := by
+  apply instantiateV_congr_getD
+  intro i
+  by_cases hi : i < args.length
+  · rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD (l := args),
+      List.getElem?_append_left hi]
+  · have hge : args.length ≤ i := Nat.le_of_not_lt hi
+    rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD (l := args),
+      List.getElem?_eq_none hge, Option.getD_none]
+    by_cases hlt : i < args.length + extra
+    · rw [List.getElem?_append_right hge]
+      have hmap : ((List.range extra).map (fun j => Ty.var ℓ (args.length + j)))[i - args.length]?
+          = some (Ty.var ℓ (args.length + (i - args.length))) := by
+        rw [List.getElem?_map, List.getElem?_range (by omega)]
+        rfl
+      rw [hmap, Option.getD_some]
+      congr 1; omega
+    · have : (args ++ (List.range extra).map (fun j => Ty.var ℓ (args.length + j)))[i]? = none := by
+        rw [List.getElem?_eq_none]
+        simp only [List.length_append, List.length_map, List.length_range]
+        omega
+      rw [this, Option.getD_none]
+
 /-- **General scheme-instantiation commutation under an outer level-`ℓ` substitution.** -/
 theorem substAt_instantiateV_scheme {ℓ : Nat} {σ : Nat → Ty} {s : Scheme}
     (h : s.arity = 0 ∨ (ℓ ≠ s.level ∧ ∀ i, ∀ j, j ∉ Ty.freeVarsAt s.level (σ i))) (args : List Ty) :
