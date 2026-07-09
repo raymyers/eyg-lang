@@ -1229,6 +1229,46 @@ the datatype change itself.
       SEPARATELY decide/sign-off the runtime groundness invariant that supplies `HasTypeRTAt ℓ hbody` +
       ground `σ` at the four closure-apply sites, which is the genuine open design question. Caveat 5 stays
       OPEN (poly-let preservation DISCHARGED; closure-body-RT open, now precisely characterized).
+      **Progress 2026-07-09 (Session G25 — `HasTypeRTAt ℓ` + `Ty.not_mem_levels_substAt` LANDED; the
+      two-induction inversion wall for `hasTypeRT_subst` isolated, clean single-predicate fix designed;
+      commit `371918d7`).** No LSP (canary failed). HEAD was `32dd2ecd`; committed the G24-recommended
+      part-1 infrastructure, per-file green (Typing/Scheme + full non-Soundness cone, 1762 jobs), no
+      `sorry`, axioms untouched, `Soundness.lean` left EXACTLY as G23/G24 left it (52+/42−, uncommitted,
+      red). **Landed:** (1) `HasTypeRTAt ℓ h` (Typing.lean) — the level-`ℓ`-aware strengthening of
+      `HasTypeRT`, structurally identical except the `var`/`builtin` arms bound args by
+      `l = 0 ∨ l = ℓ ∨ l = s.level` (one extra `ℓ` disjunct); like `HasTypeRT` it does NOT recurse into
+      `lam`/`let_poly` bodies. (2) `Ty.not_mem_levels_substAt` (Scheme.lean) — a ground (level-`ℓ`-free)
+      `σ` removes `ℓ` from `(substAt ℓ σ t).levels`; the exact fact the `hasTypeRT_subst` var/builtin arms
+      need to drop the `ℓ` disjunct (`substAt ℓ σ` removes `ℓ` via this lemma, introduces only `0` via
+      groundness ⇒ output args land in `{0, s.level}` = `HasTypeRT`'s bound). **`hasTypeRT_subst` NOT
+      landed — a real batch-mode wall, precisely isolated.** Wrote the full ~150-line induction (mirroring
+      `hasType_substAt_le`, bundling `∃ h', HasTypeRT h'`); it type-checks structurally EXCEPT the six
+      points where a sub-`HasTypeRTAt` witness must be extracted from `hrtat`. `cases hrtat`/node-based
+      inversion both fail in batch mode: (a) `var`/`builtin` — `cases` hits `Dependent elimination failed …
+      Decidable.rec` from `s.instantiateV args`'s `if s.arity = 0` in the type index; (b) `app`/`let_`/
+      `let_poly`/`conv` — `cases` re-generalizes the shared indices (`retTy`/`bodyTy`/`argTy`), yielding
+      `hf✝`≠`hf` and demanding spurious alternatives, because `HasType : Prop` gives no constructor
+      discrimination through the derivation index. The `inv_*_rt` lemmas dodge (a)/(b) via the
+      generalize-**node** trick, but a node-based `inv_*_rtat` returns the sub-derivations as fresh
+      **existentials** (its own `argTy_i`/`defnTy_i`) that do NOT defeq-match the `hng`-induction arm's
+      `hf`/`hdefn` (differing existential types ⇒ proof-irrelevance does not bridge), AND for the shared
+      `.Let` node it must return a `let_`/`let_poly` **disjunction** whose dead branch is irreducible
+      (proof irrelevance even makes `HasType.let_ … = HasType.let_poly …`, so it can't be ruled out). So
+      mixing induction-on-`hng` with inversion-of-`hrtat` (or vice-versa) is the wall. **Clean fix
+      (recommended, needs LSP to verify the single induction): merge the two predicates into ONE combined
+      inductive `RTSubstReady ℓ h`** carrying, in a SINGLE recursion, the `var`/`builtin` AT-bounds AND —
+      at the non-RT-recursed `lam`/`let_poly`-defn positions — the `NoGenAt ℓ` witness those bodies need
+      for re-typing (`lam`: `NoGenAt ℓ hbody`; `let_poly`: `NoGenAt ℓ hbodydefn` + `hne`, body recursed).
+      Inducting on `RTSubstReady` ONCE yields every sub-witness as an arm variable — **no inversion of a
+      second predicate, no existential mismatch, no dead disjunct**. `noGenAt_of_lt` (Typing.lean:889)
+      supplies the carried `NoGenAt` fields for free wherever `ℓ <` the sub-derivation's level (all
+      `let_poly` bodies/defns, and everything in the strict `ℓ < lvl` case); only the non-strict `ℓ = lvl`
+      boundary needs the genuine witness, available at the keystone from `inv_let`'s `NoGenAt lvl hdefn`.
+      Construction sites (keystone + 4 closure-apply) build `RTSubstReady` from that same `NoGenAt` +
+      `noGenAt_of_lt`. This is the concrete Session-G26 deliverable; the runtime groundness/level-bound
+      invariant (G24 item 2) that SUPPLIES `RTSubstReady`+ground `σ` at the four closure sites remains the
+      separate open design item. Caveat 5 OPEN (poly-let preservation DISCHARGED; closure-body-RT: infra
+      landed, `hasTypeRT_subst` blocked on the single-predicate merge, then runtime threading).
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
