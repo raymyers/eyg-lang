@@ -1541,6 +1541,113 @@ normalized derivation's `NoGenAt`. The supposed adversarial witness is *not* adv
 private theorem advPerf_lvl1_noGenAt : NoGenAt 1 advPerf_lvl1 :=
   advPerf_lvl2_noGenAt
 
+/-! ### G1 Session G8: the *escaping* inner `let_poly` is freshenable via re-instantiation
+
+Session G7 (Finding 2) exhibited `\x. (let h = \z.z in h)` as an "escape" witness where the inner
+`let_poly`'s generalized variable **re-surfaces in the outer lambda's result type** (`retTy = β → β`
+with `β` at exactly the inner generalization level), and conjectured (Finding 4) that such a case must
+be handled by **mono-izing** (rebinding `h` monomorphically) rather than **freshening** (bumping the
+inner `let_poly` to a higher level), because a naive tag-uniform level shift is ill-defined when the
+outer and inner generalized variables share the level tag.
+
+**That dichotomy is imprecise.** The escaping case is *also* freshenable — the mono-ize branch is not
+needed. The escaped occurrence in `retTy` is produced by **instantiating** the inner scheme at a
+lower-level (outer / ground) variable; that instantiation argument is chosen independently of the
+inner scheme's own generalization level, so the inner level can be moved *fresh* while the very same
+argument reproduces the identical `retTy`. Concretely: the body `h` is typed by instantiating `h`'s
+scheme at `[var 1 0, var 1 0]` — a level-`1` (outer) variable. In the un-normalized derivation the
+inner `let_poly` generalizes at level `1`, so that argument collides with the gen level; in the
+normalized derivation it generalizes at level `2`, and the identical argument `var 1 0` (level `1 ≠ 2`)
+yields the identical `retTy = var 1 0 → var 1 0`. Both derivations prove the **same judgment**; the
+normalized one gives `NoGenAt 1` for free via `noGenAt_of_lt`. This is the sharper, more uniform
+statement: at a lambda-body site the inner `let_poly` level is a *free choice* (bounded below by the
+enclosing binder's sublevel), and re-instantiation keeps `retTy` fixed regardless of whether the
+escaped variable is inner-generalized or outer-ambient — there is no representation wall here, and no
+principal-types mono-ize obligation. (Compare `advPerf` above, whose inner `let_poly` is *vacuous*
+(`h : int→int`, `arity 0`); this witness has a genuinely `arity ≠ 0` inner scheme whose gen variable
+truly escapes into `retTy`, the case G7 flagged as the hard one.) -/
+
+/-- The escape body `let h = \z.z in h` — the returned `h` is a polymorphic identity whose scheme's
+generalized variable re-surfaces in the result type (via instantiation at the outer `var 1 0`). -/
+private def escBody : Tree.Node Unit :=
+  let_ "h" (lambda "z" (variable_ "z")) (variable_ "h")
+
+/-- The escape lambda `\x. (let h = \z.z in h)`. -/
+private def escLam : Tree.Node Unit := lambda "x" escBody
+
+/-- The **fixed** result type `var 1 0 → var 1 0` (the escaped variable sits at level `1`). -/
+private def escRetTy : Ty := .fun (.var 1 0) .empty (.var 1 0)
+
+/-- The **fixed** lambda type `integer → (var 1 0 → var 1 0)`. `genAtV 1 escDefnTy` has `arity 2`
+(two level-`1` occurrences in `escRetTy`), so this is the residual `arity ≠ 0` corner. -/
+private def escDefnTy : Ty := .fun .integer .empty escRetTy
+
+/-- The residual corner is genuine: the outer scheme quantifies real (level-`1`) variables. -/
+example : (Scheme.genAtV 1 escDefnTy).arity = 2 := by decide
+
+/-- The inner `\z.z` typed at gen level `n`: `var n 0 → var n 0`. -/
+private theorem escH_defn (n : Nat) :
+    HasType (m := Unit) n [("x", Scheme.mono .integer)] (lambda "z" (variable_ "z"))
+      (.fun (.var n 0) .empty (.var n 0)) .empty :=
+  HasType.lam (lvl' := n + 1) (a := ()) (ε := .empty) (Nat.le_succ _)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    (HasType.var (s := .mono (.var n 0)) (args := []) rfl)
+
+/-- The let body `h`, instantiated at `[var 1 0, var 1 0]`, has type `escRetTy` **independently of the
+inner gen level `n`**: re-instantiation reproduces the escaped variable at the fixed level `1`. -/
+private theorem escH_body (n : Nat) :
+    HasType (m := Unit) (n + 1)
+      [("h", Scheme.genAtV n (.fun (.var n 0) .empty (.var n 0))), ("x", Scheme.mono .integer)]
+      (variable_ "h") escRetTy .empty := by
+  have hinst : (Scheme.genAtV n (.fun (.var n 0) .empty (.var n 0))).instantiateV [.var 1 0, .var 1 0]
+      = escRetTy := by
+    simp only [escRetTy, Scheme.genAtV, Scheme.instantiateV, Ty.levels]
+    cases n <;> simp_all [Ty.substAt, List.getD]
+  have h := HasType.var (m := Unit) (lvl := n + 1)
+    (Γ := [("h", Scheme.genAtV n (.fun (.var n 0) .empty (.var n 0))), ("x", Scheme.mono .integer)])
+    (x := "h") (s := Scheme.genAtV n (.fun (.var n 0) .empty (.var n 0)))
+    (args := [.var 1 0, .var 1 0]) (ε := .empty) (a := ()) rfl
+  rwa [hinst] at h
+
+/-- The escape body at gen level `n` (`≥ 1`): inner `let_poly` at `n`, result type the fixed
+`escRetTy`. -/
+private def escBodyAt (n : Nat) (hn : 1 ≤ n) :
+    HasType (m := Unit) n [("x", Scheme.mono .integer)] escBody escRetTy .empty :=
+  HasType.let_poly (a := ()) (defnTy := .fun (.var n 0) .empty (.var n 0))
+    (escH_defn n) (advH_ctxwf hn) (escH_body n)
+
+/-- **The un-normalized (`lvl' = 1`) escape derivation.** The inner `let_poly` generalizes at exactly
+`lvl = 1`; its generalized variable escapes into `retTy = escRetTy`. The residual corner (`arity ≠ 0`,
+`lvl' = lvl`) *with a genuine escape* — the case G7 conjectured needs mono-izing. -/
+private def escLam_lvl1 : HasType (m := Unit) 1 [] escLam escDefnTy .empty :=
+  HasType.lam (lvl' := 1) (a := ()) (ε := .empty) (le_refl _)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    (escBodyAt 1 (le_refl _))
+
+/-- **The freshened (`lvl' = 2`) escape derivation** — the SAME term, SAME type `escDefnTy`, SAME
+ambient level `1`; only the inner `let_poly` moves to level `2`, its use re-instantiated at the
+identical `[var 1 0, var 1 0]` so `retTy` is unchanged. -/
+private def escLam_lvl2 : HasType (m := Unit) 1 [] escLam escDefnTy .empty :=
+  HasType.lam (lvl' := 2) (a := ()) (ε := .empty) (by decide)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    (escBodyAt 2 (by decide))
+
+/-- The freshened body (inner `let_poly` at `2 > 1`) satisfies `NoGenAt 1` *for free* via
+`noGenAt_of_lt` — **no** mono-ize step, **no** principal-types argument, just re-instantiation. -/
+private theorem escLam_lvl2_noGenAt : NoGenAt 1 escLam_lvl2 :=
+  NoGenAt.lam (by decide)
+    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
+    (noGenAt_of_lt (escBodyAt 2 (by decide)) (by decide))
+
+/-- **The escaping witness is freshenable.** `escLam_lvl1` and `escLam_lvl2` prove the identical
+judgment, so by proof irrelevance the wrapper's premise `NoGenAt 1 escLam_lvl1` — for the escaping,
+un-normalized derivation the runtime hands us — is discharged by the freshened derivation's
+`NoGenAt`. **This refutes G7's "escape ⇒ mono-ize" dichotomy**: escape into the result type does not
+force mono-ization; re-instantiation at the outer variable keeps `retTy` fixed while the inner level
+is freshened. -/
+private theorem escLam_lvl1_noGenAt : NoGenAt 1 escLam_lvl1 :=
+  escLam_lvl2_noGenAt
+
 end Examples
 
 end Eyg.Types
