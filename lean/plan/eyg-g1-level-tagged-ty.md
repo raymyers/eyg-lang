@@ -386,6 +386,32 @@ the datatype change itself.
       args `HasType.var` does not record — needs a runtime "instantiation args are ground/ambient-level"
       invariant on the machine-state typing (NOT a premise on `HasType.var`, which would wrongly reject
       typing-time instantiations). Error-cluster map + recommended Session D order in the note.
+      **Progress 2026-07-08 (Session D — the two non-mechanical pieces DESIGNED + VALIDATED, Soundness
+      error map corrected to its true two-engine shape; no LSP this session so the mechanical grind was
+      not attempted; NOTHING committed), see
+      `progress/2026-07-08-G1-phase6-sessionD-runtime-groundness-invariant-designed-soundness-two-engine-map.md`:**
+      (1) **The var-preservation obstruction is designed and validated.** The invariant is *runtime
+      groundness*: in a running well-typed machine state, the control's `HasType` derivation has all
+      `var`/`builtin` instantiation args ground (levels `⊆ {0}` ⊆ the `l=0∨l=s.level` bound). Validated
+      against `hbody_ref` (`Typing.lean` examples): its non-ground arg (`a:level 1` at `[var 2 0]`) is a
+      *static* subderivation inside a level-2 generalization; when the closure is applied the keystone's
+      `substAt 2` re-typing grounds it (`[integer]`) before it is ever a control — so the invariant
+      simultaneously ALLOWS `hbody_ref` and guarantees ground runtime args. Recommended threading: a
+      runtime-restricted judgment `HasTypeRT` (mirror of `HasType`, `var`/`builtin` arms carry the args
+      bound; used by `MStateWf`/`StackWfE`/`StackWfV`) — NOT a premise on `HasType.var` (header-fence,
+      rejects `hbody_ref`), and NOT merely goal-type-groundness (irrelevant `getD`-padded args escape
+      that — a subtlety the note documents). (2) **The `genAtV_closure_ready_value_node` wrapper is
+      designed:** the `inv_lambda` TyEquiv bridge is SOLVED (new additive lemma `instantiateV_genAtV_
+      tyEquiv`, via `Ty.substAt_tyEquiv` + `Ty.levels_tyEquiv` preserving the arity-0 check), with one
+      residual small subtlety (a `lvl < lvl'` strictness gap: arity-0 short-circuits via
+      `closure_typed_of_lambda`; arity≠0 needs `lvl ∈ defnTy.levels ⇒ lvl < lvl'`). (3) **Soundness map
+      corrected:** Session C's "103 errors" hid 66 spurious repeats of ONE `<;> simp` error at line 1592
+      that MASKED the entire second engine. A one-line de-masking fix (line 1560, 5-tuple→6-tuple
+      `mStateWf_E` destructure, applied this session, uncommitted) reveals the TRUE shape: ~25 A-engine
+      (`reduceEval`) + ~66 B-engine (`reduceEvalR`/`soundness_evalR`, 2392-3237) mechanical errors, the
+      var-preservation blocker in BOTH engines (216-219 and 2943-2945), and the B-engine still on old
+      magnitude `sc.instantiate` in places (130/1908/2700-2711/3775). Caveat 5 remains OPEN; Session E
+      (with LSP) executes the designed pieces + the ~90-error two-engine grind (order in the note).
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
