@@ -454,6 +454,16 @@ the datatype change itself.
       pieces (`NoGenAt`/`hasType_substAt_le` for gap 2; `HasTypeRT` for gap 1) **separately and in either
       order**, then the ~90-error grind. `Typing.lean` per-file green (EXIT 0), Substitution/Machine
       re-checked green; no `sorry`, no axioms, no rule change, no statement weakened. Caveat 5 OPEN.
+      **Progress 2026-07-08 (Session G1 — gap 2 CLOSED), see
+      `progress/2026-07-08-G1-phase6-sessionG1-noGenAt-closes-wrapper-strictness-gap.md`:**
+      `NoGenAt`/`hasType_substAt_le`/`genAtV_instantiate_lam_ready_le`/`inv_lambda_noGenAt` landed in
+      `Typing.lean`, plus a strengthening lemma `Ty.mem_levels_substAt_strong` in `Scheme.lean` — closes
+      gap 2 (the wrapper's strictness obstruction) exactly as Session F diagnosed. Per-file green on
+      both files, whole-project `lake build` still fails **only** on `Soundness.lean` (103 errors,
+      unchanged count — no new breakage). Still TODO: wire `genAtV_closure_ready_value_node`
+      (`Substitution.lean`, untouched this session) to actually call the new keystone; gap 1
+      (`HasTypeRT`, var-preservation runtime groundness) remains open and independent; the ~90-error
+      mechanical `Soundness.lean` grind untouched. No `sorry`, no axioms, no rule change.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

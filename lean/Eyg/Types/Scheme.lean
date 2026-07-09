@@ -978,6 +978,59 @@ theorem mem_levels_substAt {ℓ l : Nat} {σ : Nat → Ty} {t : Ty}
         · exact Or.inr h'
   | _ => simp only [substAt, levels] at h; exact absurd h (by simp)
 
+/-- **Where a level in a substituted type comes from (strengthened).** Refines `mem_levels_substAt`:
+in the "introduced by `σ`" case, the outer level `ℓ` itself must already occur in `t` — a `var ℓ i`
+leaf had to be present for `σ i` to be spliced in. This extra `ℓ ∈ t.levels` is what lets the
+`hasType_substAt_le` `lam`/`let_` arms recover `l < lvl'` from the original `hfv` bound (`hfv ℓ`)
+even when `lvl' = ℓ` (where the strict `ℓ < lvl'` used by `hasType_subst` is unavailable). -/
+theorem mem_levels_substAt_strong {ℓ l : Nat} {σ : Nat → Ty} {t : Ty}
+    (h : l ∈ (substAt ℓ σ t).levels) :
+    l ∈ t.levels ∨ (ℓ ∈ t.levels ∧ ∃ i, l ∈ (σ i).levels) := by
+  induction t with
+  | var l' i =>
+      by_cases hl' : l' = ℓ
+      · subst hl'; simp only [substAt] at h; exact Or.inr ⟨by simp [levels], i, h⟩
+      · simp only [substAt, if_neg hl', levels, List.mem_singleton] at h
+        subst h; exact Or.inl (by simp [levels])
+  | «fun» a e r iha ihe ihr =>
+      simp only [substAt, levels, List.mem_append] at h ⊢
+      rcases h with (h | h) | h
+      · rcases iha h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inl (Or.inl h'))
+        · exact Or.inr ⟨Or.inl (Or.inl hm), h'⟩
+      · rcases ihe h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inl (Or.inr h'))
+        · exact Or.inr ⟨Or.inl (Or.inr hm), h'⟩
+      · rcases ihr h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr ⟨Or.inr hm, h'⟩
+  | list a ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | record r ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | union r ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | promise a ih => simp only [substAt, levels] at h ⊢; exact ih h
+  | rowExtend l' f t ihf iht =>
+      simp only [substAt, levels, List.mem_append] at h ⊢
+      rcases h with h | h
+      · rcases ihf h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr ⟨Or.inl hm, h'⟩
+      · rcases iht h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr ⟨Or.inr hm, h'⟩
+  | effectExtend l' a b t iha ihb iht =>
+      simp only [substAt, levels, List.mem_append] at h ⊢
+      rcases h with (h | h) | h
+      · rcases iha h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inl (Or.inl h'))
+        · exact Or.inr ⟨Or.inl (Or.inl hm), h'⟩
+      · rcases ihb h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inl (Or.inr h'))
+        · exact Or.inr ⟨Or.inl (Or.inr hm), h'⟩
+      · rcases iht h with h' | ⟨hm, h'⟩
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr ⟨Or.inr hm, h'⟩
+  | _ => simp only [substAt, levels] at h; exact absurd h (by simp)
+
 /-- **Cross-level commutation for a body with no occurrence at the outer level.** -/
 theorem substAt_substAt_comm_of_no_mem {ℓ1 ℓ2 : Nat} (hne : ℓ1 ≠ ℓ2) {σ τ : Nat → Ty} {t : Ty}
     (hclosed : ∀ j, j ∉ freeVarsAt ℓ1 t) :
