@@ -412,6 +412,26 @@ the datatype change itself.
       var-preservation blocker in BOTH engines (216-219 and 2943-2945), and the B-engine still on old
       magnitude `sc.instantiate` in places (130/1908/2700-2711/3775). Caveat 5 remains OPEN; Session E
       (with LSP) executes the designed pieces + the ~90-error two-engine grind (order in the note).
+      **Progress 2026-07-08 (Session E — the TyEquiv-bridge deliverable LANDED; wrapper strictness gap
+      precisely isolated as entangled with the runtime-groundness invariant; no LSP, so `HasTypeRT`/the
+      grind deferred), one green additive commit, see
+      `progress/2026-07-08-G1-phase6-sessionE-tyequiv-bridge-landed-strictness-gap-isolated.md`:**
+      (1) **`instantiateV_genAtV_tyEquiv` implemented** in `Substitution.lean` (Session D's designed
+      lemma), builds clean per-file, axiom-clean, additive — `instantiateV` of a level-`ℓ`
+      generalization respects `TyEquiv` of the body (arity-0 branch agrees via `Ty.levels_tyEquiv`; else
+      via `Ty.substAt_tyEquiv`). (2) **The wrapper strictness gap is sharpened, not closed:** the
+      arity-0 branch short-circuits cleanly via `closure_typed_of_lambda`; the arity≠0 branch's
+      `lvl < lvl'` is **genuinely undischargeable from `inv_lambda`** when `lvl ∈ εb.levels ∪ retTy.levels`
+      but `lvl ∉ argTy.levels` (`inv_lambda`/`HasType.lam` bound only `argTy.levels < lvl'`, nothing on
+      the result/effect rows). It needs a levels-bound metatheorem, a rule change (header-fence), or —
+      the right fix — the **runtime-groundness invariant itself**: `hasType_subst`'s strict `ℓ < lvl'` is
+      exactly what excludes the `lvl' = lvl ∧ lvl ∈ retTy.levels` state, so the wrapper's strictness and
+      the var-preservation groundness blocker are the **same obstruction** and must be closed together
+      via `HasTypeRT`. Recommendation: land the wrapper *as part of* step 2, not before. (3) `HasTypeRT`
+      (24-constructor mirror + RT-inversion) and the ~90-error two-engine grind deferred — both need live
+      goal-state and the grind depends on `HasTypeRT` being wired first. `Soundness.lean` left as-found
+      (uncommitted; committed HEAD `Soundness.lean` is itself already red across the Phase-6 arc, so the
+      additive bridge commit adds no new breakage). Caveat 5 remains OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap

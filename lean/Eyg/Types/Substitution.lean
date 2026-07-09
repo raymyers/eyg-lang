@@ -118,4 +118,39 @@ theorem genAtV_closure_ready_value {ℓ : Nat} (hℓ : ℓ ≠ 0)
   obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heq⟩ := inv_lambda hlam
   exact HasTypeV.closure henv hfv' hbody' heq
 
+/-- **TyEquiv bridge for level-native instantiation.** `instantiateV` of a level-`ℓ` generalization
+respects `TyEquiv` of the generalized body: if the bodies `d₁ ≈ d₂`, then instantiating
+`genAtV ℓ d₁` and `genAtV ℓ d₂` at the *same* `args` yields equivalent types. This is what
+`genAtV_closure_ready_value_node` uses to convert the `inv_lambda`-reconstructed arrow type
+`.fun argTy εb retTy` back to the original `defnTy` under `instantiateV`. The `arity = 0` branch
+selection agrees across the `TyEquiv` because `Ty.levels_tyEquiv` preserves membership of `ℓ` in the
+level set (hence the count-is-zero test agrees); the `else` branch commutes with
+`Ty.substAt_tyEquiv` (both sides substitute at the same level `ℓ` with the same `σ`). -/
+theorem instantiateV_genAtV_tyEquiv (ℓ : Nat) {d₁ d₂ : Ty} (h : Ty.TyEquiv d₁ d₂) (args : List Ty) :
+    Ty.TyEquiv ((Scheme.genAtV ℓ d₁).instantiateV args)
+      ((Scheme.genAtV ℓ d₂).instantiateV args) := by
+  have hmem : ℓ ∈ Ty.levels d₁ ↔ ℓ ∈ Ty.levels d₂ := Ty.levels_tyEquiv h ℓ
+  have hlen : ∀ d : Ty, ((Ty.levels d).filter (· = ℓ)).length = 0 ↔ ℓ ∉ Ty.levels d := by
+    intro d
+    rw [List.length_eq_zero_iff, List.eq_nil_iff_forall_not_mem]
+    constructor
+    · intro hh hc
+      exact hh ℓ (List.mem_filter.mpr ⟨hc, by simp⟩)
+    · intro hh a ha
+      rw [List.mem_filter] at ha
+      have : a = ℓ := by simpa using ha.2
+      exact hh (this ▸ ha.1)
+  unfold Scheme.instantiateV Scheme.genAtV
+  by_cases hd1 : ℓ ∈ Ty.levels d₁
+  · have hd2 : ℓ ∈ Ty.levels d₂ := hmem.mp hd1
+    have ha1 : ¬ ((Ty.levels d₁).filter (· = ℓ)).length = 0 := fun c => (hlen d₁).mp c hd1
+    have ha2 : ¬ ((Ty.levels d₂).filter (· = ℓ)).length = 0 := fun c => (hlen d₂).mp c hd2
+    rw [if_neg ha1, if_neg ha2]
+    exact Ty.substAt_tyEquiv ℓ _ h
+  · have hd2 : ℓ ∉ Ty.levels d₂ := fun c => hd1 (hmem.mpr c)
+    have ha1 : ((Ty.levels d₁).filter (· = ℓ)).length = 0 := (hlen d₁).mpr hd1
+    have ha2 : ((Ty.levels d₂).filter (· = ℓ)).length = 0 := (hlen d₂).mpr hd2
+    rw [if_pos ha1, if_pos ha2]
+    exact h
+
 end Eyg.Types
