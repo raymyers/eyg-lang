@@ -153,4 +153,33 @@ theorem instantiateV_genAtV_tyEquiv (ℓ : Nat) {d₁ d₂ : Ty} (h : Ty.TyEquiv
     rw [if_pos ha1, if_pos ha2]
     exact h
 
+/-- **The value-level readiness keystone, from a lambda *node* derivation (`NoGenAt`-aware).** The
+`let_poly` preservation cases hold a lambda-*node* derivation
+`h : HasType lvl Γ ⟨.Lambda x lbody, la⟩ defnTy ε` (from `inv_let`), not its decomposed `lam`
+components, and generalize at exactly the ambient level `lvl`. This wrapper produces the
+`EnvWf.cons`/`StackWfV`-Assign readiness `∀ args, (args level-bounded) → HasTypeV (Value.Closure x
+lbody env) ((genAtV lvl defnTy).instantiateV args)` directly from that node derivation, composing
+`inv_lambda_noGenAt` (to reach the body derivation with its `NoGenAt`) + the non-strict keystone
+`genAtV_instantiate_lam_ready_le` (handles the `lvl' = lvl` non-strict case, e.g.
+`\x. perform "op" x`, via the `NoGenAt lvl` side condition) + `HasTypeV.closure`, converting the
+`inv_lambda`-reconstructed arrow type back to `defnTy` under `instantiateV` through
+`instantiateV_genAtV_tyEquiv`. -/
+theorem genAtV_closure_ready_value_node {lvl : Nat} (hℓ : lvl ≠ 0)
+    {Γ : Ctx} {x : String} {lbody : Tree.Node m} {la : m} {defnTy ε : Ty}
+    {h : HasType lvl Γ ⟨.Lambda x lbody, la⟩ defnTy ε}
+    (hng : NoGenAt lvl h)
+    (hΓpa : PolyAboveFV lvl Γ ⟨.Lambda x lbody, la⟩)
+    (hΓwf : CtxWfV lvl Γ)
+    {env : Env m} (henv : EnvWf env Γ) :
+    ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ l = lvl) →
+      HasTypeV (Value.Closure x lbody env)
+        ((Scheme.genAtV lvl defnTy).instantiateV args) := by
+  intro args hargs
+  obtain ⟨lvl', argTy, εb, retTy, hbody, hlelvl', hfv, nghbody, heq⟩ := inv_lambda_noGenAt hng
+  have hlam := genAtV_instantiate_lam_ready_le (m := m) (la := la) (ε := ε)
+    hℓ hlelvl' hfv nghbody hΓpa hΓwf args hargs
+  obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heqarr⟩ := inv_lambda hlam
+  exact HasTypeV.closure henv hfv' hbody'
+    (heqarr.trans (instantiateV_genAtV_tyEquiv lvl heq args))
+
 end Eyg.Types
