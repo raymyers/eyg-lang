@@ -705,6 +705,35 @@ the datatype change itself.
       `Scheme.substAt_congr_freeVarsAt` (level-native analog of `subst_congr_free`), the congruence the
       re-instantiation equality consumes. Per-file green, no `sorry`, axioms unchanged. Soundness.lean
       left as found. Caveat 5 OPEN.
+
+      **Progress 2026-07-09 (Session G10 — shortcut evaluated & REJECTED with proof; G9 rec 1 LANDED,
+      commit `63ed5a67`, Scheme.lean; see
+      `progress/2026-07-09-G1-phase6-sessionG10-reinstantiation-equality-shortcut-rejected.md`):** No
+      LSP/MCP (canary failed). **(1) The finding-3 shortcut does NOT sidestep the sub-lemma.** The
+      outer generalization level is *pinned* at `lvl` by `HasType.let_poly` (its stored scheme is
+      `genAtV lvl defnTy` — not a free choice), and the strict keystone `genAtV_instantiate_lam_ready`
+      requires generalization-level `< body-sublevel`. In the residual corner `lvl' = lvl` the only
+      escapes — raise the body's sublevel, relabel `defnTy`'s gen level to a fresh `f`, or shift the
+      body's levels up — *all* re-tag the body's inner `let_poly` schemes (`genAtV oldlvl → genAtV
+      newlvl`), which is exactly G9 Finding 1's wall; "pick a fresh high level via `Nat` unboundedness"
+      fails because a fresh level *above* the body breaks the keystone's `<` and a fresh level *below*
+      still collides with the body's inner gens at `lvl`. Proof-irrelevance (G6) reframes the target
+      to "*exhibit some* re-derivation of the same lambda judgment with `NoGenAt lvl`", but constructing
+      that re-derivation IS the raise — no free lunch. Conclusion: the generalization-level-shift
+      sub-lemma is *irreducibly* required; recorded as a genuine obstruction, not forced. **(2) Banked
+      green (G9 rec 1, the pure re-instantiation equality):** `Ty.length_filter_levels_relabel`
+      (relabel `ℓ→f` preserves the generalized-occurrence count — arity-preservation core),
+      `Ty.substAt_relabel_getD` (body-level heart: re-substituting the `f`-relabel at `args` reproduces
+      the `ℓ`-substitution, under a *coverage* hypothesis discharging G9 Finding 2(a)/(c)), and
+      `Scheme.instantiateV_genAtV_relabel` (scheme-level: `genAtV ℓ d` and `genAtV f (relabel d)`
+      instantiate at the same `args` to the same type — the `escLam_lvl1/lvl2`, `advPerf_lvl1/lvl2`
+      witnesses are its by-hand `arity ≤ 2` instances). Per-file green (Scheme + Typing), no `sorry`,
+      axioms unchanged. Soundness.lean left as found. **Remaining to close Caveat 5:** the
+      `hasType_subst`-scale generalization-level-shift induction on the body derivation (G9 rec 2),
+      whose `var`/`builtin` arms now consume `substAt_relabel_getD`/`instantiateV_genAtV_relabel` with a
+      constructed coverage-respecting `args'`, and whose `let_poly` arm re-tags via the same; then
+      wire-in per G9 finding 3's shape (drop `NoGenAt` from `genAtV_closure_ready_value_node`). Caveat 5
+      OPEN. Wants live LSP — this is error-prone under batch `lake env lean`.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
