@@ -535,6 +535,12 @@ just went through, plus whatever the closure-RT fix turns out to be, once that's
 
 ### If resuming
 
+**A successor rearchitecture plan exists: `plan/eyg-g2-args-discipline-universal-readiness.md`
+(2026-07-09)** — it replaces the `{0, s.level}`-bounded `HasTypeRT`/readiness architecture with a
+static args-level discipline + floor-conditioned universal readiness, with the keystone claims
+instance-validated machine-checked against the G30/G31 counterexamples. Read that plan first; it is
+the intended resume path for Phase 6.
+
 Read, in order: this section, then `progress/2026-07-09-G1-phase6-sessionG31-rtsubstready-single-level-refuted.md`
 (the sharpest, most recent characterization of the open question), then work backward through the
 `progress/2026-07-09-G1-phase6-session*` notes as needed for context on what's already been tried and
