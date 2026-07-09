@@ -895,6 +895,74 @@ theorem inv_builtin_rt {lvl : Nat} {Γ : Ctx} {id : String} {a : m} {τ ε : Ty}
       exact ⟨s, args, hs, heq.trans hτ, hargs⟩
   | _ => intro he; exact absurd he (by simp)
 
+/-- **Any lambda-node derivation is `HasTypeRT`.** A lambda control (which becomes a closure) is
+always runtime-restricted regardless of its body — `HasTypeRT.lam` carries no body premise. Used at
+the lam-control and `let_poly`-defn preservation steps to re-establish RT of the produced
+control. -/
+theorem hasTypeRT_lambda {lvl : Nat} {Γ : Ctx} {x : String} {body : Tree.Node m} {a : m} {τ ε : Ty}
+    (h : HasType lvl Γ (⟨.Lambda x body, a⟩ : Tree.Node m) τ ε) : HasTypeRT h := by
+  generalize he : (⟨.Lambda x body, a⟩ : Tree.Node m) = enode at h
+  revert he
+  induction h with
+  | @lam lvl lvl' Γ x' body' argTy εb retTy ε a hle hfv hbody _ =>
+      intro he; cases he; exact HasTypeRT.lam (hbody := hbody) hle hfv
+  | @conv lvl Γ e τ' τ'' ε' ε'' hh hτ hε ih =>
+      intro he; exact HasTypeRT.conv hτ hε (ih he)
+  | _ => intro he; exact absurd he (by simp)
+
+/-- **RT-inversion for `Apply`** (the RT analog of `inv_app`): recovers the function/argument
+derivations (conv-adjusted, as `inv_app`) **together with** their `HasTypeRT` witnesses. At the
+app-preservation step the function becomes the immediate control and the argument is stored in the
+`Arg` frame — both need RT re-established, supplied here. -/
+theorem inv_app_rt {lvl : Nat} {Γ : Ctx} {f arg : Tree.Node m} {a : m} {τ ε : Ty}
+    {h : HasType lvl Γ (⟨.Apply f arg, a⟩ : Tree.Node m) τ ε} (hrt : HasTypeRT h) :
+    ∃ argTy εf, ∃ (hf : HasType lvl Γ f (.fun argTy εf τ) ε) (harg : HasType lvl Γ arg argTy ε),
+      Ty.EffWeaken εf ε ∧ HasTypeRT hf ∧ HasTypeRT harg := by
+  generalize he : (⟨.Apply f arg, a⟩ : Tree.Node m) = enode at h
+  revert he
+  induction hrt with
+  | @app lvl Γ f' arg' argTy εf retTy ε a hf hw harg rf rarg _ _ =>
+      intro he; cases he; exact ⟨argTy, εf, hf, harg, hw, rf, rarg⟩
+  | @conv lvl Γ e τ' τ'' ε' ε'' hh hτ hε rh ih =>
+      intro he
+      obtain ⟨argTy, εf, hf, harg, hw, rf, rarg⟩ := ih he
+      exact ⟨argTy, εf, HasType.conv hf (.congrFun (.refl _) (.refl _) hτ) hε,
+        HasType.conv harg (.refl _) hε, Ty.effWeaken_tyEquiv_right hw hε,
+        HasTypeRT.conv (.congrFun (.refl _) (.refl _) hτ) hε rf,
+        HasTypeRT.conv (.refl _) hε rarg⟩
+  | _ => intro he; exact absurd he (by simp)
+
+/-- **RT-inversion for `Let`** (the RT analog of `inv_let`): the mono branch supplies RT of both the
+`defn` (immediate control) and the `body` (stored in the `Assign` frame); the poly branch supplies
+RT of the `body` only — the lambda-`defn` control's RT is re-built fresh via `hasTypeRT_lambda`. -/
+theorem inv_let_rt {lvl : Nat} {Γ : Ctx} {x : String} {defn body : Tree.Node m} {a : m} {τ ε : Ty}
+    {h : HasType lvl Γ (⟨.Let x defn body, a⟩ : Tree.Node m) τ ε} (hrt : HasTypeRT h) :
+    (∃ lvl' defnTy, ∃ (hdefn : HasType lvl Γ defn defnTy ε)
+        (hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body τ ε),
+        lvl ≤ lvl' ∧ (∀ l ∈ defnTy.levels, l < lvl') ∧ HasTypeRT hdefn ∧ HasTypeRT hbody) ∨
+    (∃ lx lbody la defnTy, ∃ (_ : defn = ⟨.Lambda lx lbody, la⟩)
+        (_ : HasType lvl Γ defn defnTy ε) (_ : CtxWfV lvl Γ)
+        (hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body τ ε),
+        HasTypeRT hbody) := by
+  generalize he : (⟨.Let x defn body, a⟩ : Tree.Node m) = enode at h
+  revert he
+  induction hrt with
+  | @let_ lvl lvl' Γ x' defn' body' defnTy bodyTy ε a hdefn hle hfv hbody rd rb _ _ =>
+      intro he; cases he
+      exact Or.inl ⟨lvl', defnTy, hdefn, hbody, hle, hfv, rd, rb⟩
+  | @let_poly lvl Γ x' lx lbody la body' defnTy bodyTy ε a hdefn hcw hbody rb _ =>
+      intro he; cases he
+      exact Or.inr ⟨lx, lbody, la, defnTy, rfl, hdefn, hcw, hbody, rb⟩
+  | @conv lvl Γ e τ' τ'' ε' ε'' hh hτ hε rh ih =>
+      intro he
+      rcases ih he with ⟨lvl', defnTy, hdefn, hbody, hle, hfv, rd, rb⟩ |
+          ⟨lx, lbody, la, defnTy, hdl, hdefn, hcw, hbody, rb⟩
+      · exact Or.inl ⟨lvl', defnTy, HasType.conv hdefn (.refl _) hε, HasType.conv hbody hτ hε,
+          hle, hfv, HasTypeRT.conv (.refl _) hε rd, HasTypeRT.conv hτ hε rb⟩
+      · exact Or.inr ⟨lx, lbody, la, defnTy, hdl, HasType.conv hdefn (.refl _) hε, hcw,
+          HasType.conv hbody hτ hε, HasTypeRT.conv hτ hε rb⟩
+  | _ => intro he; exact absurd he (by simp)
+
 /-! ## Context-binding conversion -/
 
 /-- **`CtxWfV` survives a `TyEquiv` context-binding rewrite** (level-native; `TyEquiv` preserves the
