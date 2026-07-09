@@ -734,6 +734,38 @@ the datatype change itself.
       constructed coverage-respecting `args'`, and whose `let_poly` arm re-tags via the same; then
       wire-in per G9 finding 3's shape (drop `NoGenAt` from `genAtV_closure_ready_value_node`). Caveat 5
       OPEN. Wants live LSP — this is error-prone under batch `lake env lean`.
+      **Progress 2026-07-09 (Session G11 — the raise pinned as a TWO-theorem re-elaboration; a natural
+      `hasType_subst` reuse REFUTED; var-arm padding banked, commit `26e1f566`, Scheme.lean; see
+      `progress/2026-07-09-G1-phase6-sessionG11-raise-two-theorem-architecture-hasTypeSubst-refuted.md`):**
+      No LSP/MCP. Sharpens G10's "single generalization-level-shift sub-lemma" into a precise architecture.
+      **(1) The wrapper only needs an ambient RAISE** (no `NoGenAt` premise): raise the `inv_lambda` body
+      `hbody : HasType lvl' … lbody retTy εb` to any fresh `L > lvl` keeping context/`retTy`/`εb`
+      **literally fixed**, then either `noGenAt_of_lt` (free `NoGenAt lvl`) or — cleaner — the STRICT
+      keystone `genAtV_instantiate_lam_ready` directly (`lvl < L`). `CtxWfV lvl' ((x,.mono argTy)::Γ)`
+      holds from `hΓwf`+`hfv`. Drops `hng`/`hΓpa` from `genAtV_closure_ready_value_node`. **(2) The raise
+      keeps the conclusion type LITERALLY FIXED**, resolving G7 Finding 1's tag conflation: all conclusion
+      types carry only *ambient* level tags (inner-gen tags are bound-and-gone, re-entering only via
+      instantiation args), and the `var` arm absorbs the collision by *padding args* — the escaped var
+      (from an unchanged arg) stays, the inner-gen var (in the relabeled *scheme body*) moves, same tag,
+      different syntactic position, no uniform type-function. **(3) The `let_poly` arm needs a SECOND,
+      coupled theorem — and `hasType_subst` CANNOT be it.** Raising a `let_poly` (ambient=genlevel=stored
+      level, all tied) forces the stored scheme to `genAtV (k+o) (substAt k (·↦var(k+o)) defnTy)`, so
+      `hdefn'` must carry the *relabeled* type, not the fixed one. `hasType_subst`/`hasType_substAt_le`
+      require `σ`'s range levels `∈ {0,ℓ}` (the *instantiation* direction), which **excludes** a
+      relabel-to-a-fresh-level map (`var (k+o)`, level `∉ {0,k}`) — a genuine refutation of the obvious
+      "compose with existing subst" shortcut. A dedicated **fresh-level relabel re-typing theorem**
+      (`hasType_subst`'s 21-arm shape with the `{0,ℓ}` precondition replaced by *freshness*, discharging
+      `var` via the already-general `substAt_instantiateV_scheme`, and bumping the ambient — mutually
+      recursive with the type-fixed main raise) is required. **(4) Freshness** wants a threaded global cap
+      `LevelsBelow N h` (a `NoGenAt`-shaped inductive) + `∃ N`, so a single offset `o ≥ N` relabels every
+      node freshly. **Banked green (commit `26e1f566`):** `instantiateV_congr_getD` (instantiation depends
+      on `args` only through the padded lookup) and `instantiateV_pad_default` (padding with default leaves
+      is instantiation-invariant, extends length arbitrarily to meet coverage) — the constructive half of
+      the `var` arm, so it keeps the conclusion type fixed while the looked-up scheme is relabeled.
+      Per-file green (Scheme), axioms unchanged, no `sorry`. Soundness.lean left as found. **Remaining:**
+      `LevelsBelow`+`∃N`; `raiseCtx`+lemmas; the two mutually-recursive 21-arm raise inductions;
+      wire-in (drop `NoGenAt`, strict keystone); then the Soundness grind + Phase 7. Architecture now
+      precise and math de-risked; the two inductions want live LSP goal-state. Caveat 5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
