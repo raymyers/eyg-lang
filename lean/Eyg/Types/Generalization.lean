@@ -648,10 +648,10 @@ design). -/
 example : HasType (m := Unit) 1 []
     (let_ "id" (lambda "y" (variable_ "y")) (apply (variable_ "id") (integer 1)))
     .integer .empty := by
-  refine HasType.let_poly (defnTy := .fun (.var 1 0) .empty (.var 1 0)) ?_ ?_ ?_
-  · exact HasType.lam (lvl' := 2) (by omega)
-      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
-      (HasType.var (s := .mono (.var 1 0)) (args := []) rfl)
+  refine HasType.let_poly (lvl' := 2) (argTy := .var 1 0) (εb := .empty) (retTy := .var 1 0)
+    (by omega)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    (HasType.var (s := .mono (.var 1 0)) (args := []) rfl) ?_ ?_
   · intro b hb; cases hb
   · refine HasType.app (argTy := .integer) ?_ (Ty.effWeaken_refl _) HasType.int
     exact HasType.var (s := Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))
@@ -664,10 +664,10 @@ example : HasType (m := Unit) 1 []
     (let_ "id'" (lambda "x" (let_ "y" (variable_ "x") (variable_ "y")))
       (apply (variable_ "id'") (integer 1)))
     .integer .empty := by
-  refine HasType.let_poly (defnTy := .fun (.var 1 0) .empty (.var 1 0)) ?_ ?_ ?_
-  · refine HasType.lam (lvl' := 2) (by omega)
-      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ?_
-    refine HasType.let_ (defnTy := .var 1 0) (HasType.var (s := .mono (.var 1 0)) (args := []) rfl)
+  refine HasType.let_poly (lvl' := 2) (argTy := .var 1 0) (εb := .empty) (retTy := .var 1 0)
+    (by omega)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ?_ ?_ ?_
+  · refine HasType.let_ (defnTy := .var 1 0) (HasType.var (s := .mono (.var 1 0)) (args := []) rfl)
       (lvl' := 2) (le_refl _)
       (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ?_
     exact HasType.var (s := .mono (.var 1 0)) (args := []) rfl

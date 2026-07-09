@@ -90,21 +90,25 @@ theorem inv_let {lvl : Nat} {Γ : Ctx} {x : String} {defn body : Tree.Node m} {a
     (∃ lvl' defnTy, HasType lvl Γ defn defnTy ε ∧ lvl ≤ lvl' ∧
         (∀ l ∈ defnTy.levels, l < lvl') ∧ HasType lvl' ((x, .mono defnTy) :: Γ) body τ ε) ∨
     (∃ lx lbody la defnTy, defn = ⟨.Lambda lx lbody, la⟩ ∧
-        HasType lvl Γ defn defnTy ε ∧ CtxWfV lvl Γ ∧
+        ∃ hdefn : HasType lvl Γ defn defnTy ε, CtxWfV lvl Γ ∧ NoGenAt lvl hdefn ∧
         HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body τ ε) := by
   generalize he : (⟨.Let x defn body, a⟩ : Tree.Node m) = e at h
   induction h with
   | @let_ lvl lvl' Γ x' defn' body' defnTy bodyTy ε a hdefn hle hfv hbody =>
       cases he; exact Or.inl ⟨lvl', defnTy, hdefn, hle, hfv, hbody⟩
-  | @let_poly lvl Γ x' lx lbody la body' defnTy bodyTy ε a hdefn hcw hbody =>
-      cases he; exact Or.inr ⟨lx, lbody, la, defnTy, rfl, hdefn, hcw, hbody⟩
+  | @let_poly lvl lvl' Γ x' lx lbody la body' argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw
+      hbody =>
+      cases he
+      exact Or.inr ⟨lx, lbody, la, .fun argTy εb retTy, rfl,
+        HasType.letpoly_defn hstrict hfv hbodydefn, hcw,
+        noGenAt_letpoly_defn hstrict hfv hbodydefn, hbody⟩
   | conv hinner hτ hε ih =>
       rcases ih he with ⟨lvl', defnTy, hdefn, hle, hfv, hbody⟩ |
-          ⟨lx, lbody, la, defnTy, hdl, hdefn, hcw, hbody⟩
+          ⟨lx, lbody, la, defnTy, hdl, hdefn, hcw, hng, hbody⟩
       · exact Or.inl ⟨lvl', defnTy, HasType.conv hdefn (.refl _) hε, hle, hfv,
           HasType.conv hbody hτ hε⟩
       · exact Or.inr ⟨lx, lbody, la, defnTy, hdl, HasType.conv hdefn (.refl _) hε, hcw,
-          HasType.conv hbody hτ hε⟩
+          NoGenAt.conv (.refl _) hε hng, HasType.conv hbody hτ hε⟩
   | _ => simp at he
 
 /-- **Typeable nodes are exactly the pure-core forms.** A well-typed node's

@@ -128,11 +128,18 @@ inductive HasType {m : Type} : Nat → Ctx → Tree.Node m → Ty → Ty → Pro
       HasType lvl Γ ⟨.Let x defn body, a⟩ bodyTy ε
   /-- **Polymorphic `let`** (value-restricted), generalizing at **exactly** `lvl` via
   `Scheme.genAtV lvl`, recording `CtxWfV lvl Γ`, typing its body at `lvl + 1`. **No `noLambdaLet`** —
-  nested `Let`-binds-`Lambda` bodies (the Caveat-5 shape) are accepted. -/
-  | let_poly {lvl Γ x lx lbody la body defnTy bodyTy ε a} :
-      HasType lvl Γ ⟨.Lambda lx lbody, la⟩ defnTy ε →
+  nested `Let`-binds-`Lambda` bodies (the Caveat-5 shape) are accepted. The defn lambda's structure is
+  **inlined** (its body `lbody` typed at a stored sublevel `lvl'` **strictly** above `lvl`,
+  `lvl < lvl'`), enforcing the Rémy/OCaml fresh-level generalization discipline: a defn whose own
+  generalization would collide on `lvl` is unconstructable. The strict descent makes `NoGenAt lvl`
+  of the defn hold for free (via `noGenAt_of_lt`), discharging the closure-readiness wrapper (G1
+  Caveat 5). `defnTy = .fun argTy εb retTy`. -/
+  | let_poly {lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a} :
+      lvl < lvl' →
+      (∀ l ∈ argTy.levels, l < lvl') →
+      HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb →
       CtxWfV lvl Γ →
-      HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body bodyTy ε →
+      HasType (lvl + 1) ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body bodyTy ε →
       HasType lvl Γ ⟨.Let x ⟨.Lambda lx lbody, la⟩ body, a⟩ bodyTy ε
   /-- Integer literal. -/
   | int {lvl Γ n ε a} : HasType lvl Γ ⟨.Integer n, a⟩ .integer ε
@@ -185,6 +192,16 @@ inductive HasType {m : Type} : Nat → Ctx → Tree.Node m → Ty → Ty → Pro
   | conv {lvl Γ e τ τ' ε ε'} :
       HasType lvl Γ e τ ε → Ty.TyEquiv τ τ' → Ty.TyEquiv ε ε' →
       HasType lvl Γ e τ' ε'
+
+/-- **The defn-lambda derivation implicit in a `let_poly` node**, reconstructed from the inlined
+strict-sublevel components (`HasType.lam` with `lvl ≤ lvl'` from `le_of_lt hstrict`). The bridge that
+lets inversion sites hand a lambda-*node* derivation to the closure-readiness wrapper. -/
+theorem HasType.letpoly_defn {m : Type} {lvl lvl' : Nat} {Γ : Ctx} {lx : String}
+    {lbody : Tree.Node m} {la : m} {argTy εb retTy ε : Ty}
+    (hstrict : lvl < lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+    (hbodydefn : HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb) :
+    HasType lvl Γ ⟨.Lambda lx lbody, la⟩ (.fun argTy εb retTy) ε :=
+  HasType.lam (le_of_lt hstrict) hfv hbodydefn
 
 /-! ## Level-native context substitution `substCtxAt` and the `PolyAbove` invariant -/
 
@@ -398,17 +415,30 @@ theorem hasType_subst {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
       rcases Ty.mem_levels_substAt hl with hl' | ⟨i, hi⟩
       · exact hfv l hl'
       · exact Nat.lt_of_le_of_lt (hσle i l hi) (Nat.lt_of_lt_of_le hlt hle)
-  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody ihdefn ihbody =>
+  | @let_poly lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw
+      hbody ihdefn ihbody =>
       intro hlt hΓ
       have hne : ℓ ≠ lvl := Nat.ne_of_lt hlt
       have hcleanlvl : ∀ i, lvl ∉ (σ i).levels := fun i hmem => absurd (hσ i lvl hmem) (by omega)
-      have hdefn' := ihdefn hlt (polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy))
-      have hΓ1 : PolyAboveFV ℓ ((x, Scheme.genAtV lvl defnTy) :: Γ) body :=
+      have hΓdefn : PolyAboveFV ℓ Γ ⟨.Lambda lx lbody, la⟩ :=
+        polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy)
+      have hΓdb : PolyAboveFV ℓ ((lx, Scheme.mono argTy) :: Γ) lbody :=
+        polyAboveFV_bind (Or.inl rfl) hΓdefn
+          (fun y hy hne2 => List.mem_filter.mpr ⟨hy, by simpa using hne2⟩)
+      have hbd := ihdefn (lt_trans hlt hstrict) hΓdb
+      rw [substCtxAt_cons, substSchemeVAt_mono] at hbd
+      have hfv' : ∀ l ∈ (Ty.substAt ℓ σ argTy).levels, l < lvl' := by
+        intro l hl
+        rcases Ty.mem_levels_substAt hl with hl' | ⟨i, hi⟩
+        · exact hfv l hl'
+        · exact Nat.lt_of_le_of_lt (hσle i l hi) (lt_trans hlt hstrict)
+      have hΓ1 : PolyAboveFV ℓ ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body :=
         polyAboveFV_bind (Or.inr (by simp only [Scheme.genAtV]; omega)) hΓ
           (fun y hy hne => List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne⟩))
       have hbodyIH := ihbody (by omega : ℓ < lvl + 1) hΓ1
       rw [substCtxAt_cons_genAtV hne hcleanlvl] at hbodyIH
-      exact HasType.let_poly hdefn' (ctxWfV_substCtxAt hlt hσle hcw) hbodyIH
+      simp only [Ty.substAt] at hbodyIH
+      exact HasType.let_poly hstrict hfv' hbd (ctxWfV_substCtxAt hlt hσle hcw) hbodyIH
   | int => intro hlt hΓ; simp only [Ty.substAt]; exact HasType.int
   | str => intro hlt hΓ; simp only [Ty.substAt]; exact HasType.str
   | bin => intro hlt hΓ; simp only [Ty.substAt]; exact HasType.bin
@@ -528,11 +558,12 @@ inductive NoGenAt {m : Type} (ℓ : Nat) :
       {hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body bodyTy ε} :
       NoGenAt ℓ hdefn → NoGenAt ℓ hbody →
       NoGenAt ℓ (HasType.let_ (a := a) hdefn hle hfv hbody)
-  | let_poly {lvl Γ x lx lbody la body defnTy bodyTy ε a}
-      {hdefn : HasType lvl Γ ⟨.Lambda lx lbody, la⟩ defnTy ε} {hcw : CtxWfV lvl Γ}
-      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body bodyTy ε} :
-      lvl ≠ ℓ → NoGenAt ℓ hdefn → NoGenAt ℓ hbody →
-      NoGenAt ℓ (HasType.let_poly (a := a) hdefn hcw hbody)
+  | let_poly {lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a}
+      (hstrict : lvl < lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbodydefn : HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb} {hcw : CtxWfV lvl Γ}
+      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body bodyTy ε} :
+      lvl ≠ ℓ → NoGenAt ℓ hbodydefn → NoGenAt ℓ hbody →
+      NoGenAt ℓ (HasType.let_poly (a := a) (la := la) hstrict hfv hbodydefn hcw hbody)
   | int {lvl Γ n ε a} :
       NoGenAt ℓ (HasType.int (m := m) (lvl := lvl) (Γ := Γ) (n := n) (ε := ε) (a := a))
   | str {lvl Γ s ε a} :
@@ -642,19 +673,31 @@ theorem hasType_substAt_le {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat → Ty)
       rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
       · exact hfv l hl'
       · exact Nat.lt_of_le_of_lt (hσle i l hi) (hfv ℓ hm)
-  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody hne ngd ngb ihdefn
-      ihbody =>
+  | @let_poly lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw hbody
+      hne ngd ngb ihdefn ihbody =>
       intro hlt hΓ
       have hlts : ℓ < lvl := lt_of_le_of_ne hlt (Ne.symm hne)
       have hne' : ℓ ≠ lvl := Nat.ne_of_lt hlts
       have hcleanlvl : ∀ i, lvl ∉ (σ i).levels := fun i hmem => absurd (hσ i lvl hmem) (by omega)
-      have hdefn' := ihdefn hlt (polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy))
-      have hΓ1 : PolyAboveFV ℓ ((x, Scheme.genAtV lvl defnTy) :: Γ) body :=
+      have hΓdefn : PolyAboveFV ℓ Γ ⟨.Lambda lx lbody, la⟩ :=
+        polyAboveFV_sub hΓ (fun y hy => List.mem_append_left _ hy)
+      have hΓdb : PolyAboveFV ℓ ((lx, Scheme.mono argTy) :: Γ) lbody :=
+        polyAboveFV_bind (Or.inl rfl) hΓdefn
+          (fun y hy hne2 => List.mem_filter.mpr ⟨hy, by simpa using hne2⟩)
+      have hbd := ihdefn (le_of_lt (lt_trans hlts hstrict)) hΓdb
+      rw [substCtxAt_cons, substSchemeVAt_mono] at hbd
+      have hfv' : ∀ l ∈ (Ty.substAt ℓ σ argTy).levels, l < lvl' := by
+        intro l hl
+        rcases Ty.mem_levels_substAt_strong hl with hl' | ⟨hm, i, hi⟩
+        · exact hfv l hl'
+        · exact Nat.lt_of_le_of_lt (hσle i l hi) (hfv ℓ hm)
+      have hΓ1 : PolyAboveFV ℓ ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body :=
         polyAboveFV_bind (Or.inr (by simp only [Scheme.genAtV]; omega)) hΓ
           (fun y hy hne2 => List.mem_append_right _ (List.mem_filter.mpr ⟨hy, by simpa using hne2⟩))
       have hbodyIH := ihbody (by omega : ℓ ≤ lvl + 1) hΓ1
       rw [substCtxAt_cons_genAtV hne' hcleanlvl] at hbodyIH
-      exact HasType.let_poly hdefn' (ctxWfV_substCtxAt hlts hσle hcw) hbodyIH
+      simp only [Ty.substAt] at hbodyIH
+      exact HasType.let_poly hstrict hfv' hbd (ctxWfV_substCtxAt hlts hσle hcw) hbodyIH
   | int => intro hlt hΓ; simp only [Ty.substAt]; exact HasType.int
   | str => intro hlt hΓ; simp only [Ty.substAt]; exact HasType.str
   | bin => intro hlt hΓ; simp only [Ty.substAt]; exact HasType.bin
@@ -775,10 +818,10 @@ theorem noGenAt_of_lt {ℓ : Nat} :
   | app hf hw harg ihf iharg => exact fun hlt => NoGenAt.app (hw := hw) (ihf hlt) (iharg hlt)
   | let_ hdefn hle hfv hbody ihd ihb =>
       exact fun hlt => NoGenAt.let_ hle hfv (ihd hlt) (ihb (lt_of_lt_of_le hlt hle))
-  | let_poly hdefn hcw hbody ihd ihb =>
+  | let_poly hstrict hfv hbodydefn hcw hbody ihd ihb =>
       exact fun hlt =>
-        NoGenAt.let_poly (hcw := hcw) (Nat.ne_of_lt hlt).symm (ihd hlt)
-          (ihb (Nat.lt_succ_of_lt hlt))
+        NoGenAt.let_poly (hcw := hcw) hstrict hfv (Nat.ne_of_lt hlt).symm
+          (ihd (lt_trans hlt hstrict)) (ihb (Nat.lt_succ_of_lt hlt))
   | int => exact fun _ => NoGenAt.int
   | str => exact fun _ => NoGenAt.str
   | bin => exact fun _ => NoGenAt.bin
@@ -795,6 +838,18 @@ theorem noGenAt_of_lt {ℓ : Nat} :
   | perform => exact fun _ => NoGenAt.perform
   | handle => exact fun _ => NoGenAt.handle
   | conv _ hτ hε ih => exact fun hlt => NoGenAt.conv hτ hε (ih hlt)
+
+/-- **`NoGenAt lvl` of the reconstructed defn-lambda, for free** (the payoff of the strict-sublevel
+`let_poly` discipline). Since the defn lambda's body descends **strictly** (`lvl < lvl'`),
+`noGenAt_of_lt` supplies `NoGenAt lvl` of that body, and `NoGenAt.lam` wraps it. This is exactly the
+`NoGenAt lvl h` premise the closure-readiness wrapper (`genAtV_closure_ready_value_node`) needs —
+handed over for free at every `let_poly` inversion site, discharging the G1 Caveat-5 gap. -/
+theorem noGenAt_letpoly_defn {m : Type} {lvl lvl' : Nat} {Γ : Ctx} {lx : String}
+    {lbody : Tree.Node m} {la : m} {argTy εb retTy ε : Ty}
+    (hstrict : lvl < lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+    (hbodydefn : HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb) :
+    NoGenAt lvl (HasType.letpoly_defn (la := la) (ε := ε) hstrict hfv hbodydefn) :=
+  NoGenAt.lam (le_of_lt hstrict) hfv (noGenAt_of_lt hbodydefn hstrict)
 
 /-! ## The runtime-restricted judgment `HasTypeRT` (gap 1: var-preservation groundness)
 
@@ -850,11 +905,12 @@ inductive HasTypeRT {m : Type} :
       {hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body bodyTy ε} :
       HasTypeRT hdefn → HasTypeRT hbody →
       HasTypeRT (HasType.let_ (a := a) hdefn hle hfv hbody)
-  | let_poly {lvl Γ x lx lbody la body defnTy bodyTy ε a}
-      {hdefn : HasType lvl Γ ⟨.Lambda lx lbody, la⟩ defnTy ε} {hcw : CtxWfV lvl Γ}
-      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body bodyTy ε} :
+  | let_poly {lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a}
+      (hstrict : lvl < lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbodydefn : HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb} {hcw : CtxWfV lvl Γ}
+      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body bodyTy ε} :
       HasTypeRT hbody →
-      HasTypeRT (HasType.let_poly (a := a) hdefn hcw hbody)
+      HasTypeRT (HasType.let_poly (a := a) (la := la) hstrict hfv hbodydefn hcw hbody)
   | int {lvl Γ n ε a} :
       HasTypeRT (HasType.int (m := m) (lvl := lvl) (Γ := Γ) (n := n) (ε := ε) (a := a))
   | str {lvl Γ s ε a} :
@@ -981,26 +1037,29 @@ theorem inv_let_rt {lvl : Nat} {Γ : Ctx} {x : String} {defn body : Tree.Node m}
         (hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body τ ε),
         lvl ≤ lvl' ∧ (∀ l ∈ defnTy.levels, l < lvl') ∧ HasTypeRT hdefn ∧ HasTypeRT hbody) ∨
     (∃ lx lbody la defnTy, ∃ (_ : defn = ⟨.Lambda lx lbody, la⟩)
-        (_ : HasType lvl Γ defn defnTy ε) (_ : CtxWfV lvl Γ)
+        (hdefn : HasType lvl Γ defn defnTy ε) (_ : CtxWfV lvl Γ)
         (hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body τ ε),
-        HasTypeRT hbody) := by
+        NoGenAt lvl hdefn ∧ HasTypeRT hbody) := by
   generalize he : (⟨.Let x defn body, a⟩ : Tree.Node m) = enode at h
   revert he
   induction hrt with
   | @let_ lvl lvl' Γ x' defn' body' defnTy bodyTy ε a hdefn hle hfv hbody rd rb _ _ =>
       intro he; cases he
       exact Or.inl ⟨lvl', defnTy, hdefn, hbody, hle, hfv, rd, rb⟩
-  | @let_poly lvl Γ x' lx lbody la body' defnTy bodyTy ε a hdefn hcw hbody rb _ =>
+  | @let_poly lvl lvl' Γ x' lx lbody la body' argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw
+      hbody rb _ =>
       intro he; cases he
-      exact Or.inr ⟨lx, lbody, la, defnTy, rfl, hdefn, hcw, hbody, rb⟩
+      exact Or.inr ⟨lx, lbody, la, .fun argTy εb retTy, rfl,
+        HasType.letpoly_defn hstrict hfv hbodydefn, hcw, hbody,
+        noGenAt_letpoly_defn hstrict hfv hbodydefn, rb⟩
   | @conv lvl Γ e τ' τ'' ε' ε'' hh hτ hε rh ih =>
       intro he
       rcases ih he with ⟨lvl', defnTy, hdefn, hbody, hle, hfv, rd, rb⟩ |
-          ⟨lx, lbody, la, defnTy, hdl, hdefn, hcw, hbody, rb⟩
+          ⟨lx, lbody, la, defnTy, hdl, hdefn, hcw, hbody, hng, rb⟩
       · exact Or.inl ⟨lvl', defnTy, HasType.conv hdefn (.refl _) hε, HasType.conv hbody hτ hε,
           hle, hfv, HasTypeRT.conv (.refl _) hε rd, HasTypeRT.conv hτ hε rb⟩
       · exact Or.inr ⟨lx, lbody, la, defnTy, hdl, HasType.conv hdefn (.refl _) hε, hcw,
-          HasType.conv hbody hτ hε, HasTypeRT.conv hτ hε rb⟩
+          HasType.conv hbody hτ hε, NoGenAt.conv (.refl _) hε hng, HasTypeRT.conv hτ hε rb⟩
   | _ => intro he; exact absurd he (by simp)
 
 /-! ## Context-binding conversion -/
@@ -1058,10 +1117,12 @@ theorem hasType_ctxConv {m : Type} {lvl : Nat} {Γ₀ : Ctx} {e : Tree.Node m} {
       intro Δ Γ x σ σ' heq hc; subst heq
       exact HasType.let_ (ihdefn Δ Γ x σ σ' rfl hc) hle hfv
         (ihbody ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc)
-  | @let_poly lvl Γ₁ z lx lbody la body defnTy bodyTy ε' a hdefn hcw hbody ihdefn ihbody =>
+  | @let_poly lvl lvl' Γ₁ z lx lbody la body argTy εb retTy bodyTy ε' a hstrict hfv hbodydefn hcw
+      hbody ihdefn ihbody =>
       intro Δ Γ x σ σ' heq hc; subst heq
-      exact HasType.let_poly (ihdefn Δ Γ x σ σ' rfl hc) (ctxWfV_ctxConv hc hcw)
-        (ihbody ((z, Scheme.genAtV lvl defnTy) :: Δ) Γ x σ σ' rfl hc)
+      exact HasType.let_poly hstrict hfv
+        (ihdefn ((lx, Scheme.mono argTy) :: Δ) Γ x σ σ' rfl hc) (ctxWfV_ctxConv hc hcw)
+        (ihbody ((z, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Δ) Γ x σ σ' rfl hc)
   | int => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.int
   | str => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.str
   | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact HasType.bin
@@ -1142,13 +1203,14 @@ theorem hasTypeRT_ctxConv {m : Type} {lvl : Nat} {Γ₀ : Ctx} {e : Tree.Node m}
       obtain ⟨hd', rd'⟩ := ihd Δ Γ x σ σ' rfl hc
       obtain ⟨hb', rb'⟩ := ihb ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc
       exact ⟨HasType.let_ hd' hle hfv hb', HasTypeRT.let_ hle hfv rd' rb'⟩
-  | @let_poly lvl Γ₁ z lx lbody la body defnTy bodyTy ε' a hdefn hcw hbody rb ihb =>
+  | @let_poly lvl lvl' Γ₁ z lx lbody la body argTy εb retTy bodyTy ε' a hstrict hfv hbodydefn hcw
+      hbody rb ihb =>
       intro Δ Γ x σ σ' heq hc; subst heq
-      obtain ⟨hb', rb'⟩ := ihb ((z, Scheme.genAtV lvl defnTy) :: Δ) Γ x σ σ' rfl hc
-      have hd := hasType_ctxConv hdefn Δ Γ x σ σ' rfl hc
+      obtain ⟨hb', rb'⟩ := ihb ((z, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Δ) Γ x σ σ' rfl hc
+      have hbd' := hasType_ctxConv hbodydefn ((lx, Scheme.mono argTy) :: Δ) Γ x σ σ' rfl hc
       have hcw' := ctxWfV_ctxConv hc hcw
-      exact ⟨HasType.let_poly hd hcw' hb',
-        HasTypeRT.let_poly (hdefn := hd) (hcw := hcw') rb'⟩
+      exact ⟨HasType.let_poly hstrict hfv hbd' hcw' hb',
+        HasTypeRT.let_poly hstrict hfv (hbodydefn := hbd') (hcw := hcw') rb'⟩
   | int => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.int, HasTypeRT.int⟩
   | str => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.str, HasTypeRT.str⟩
   | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.bin, HasTypeRT.bin⟩
@@ -1219,11 +1281,12 @@ inductive LevelsBelow {m : Type} (N : Nat) :
       {hbody : HasType lvl' ((x, .mono defnTy) :: Γ) body bodyTy ε} :
       LevelsBelow N hdefn → LevelsBelow N hbody →
       LevelsBelow N (HasType.let_ (a := a) hdefn hle hfv hbody)
-  | let_poly {lvl Γ x lx lbody la body defnTy bodyTy ε a}
-      {hdefn : HasType lvl Γ ⟨.Lambda lx lbody, la⟩ defnTy ε} {hcw : CtxWfV lvl Γ}
-      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl defnTy) :: Γ) body bodyTy ε} :
-      (∀ l ∈ defnTy.levels, l < N) → LevelsBelow N hdefn → LevelsBelow N hbody →
-      LevelsBelow N (HasType.let_poly (a := a) hdefn hcw hbody)
+  | let_poly {lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a}
+      (hstrict : lvl < lvl') (hfv : ∀ l ∈ argTy.levels, l < lvl')
+      {hbodydefn : HasType lvl' ((lx, .mono argTy) :: Γ) lbody retTy εb} {hcw : CtxWfV lvl Γ}
+      {hbody : HasType (lvl + 1) ((x, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Γ) body bodyTy ε} :
+      (∀ l ∈ (Ty.fun argTy εb retTy).levels, l < N) → LevelsBelow N hbodydefn → LevelsBelow N hbody →
+      LevelsBelow N (HasType.let_poly (a := a) (la := la) hstrict hfv hbodydefn hcw hbody)
   | int {lvl Γ n ε a} :
       LevelsBelow N (HasType.int (m := m) (lvl := lvl) (Γ := Γ) (n := n) (ε := ε) (a := a))
   | str {lvl Γ s ε a} :
@@ -1276,8 +1339,9 @@ theorem LevelsBelow.mono {m : Type} {N N' : Nat} (hle : N ≤ N')
   | @app lvl Γ f arg argTy εf retTy ε a hf hw harg _ _ ihf iharg =>
       exact LevelsBelow.app (hw := hw) ihf iharg
   | let_ hle' hfv _ _ ihd ihb => exact LevelsBelow.let_ hle' hfv ihd ihb
-  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody hbnd _ _ ihd ihb =>
-      exact LevelsBelow.let_poly (hcw := hcw)
+  | @let_poly lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw hbody
+      hbnd _ _ ihd ihb =>
+      exact LevelsBelow.let_poly (hcw := hcw) hstrict hfv
         (fun l hl => lt_of_lt_of_le (hbnd l hl) hle) ihd ihb
   | int => exact LevelsBelow.int
   | str => exact LevelsBelow.str
@@ -1313,12 +1377,13 @@ theorem exists_levelsBelow {m : Type} {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {
       obtain ⟨Nd, hNd⟩ := ihd; obtain ⟨Nb, hNb⟩ := ihb
       exact ⟨max Nd Nb, LevelsBelow.let_ hle hfv (hNd.mono (le_max_left _ _))
         (hNb.mono (le_max_right _ _))⟩
-  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody ihd ihb =>
+  | @let_poly lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw hbody
+      ihd ihb =>
       obtain ⟨Nd, hNd⟩ := ihd; obtain ⟨Nb, hNb⟩ := ihb
-      refine ⟨max (defnTy.levels.foldr max 0 + 1) (max Nd Nb),
-        LevelsBelow.let_poly (hcw := hcw) ?_ (hNd.mono ?_) (hNb.mono ?_)⟩
+      refine ⟨max ((Ty.fun argTy εb retTy).levels.foldr max 0 + 1) (max Nd Nb),
+        LevelsBelow.let_poly (hcw := hcw) hstrict hfv ?_ (hNd.mono ?_) (hNb.mono ?_)⟩
       · intro l hl
-        have hle : l ≤ defnTy.levels.foldr max 0 := by
+        have hle : l ≤ (Ty.fun argTy εb retTy).levels.foldr max 0 := by
           have key : ∀ (ls : List Nat), l ∈ ls → l ≤ ls.foldr max 0 := by
             intro ls hls
             induction ls with
@@ -1622,14 +1687,22 @@ theorem hasType_fullRaise {t o : Nat} (ht : 1 ≤ t)
       obtain ⟨l', hl'mem, rfl⟩ := hl
       have := hfv l' hl'mem
       split <;> omega
-  | @let_poly lvl Γ x lx lbody la body defnTy bodyTy ε a hdefn hcw hbody ihdefn ihbody =>
+  | @let_poly lvl lvl' Γ x lx lbody la body argTy εb retTy bodyTy ε a hstrict hfv hbodydefn hcw hbody
+      ihdefn ihbody =>
       intro htlvl
-      have hd := ihdefn htlvl
+      have hbd := ihdefn (by omega : t ≤ lvl')
+      rw [raiseCtx_U_cons, raiseScheme_U_mono ht] at hbd
       have hb := ihbody (by omega : t ≤ lvl + 1)
       rw [raiseCtx_U_cons, raiseScheme_U_genAtV htlvl] at hb
+      simp only [Ty.raiseTy] at hb
       have hcw' : CtxWfV (lvl + o) (raiseCtx_U t o Γ) := ctxWfV_raiseCtx_U hcw
-      exact HasType.let_poly (a := a) hd hcw'
-        (by rw [show lvl + 1 + o = lvl + o + 1 from by omega] at hb; exact hb)
+      refine HasType.let_poly (a := a) (by omega : lvl + o < lvl' + o) ?_ hbd hcw' ?_
+      · intro l hl
+        rw [Ty.levels_raiseTy, List.mem_map] at hl
+        obtain ⟨l', hl'mem, rfl⟩ := hl
+        have := hfv l' hl'mem
+        split <;> omega
+      · rw [show lvl + 1 + o = lvl + o + 1 from by omega] at hb; exact hb
   | int => intro _; simp only [Ty.raiseTy]; exact HasType.int
   | str => intro _; simp only [Ty.raiseTy]; exact HasType.str
   | bin => intro _; simp only [Ty.raiseTy]; exact HasType.bin
@@ -1730,18 +1803,16 @@ example : HasType (m := Unit) 1 []
     (let_ "a" (lambda "x" (variable_ "x"))
       (let_ "c" (lambda "z" (variable_ "z")) (variable_ "c")))
     ((Scheme.genAtV 2 defnC).instantiateV [.integer]) .empty := by
-  refine HasType.let_poly (defnTy := defnA) ?ha ?hcwA ?hbodyA
-  case ha =>
-    exact HasType.lam (lvl' := 2) (a := ()) (ε := .empty) (by decide)
-      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
-      (HasType.var (s := .mono (.var 1 0)) (args := []) rfl)
+  refine HasType.let_poly (lvl' := 2) (argTy := .var 1 0) (εb := .empty) (retTy := .var 1 0)
+    (by decide)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    (HasType.var (s := .mono (.var 1 0)) (args := []) rfl) ?hcwA ?hbodyA
   case hcwA => intro b hb; exact absurd hb (by simp)
   case hbodyA =>
-    refine HasType.let_poly (defnTy := defnC) ?hc ?hcwC ?hbodyC
-    case hc =>
-      exact HasType.lam (lvl' := 3) (a := ()) (ε := .empty) (by decide)
-        (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
-        (HasType.var (s := .mono (.var 2 0)) (args := []) rfl)
+    refine HasType.let_poly (lvl' := 3) (argTy := .var 2 0) (εb := .empty) (retTy := .var 2 0)
+      (by decide)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+      (HasType.var (s := .mono (.var 2 0)) (args := []) rfl) ?hcwC ?hbodyC
     case hcwC => exact ctxWfV_Γseq
     case hbodyC =>
       exact HasType.var (s := Scheme.genAtV 2 defnC) (args := [.integer]) rfl
@@ -1810,18 +1881,16 @@ example : HasType (m := Unit) 1 []
     (let_ "a" (lambda "x" (variable_ "x"))
       (let_ "c" (lambda "w" cRefBody) (variable_ "c")))
     ((Scheme.genAtV 2 defnC).instantiateV [.integer]) .empty := by
-  refine HasType.let_poly (defnTy := defnA) ?ha ?hcwA ?hbodyA
-  case ha =>
-    exact HasType.lam (lvl' := 2) (a := ()) (ε := .empty) (by decide)
-      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
-      (HasType.var (s := .mono (.var 1 0)) (args := []) rfl)
+  refine HasType.let_poly (lvl' := 2) (argTy := .var 1 0) (εb := .empty) (retTy := .var 1 0)
+    (by decide)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    (HasType.var (s := .mono (.var 1 0)) (args := []) rfl) ?hcwA ?hbodyA
   case hcwA => intro b hb; exact absurd hb (by simp)
   case hbodyA =>
-    refine HasType.let_poly (defnTy := defnC) ?hc ?hcwC ?hbodyC
-    case hc =>
-      exact HasType.lam (lvl' := 3) (a := ()) (ε := .empty) (by decide)
-        (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
-        hbody_ref
+    refine HasType.let_poly (lvl' := 3) (argTy := .var 2 0) (εb := .empty) (retTy := .var 2 0)
+      (by decide)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+      hbody_ref ?hcwC ?hbodyC
     case hcwC => exact ctxWfV_Γseq
     case hbodyC =>
       exact HasType.var (s := Scheme.genAtV 2 defnC) (args := [.integer]) rfl
@@ -1919,26 +1988,15 @@ at exactly the collision level `lvl` inside a residual-corner lambda; the right 
 renaming normalization *into* `genAtV_closure_ready_value_node`, dropping its `NoGenAt lvl h` premise so
 the Soundness site never supplies it. See the Session G6 progress note. -/
 
-/-- The residual-corner body: an inner `let_poly` (`let h = \y.y`) beside a `perform` whose effect tail
-lifts the outer lambda's type to `defnPerf` (`arity ≠ 0`). -/
-private def advPerfBody : Tree.Node Unit :=
-  let_ "h" (lambda "y" (variable_ "y")) (apply (perform "op") (variable_ "x"))
-
-/-- The residual-corner lambda `\x. (let h = \y.y in perform "op" x)`. -/
-private def advPerfLam : Tree.Node Unit := lambda "x" advPerfBody
-
-/-- `\y.y`'s (ground) definition type — `h`'s generalization is vacuous (`genAtV n advDefnH` is
-`arity 0` for every `n`), yet its `let_poly` node is real and sits at the enclosing `lam`'s sublevel. -/
-private def advDefnH : Ty := .fun .integer .empty .integer
-
-/-- The inner `\y.y` defn, typed at ambient level `n`. -/
-private theorem advH_defn (n : Nat) :
-    HasType (m := Unit) n [("x", Scheme.mono .integer)] (lambda "y" (variable_ "y")) advDefnH
-      (.effectExtend "op" .integer .integer (.var 1 0)) :=
-  HasType.lam (lvl' := n) (a := ()) (ε := .effectExtend "op" .integer .integer (.var 1 0))
-    (le_refl _)
-    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
-    (HasType.var (s := .mono .integer) (args := []) rfl)
+-- **G1 Phase 6 (strict-sublevel reshape).** The residual-corner witnesses (`advPerfBody`/`advDefnH`/
+-- `advH_defn`/`advPerf_body1`/`advPerf_lvl1`/`advPerf_body2`/`advPerf_lvl2` and their `NoGenAt` lemmas,
+-- sessions F/G6) exercised an inner `let_poly` whose defn lambda descends **non-strictly** (`lvl' =
+-- lvl`) — the exact "residual corner" the closure-readiness wrapper could not discharge. The `let_poly`
+-- constructor now demands a **strict** defn sublevel (`lvl < lvl'`, the Rémy/OCaml fresh-level
+-- discipline), so those witnesses are unconstructable **by design**: the corner no longer exists, and
+-- `NoGenAt lvl` of the defn holds for free via `noGenAt_of_lt` (see `noGenAt_letpoly_defn`). The
+-- witnesses were removed with the reshape (they were private, unreferenced exploration scaffolding). The
+-- surviving `escBodyAt`/`escLam_*` witnesses (below) use the already-strict `escH_defn` and are retained.
 
 /-- `Γ = [(x, .mono integer)]` is below any `n ≥ 1`. -/
 private theorem advH_ctxwf {n : Nat} (hn : 1 ≤ n) :
@@ -1946,65 +2004,6 @@ private theorem advH_ctxwf {n : Nat} (hn : 1 ≤ n) :
   intro b hb l hl
   rcases List.mem_singleton.mp hb with rfl
   simp only [Scheme.mono, Ty.levels, List.not_mem_nil] at hl
-
-/-- `perform "op" x` at ambient level `n` with effect `⟨op:(int,int)|var 1 0⟩` (the `μ` tag is `perform`'s
-freely-chosen effect tail, independent of `n`). -/
-private theorem advH_perform (n k : Nat) :
-    HasType (m := Unit) n [("h", Scheme.genAtV k advDefnH), ("x", Scheme.mono .integer)]
-      (apply (perform "op") (variable_ "x")) .integer
-      (.effectExtend "op" .integer .integer (.var 1 0)) := by
-  refine HasType.app (argTy := .integer)
-    (εf := .effectExtend "op" .integer .integer (.var 1 0)) HasType.perform
-    (Ty.effWeaken_refl _) ?_
-  exact HasType.var (s := .mono .integer) (args := []) rfl
-
-/-- **The `lvl' = 1` (un-normalized) body derivation.** The inner `let_poly` generalizes `h` at
-exactly `lvl = 1` — the residual corner. -/
-private def advPerf_body1 :
-    HasType (m := Unit) 1 [("x", Scheme.mono .integer)] advPerfBody .integer
-      (.effectExtend "op" .integer .integer (.var 1 0)) :=
-  HasType.let_poly (a := ()) (defnTy := advDefnH) (advH_defn 1) (advH_ctxwf (le_refl _))
-    (advH_perform 2 1)
-
-/-- **The residual-corner derivation exists** — `\x. (let h = \y.y in perform "op" x) : defnPerf` at
-ambient level `1`, stored `lvl' = 1` (`arity ≠ 0`, `lvl' = lvl`). -/
-private def advPerf_lvl1 : HasType (m := Unit) 1 [] advPerfLam defnPerf .empty :=
-  HasType.lam (lvl' := 1) (a := ()) (ε := .empty) (le_refl _)
-    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
-    advPerf_body1
-
-/-- **The normalized `lvl' = 2` body derivation** — the SAME body term, re-typed with the inner
-`let_poly` bumped to level `2`. Observable type unchanged (`.integer`, effect `⟨op|var 1 0⟩`). -/
-private def advPerf_body2 :
-    HasType (m := Unit) 2 [("x", Scheme.mono .integer)] advPerfBody .integer
-      (.effectExtend "op" .integer .integer (.var 1 0)) :=
-  HasType.let_poly (a := ()) (defnTy := advDefnH) (advH_defn 2) (advH_ctxwf (by decide))
-    (advH_perform 3 2)
-
-/-- **The normalized lambda derivation** — types the IDENTICAL judgment as `advPerf_lvl1` (same term,
-type `defnPerf`, ambient level `1`); only the internal stored sublevel differs (`lvl' = 2`). -/
-private def advPerf_lvl2 : HasType (m := Unit) 1 [] advPerfLam defnPerf .empty :=
-  HasType.lam (lvl' := 2) (a := ()) (ε := .empty) (by decide)
-    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
-    advPerf_body2
-
-/-- The normalized body (level `2 > 1`) satisfies `NoGenAt 1` *for free* via `noGenAt_of_lt` — the
-inner `let_poly` no longer collides on the generalization level `1`. -/
-private theorem advPerf_body2_noGenAt : NoGenAt 1 advPerf_body2 :=
-  noGenAt_of_lt advPerf_body2 (by decide)
-
-/-- **The normalized lambda satisfies the wrapper's `NoGenAt 1` premise.** -/
-private theorem advPerf_lvl2_noGenAt : NoGenAt 1 advPerf_lvl2 :=
-  NoGenAt.lam (by decide)
-    (by intro l hl; simp only [Ty.levels] at hl; exact absurd hl (by simp))
-    advPerf_body2_noGenAt
-
-/-- **Route (a) holds at the residual-corner witness.** `advPerf_lvl1` and `advPerf_lvl2` prove the
-same judgment, so by proof irrelevance they are defeq; hence the wrapper's premise `NoGenAt 1
-advPerf_lvl1` — for the un-normalized `lvl' = 1` derivation the runtime hands us — is discharged by the
-normalized derivation's `NoGenAt`. The supposed adversarial witness is *not* adversarial. -/
-private theorem advPerf_lvl1_noGenAt : NoGenAt 1 advPerf_lvl1 :=
-  advPerf_lvl2_noGenAt
 
 /-! ### G1 Session G8: the *escaping* inner `let_poly` is freshenable via re-instantiation
 
@@ -2078,8 +2077,11 @@ private theorem escH_body (n : Nat) :
 `escRetTy`. -/
 private def escBodyAt (n : Nat) (hn : 1 ≤ n) :
     HasType (m := Unit) n [("x", Scheme.mono .integer)] escBody escRetTy .empty :=
-  HasType.let_poly (a := ()) (defnTy := .fun (.var n 0) .empty (.var n 0))
-    (escH_defn n) (advH_ctxwf hn) (escH_body n)
+  HasType.let_poly (a := ()) (lvl' := n + 1) (argTy := .var n 0) (εb := .empty) (retTy := .var n 0)
+    (Nat.lt_succ_self n)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    (HasType.var (s := .mono (.var n 0)) (args := []) rfl)
+    (advH_ctxwf hn) (escH_body n)
 
 /-- **The un-normalized (`lvl' = 1`) escape derivation.** The inner `let_poly` generalizes at exactly
 `lvl = 1`; its generalized variable escapes into `retTy = escRetTy`. The residual corner (`arity ≠ 0`,
