@@ -1312,6 +1312,85 @@ theorem raiseTy_eq_substAt_of_single {t o k : Nat} (htk : t ≤ k) {d : Ty}
         ihb (fun l hl => h l (Or.inl (Or.inr hl))), iht (fun l hl => h l (Or.inr hl))]
   | _ => rfl
 
+/-- **`raiseTy` acts on the level multiset by the pointwise map** `l ↦ if t ≤ l then l+o else l`.
+The structural fact behind the uniform raise's arity/`CtxWfV` bookkeeping. -/
+theorem levels_raiseTy (t o : Nat) (d : Ty) :
+    (raiseTy t o d).levels = d.levels.map (fun l => if t ≤ l then l + o else l) := by
+  induction d with
+  | var l i => by_cases h : t ≤ l <;> simp [raiseTy, levels, h]
+  | «fun» a e r iha ihe ihr => simp only [raiseTy, levels, iha, ihe, ihr, List.map_append]
+  | list a ih => simp only [raiseTy, levels, ih]
+  | record r ih => simp only [raiseTy, levels, ih]
+  | union r ih => simp only [raiseTy, levels, ih]
+  | promise a ih => simp only [raiseTy, levels, ih]
+  | rowExtend l f tl ihf iht => simp only [raiseTy, levels, ihf, iht, List.map_append]
+  | effectExtend l a b tl iha ihb iht =>
+      simp only [raiseTy, levels, iha, ihb, iht, List.map_append]
+  | _ => rfl
+
+/-- **Arity preservation for the uniform raise** (`t ≤ m`): relabeling every `≥ t` level by `o`
+carries the level-`m` occurrence count over to the level-`(m+o)` count. Unlike the single-level
+`length_filter_levels_relabel`, this needs **no** freshness side-condition — the uniform relabel is
+injective on levels, so no collision inflates the count. -/
+theorem length_filter_levels_raiseTy {t o m : Nat} (htm : t ≤ m) (d : Ty) :
+    ((raiseTy t o d).levels.filter (· = m + o)).length
+      = (d.levels.filter (· = m)).length := by
+  induction d with
+  | var l i =>
+      by_cases h : t ≤ l
+      · by_cases hlm : l = m
+        · subst hlm; simp [raiseTy, levels, h]
+        · simp [raiseTy, levels, h, hlm]
+      · have hlm : l ≠ m := by omega
+        have hne2 : l ≠ m + o := by omega
+        simp [raiseTy, levels, h, hlm, hne2]
+  | «fun» a e r iha ihe ihr =>
+      simp only [raiseTy, levels, List.filter_append, List.length_append, iha, ihe, ihr]
+  | list a ih => simp only [raiseTy, levels, ih]
+  | record r ih => simp only [raiseTy, levels, ih]
+  | union r ih => simp only [raiseTy, levels, ih]
+  | promise a ih => simp only [raiseTy, levels, ih]
+  | rowExtend l f' tl ihf iht =>
+      simp only [raiseTy, levels, List.filter_append, List.length_append, ihf, iht]
+  | effectExtend l a b tl iha ihb iht =>
+      simp only [raiseTy, levels, List.filter_append, List.length_append, iha, ihb, iht]
+  | _ => rfl
+
+/-- **Uniform-raise / `substAt` commutation.** For any opening level `m`, raising commutes with a
+level-`m` substitution, shifting the opening level to `m`'s image `if t ≤ m then m+o else m` and
+post-composing `raiseTy` onto the substitution's range. The clean, unconditional (no `hclean`, no
+freshness) heart of the uniform generalization-level raise — contrast `substAt_substAt_comm` (distinct
+levels, needs `hclean`) and the single-level relabel (needs coverage). -/
+theorem raiseTy_substAt_comm (t o m : Nat) (σ : Nat → Ty) (d : Ty) :
+    raiseTy t o (substAt m σ d)
+      = substAt (if t ≤ m then m + o else m) (fun i => raiseTy t o (σ i)) (raiseTy t o d) := by
+  induction d with
+  | var l i =>
+      by_cases hlm : l = m
+      · subst hlm
+        by_cases h : t ≤ l <;> simp [substAt, raiseTy, h]
+      · have hne : (if t ≤ l then l + o else l) ≠ (if t ≤ m then m + o else m) := by
+          by_cases h : t ≤ l
+          · by_cases hm : t ≤ m
+            · simp only [if_pos h, if_pos hm]; omega
+            · simp only [if_pos h, if_neg hm]; omega
+          · by_cases hm : t ≤ m
+            · simp only [if_neg h, if_pos hm]; omega
+            · simp only [if_neg h, if_neg hm]; exact hlm
+        have himg : raiseTy t o (var l i) = var (if t ≤ l then l + o else l) i := by
+          by_cases h : t ≤ l <;> simp [raiseTy, h]
+        simp only [substAt, if_neg hlm]
+        rw [himg]
+        simp only [substAt, if_neg hne]
+  | «fun» a e r iha ihe ihr => simp only [substAt, raiseTy, iha, ihe, ihr]
+  | list a ih => simp only [substAt, raiseTy, ih]
+  | record r ih => simp only [substAt, raiseTy, ih]
+  | union r ih => simp only [substAt, raiseTy, ih]
+  | promise a ih => simp only [substAt, raiseTy, ih]
+  | rowExtend l f tl ihf iht => simp only [substAt, raiseTy, ihf, iht]
+  | effectExtend l a b tl iha ihb iht => simp only [substAt, raiseTy, iha, ihb, iht]
+  | _ => rfl
+
 end Ty
 
 /-- `substSchemeVAt` on a monomorphic scheme is `substAt` on its body. -/
@@ -1397,6 +1476,35 @@ theorem instantiateV_pad_default {ℓ : Nat} {d : Ty} (args : List Ty) (extra : 
         simp only [List.length_append, List.length_map, List.length_range]
         omega
       rw [this, Option.getD_none]
+
+/-- **Uniform raise commutes with instantiation of a `genAtV` scheme** (`t ≤ m`). Relabeling the
+generalized body's `≥ t` levels by `o` (shifting the gen level `m ↦ m+o`) and instantiating at the
+`raiseTy`-relabeled args reproduces the raise of the original instantiation. This is the *single-mode*
+var-arm crux for a uniform generalization-level raise: unlike `raiseScheme_genAtV_instantiateV` (which
+holds the produced type **fixed** and pays for it with argument-padding + a freshness budget), the
+uniform form needs **no** padding, **no** coverage, **no** freshness — just `args.map (raiseTy t o)`.
+Composes `raiseTy_substAt_comm` with `length_filter_levels_raiseTy` (arity preservation). -/
+theorem instantiateV_genAtV_raiseTy {t o m : Nat} (htm : t ≤ m) (d : Ty) (args : List Ty) :
+    (Scheme.genAtV (m + o) (Ty.raiseTy t o d)).instantiateV (args.map (Ty.raiseTy t o))
+      = Ty.raiseTy t o ((Scheme.genAtV m d).instantiateV args) := by
+  simp only [Scheme.instantiateV, Scheme.genAtV]
+  have hlen : ((Ty.raiseTy t o d).levels.filter (· = m + o)).length
+      = (d.levels.filter (· = m)).length := Ty.length_filter_levels_raiseTy htm d
+  by_cases h0 : (d.levels.filter (· = m)).length = 0
+  · rw [if_pos (hlen.trans h0), if_pos h0]
+  · rw [if_neg (fun c => h0 (hlen ▸ c)), if_neg h0]
+    rw [Ty.raiseTy_substAt_comm t o m _ d, if_pos htm]
+    congr 1
+    funext i
+    by_cases hi : i < args.length
+    · rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem hi,
+        Option.map_some, Option.getD_some, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi,
+        Option.getD_some]
+    · have hge : args.length ≤ i := Nat.le_of_not_lt hi
+      rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_none (by simpa using hge),
+        Option.map_none, Option.getD_none, List.getD_eq_getElem?_getD,
+        List.getElem?_eq_none hge, Option.getD_none]
+      simp only [Ty.raiseTy, if_pos htm]
 
 /-- **General scheme-instantiation commutation under an outer level-`ℓ` substitution.** -/
 theorem substAt_instantiateV_scheme {ℓ : Nat} {σ : Nat → Ty} {s : Scheme}
