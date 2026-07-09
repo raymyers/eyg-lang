@@ -1411,6 +1411,48 @@ theorem raiseCtx_fix {t o : Nat} {Γ : Ctx} (hΓ : ∀ b ∈ Γ, b.2.level < t) 
       simp only [raiseCtx_cons, raiseScheme_of_level_lt (hΓ (y, s) (by simp)),
         ih (fun b hb => hΓ b (List.mem_cons_of_mem _ hb))]
 
+/-- **The `var`-arm equality of the generalization-level raise.** For a context binding
+`genAtV k d` whose gen level `k` is at or above the raise threshold `t` (so `raiseScheme` relabels
+it) and whose body levels are all `< N ≤ o` (freshness budget, from `LevelsBelow` of the enclosing
+`let_poly`), there is a **padded** argument list `args'` under which the *relabeled* scheme
+instantiates to exactly the original type `(genAtV k d).instantiateV args`. This is the crux
+computation the `hasType_raise` var arm performs when it looks up a raised context binding:
+`HasType.var` in the raised context produces `(raiseScheme t o (genAtV k d)).instantiateV args'`,
+which this lemma shows equals the fixed conclusion type. Composes `instantiateV_pad_default` (extend
+`args` to meet the coverage bound without changing the produced type) with
+`instantiateV_genAtV_relabel` (the fresh relabel is instantiation-invariant). -/
+theorem raiseScheme_genAtV_instantiateV {t o k N : Nat} (hoN : N ≤ o) (hot : 0 < o)
+    (htk : t ≤ k) {d : Ty} (hd : ∀ l ∈ d.levels, l < N) (args : List Ty) :
+    ∃ args', (raiseScheme t o (Scheme.genAtV k d)).instantiateV args'
+      = (Scheme.genAtV k d).instantiateV args := by
+  have hlvl : (Scheme.genAtV k d).level = k := rfl
+  have hbdy : (Scheme.genAtV k d).body = d := rfl
+  have hrs : raiseScheme t o (Scheme.genAtV k d)
+      = Scheme.genAtV (k + o) (Ty.substAt k (fun i => Ty.var (k + o) i) d) := by
+    simp only [raiseScheme, hlvl, hbdy, if_pos htk]
+  have hf : (k + o) ∉ d.levels := fun hmem => absurd (hd _ hmem) (by omega)
+  have hne : (k + o) ≠ k := by omega
+  set extra := (Ty.freeVarsAt k d).foldr max 0 + 1 with hextra
+  refine ⟨args ++ (List.range extra).map (fun j => Ty.var k (args.length + j)), ?_⟩
+  have hcov : ∀ i ∈ Ty.freeVarsAt k d,
+      i < (args ++ (List.range extra).map (fun j => Ty.var k (args.length + j))).length := by
+    intro i hi
+    have hle : i ≤ (Ty.freeVarsAt k d).foldr max 0 := by
+      have key : ∀ (ls : List Nat), i ∈ ls → i ≤ ls.foldr max 0 := by
+        intro ls hls
+        induction ls with
+        | nil => simp at hls
+        | cons hd' tl ih =>
+            simp only [List.foldr]
+            rcases List.mem_cons.mp hls with rfl | h
+            · exact le_max_left _ _
+            · exact le_trans (ih h) (le_max_right _ _)
+      exact key _ hi
+    simp only [List.length_append, List.length_map, List.length_range, hextra]
+    omega
+  rw [hrs, instantiateV_genAtV_relabel hne hf hcov]
+  exact instantiateV_pad_default args extra
+
 /-! ## Sanity checks -/
 
 section Examples
