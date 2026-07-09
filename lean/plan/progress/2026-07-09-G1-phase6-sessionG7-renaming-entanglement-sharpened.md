@@ -109,6 +109,32 @@ is NOT obviously easier: the escape is a sound RT-valid shape (Finding 2), so th
 genuine principal-type/normal-form fact about runtime closures, comparable in size to the
 fresh-allocation induction.
 
+## Finding 4 (refinement — argues route (a) is likely TRUE after all, via a case split)
+
+Findings 1–3 show a *tag-uniform* shift fails, but a case split on whether the inner gen var escapes
+recovers a plausible general argument:
+
+- **Non-escaping inner `let_poly`** (its level-`lvl` gen var is used only at concrete / non-`lvl`
+  types, e.g. `let h = \z.z in pair (h 1) (h "a")`): the gen var occurs in `defnInner` and in the
+  instantiations only, **never in `retTy`/`εb`**. So `substAt lvl (·↦var f)` (fresh `f`) applied to the
+  let's subtree renames it cleanly, leaving the interface `Γ`/`τ`/`ε` untouched. The renaming IS
+  well-defined here — Finding 1's obstruction does not bite.
+- **Escaping inner `let_poly`** (the witness of Finding 2, `let h = \z.z in h`, gen var re-surfaces in
+  `retTy` at tag `lvl`): here the inner generalization is **HM-flattened-redundant** — `h` is used at
+  exactly the pinned type `fun (var lvl 0) e (var lvl 0)`, and the OUTER `genAtV lvl` already quantifies
+  `var lvl 0`. So the SAME judgment is derivable with `h` bound by a **monomorphic `let_`** at type
+  `fun (var lvl 0) e (var lvl 0)` — **no inner `let_poly` at `lvl` at all**, whence `NoGenAt lvl` holds
+  directly (mono `let_` has no `let_poly`). By proof irrelevance this discharges the wrapper premise for
+  the runtime's `let_poly` derivation of the same judgment.
+
+So `noGenAt_normalize` (route (a), fully general) is **plausibly TRUE**: at every inner `let_poly` at
+`lvl`, either freshen (non-escaping) or mono-ize (escaping). This is a cleaner and more optimistic
+target than "the renaming is false / ill-defined." Caveats before banking it: (i) the mono-ize step is
+a genuine principal-types argument (must show every use of `h` is consistent with the single pinned
+type when the var escapes); (ii) both steps still compose into an induction over the derivation that is
+multi-session and wants live LSP. But the mathematical picture is now: **route (a) is likely true, and
+the two sub-cases are individually tractable**, not blocked by a representation wall.
+
 ## Landed this session
 
 `Ty.substAt_substAt_same` (`Scheme.lean`, commit `c50bbfe9`): same-level substitution composition,
