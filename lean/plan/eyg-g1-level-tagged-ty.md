@@ -1064,6 +1064,43 @@ the datatype change itself.
       new `inv_let`/`inv_let_rt` NoGenAt output + reshaped `HasType.let_poly` into Soundness's `let_poly`
       preservation (sites `:72`,`:226`,`:243`,`:2953`) as part of completing the level-native Soundness
       migration; that migration — not the reshape — is now the sole remaining blocker. Caveat 5 OPEN.
+      **Progress 2026-07-09 (Session G21 — Soundness diagnosis; overturns the "purely mechanical"
+      framing).** No LSP (canary failed). Traced the full dependency chain of the `let_poly`
+      preservation case (Soundness `preservation_E` `:224–243`, A-engine) and reached a definitive
+      finding: it is **NOT purely mechanical.** The mechanical parts are real (thread `lvl` + `HasTypeRT`
+      through `MStateWf` — the file predates BOTH additions; `mStateWf_E` `:32` still drops the
+      `HasTypeRT` field the current def carries; the `.V`-producing cases just need the extra `hrt`
+      ignored; app/let need the `_rt` inversions `inv_app_rt`/`inv_let_rt`/`hasTypeRT_lambda` which
+      already exist in Typing). **But the poly-let case has a genuine invariant gap:**
+      `genAtV_closure_ready_value_node` (Substitution `:167`) requires `hℓ : lvl ≠ 0` **and**
+      `hΓpa : PolyAboveFV lvl Γ ⟨.Lambda lx lbody, la⟩`. `inv_let`/`inv_let_rt` now hand `CtxWfV lvl Γ`
+      (`hcw`) and `NoGenAt lvl hdefn` (free, as designed) — but **neither `PolyAboveFV` nor `lvl ≠ 0` is
+      available** from the runtime state. `MStateWf`/`EnvWf`/`HasTypeV.closure` carry **no** context-level
+      invariant (checked: `MStateWf` def is just `∃ Γ τin lvl, EnvWf ∧ ∃ hty, HasTypeRT ∧ StackWfE`;
+      `HasTypeV.closure` stores `lvl'` existentially with no lower bound). And `PolyAboveFV` is **not
+      derivable from `CtxWfV lvl Γ`**: for a poly binding `s = genAtV k d` (arity ≠ 0 ⟹ `k ∈ d.levels`),
+      `CtxWfV` gives `k < lvl` (hence `k ≠ lvl` ✓) but says **nothing about `k ≠ 0`** — a `genAtV 0 d`
+      binding with `0 ∈ d.levels` and `d.levels < lvl` satisfies `CtxWfV lvl Γ` yet violates
+      `PolyAboveFV`. So closing the poly-let case requires a **carried runtime invariant** ("every poly
+      binding in the realized context sits at a nonzero level," equivalently "the ambient level is always
+      ≥ 1 and every generalization happened at ≥ 1"), threaded from a **nonzero initial ambient level**
+      into `MStateWf`/`EnvWf`/`HasTypeV.closure` — i.e. an **architectural strengthening of the runtime
+      typing judgments** plus re-proof of the Runtime/Machine lemmas, gated behind approval per the
+      standing "no large architectural change without approval" rule. This is small but genuinely
+      conceptual/design, not mechanical — it is what task step 5's "set the ambient level to a nonzero
+      constant **if the type signature needs it**" was gesturing at, but it needs the invariant *carried*,
+      not just set at the entry. **Second finding:** `Soundness.lean` contains **TWO complete engines** —
+      the A-engine `MStateWf` development (`~:30–2840`, partially level/RT-migrated) and a full
+      **B-engine `MStateWfB`** mirror (`~:2850–4278`) still **entirely on the pre-migration API**
+      (`Scheme.genAt`/`.instantiate` not `genAtV`/`.instantiateV`, old 3-arg `HasTypeV.closure`, old
+      `inv_let` tuple `⟨defnTy, hdefn, hbody⟩`, `genAt_closure_ready`/`ctxWf_fixed`). So the 103 errors
+      span two mirrored migrations, not one. **Decision:** made NO edits (a half-migration is
+      uncommittable — red Soundness — and would leave a state harder to resume than the clean untouched
+      file); left `Soundness.lean` EXACTLY as found. **Recommended next session:** (1) get approval to
+      strengthen the runtime judgments with the nonzero-poly-level context invariant (or add a lemma
+      `polyAboveFV_of_ctxWfV_nonzeroPoly`), then (2) grind the A-engine `MStateWf` mechanically
+      (`lvl`+`HasTypeRT` threading via the existing `_rt` inversions), then (3) the B-engine mirror. Caveat
+      5 OPEN.
 - [ ] **Phase 7 — sanity example + report update.** A nested-generalizable-let example
       (e.g. `let f = \x. (let g = \y.y in g x) in ...`) types under the relaxed rule;
       Caveat 5 in `plan/report/type-soundness-report.md` updated to reflect the closed gap
