@@ -363,4 +363,66 @@ theorem v8_fixing_retTy_strands_g (o t : Nat) (ho : 1 ≤ o)
     intro hle; simp only [Ty.raiseTy, if_pos hle] at hfix; injection hfix with h1 _; omega
   simp only [Ty.raiseTy, if_neg (by omega : ¬ t ≤ 2)]
 
+/-! ## W1 — the CORRECT closure-apply wall witness (G30), and the floor crossing it
+
+Correction to the V8 framing above: V8 is a true readiness *value* witness, but it is **not** a
+witness of the closure-apply wall (its inner `g = \y.y` doesn't capture `x`, and its arg sits below
+the sublevel, so the floor keystone handles it). The genuine wall is about **maintaining the
+`HasTypeRT` args-condition across a closure-apply** — this is the plan's G30 program.
+
+`let a = \x.x in \w. a w`: when the closure `\w. a w` is applied, its body `a w` becomes the control
+and instantiates `a` at `[w's type = .var 2 0]` (level 2). `HasTypeRT.var`'s condition is
+`args ⊆ {0, s.level}` with `s.level = 1` — and `2 ∉ {0, 1}`, so `HasTypeRT` of the body is
+unobtainable. That is the real, documented wall (`w1_old_condition_fails`). The **floor-widened**
+condition `l = 0 ∨ l = 1 ∨ l < B` with `B =` a's defn sublevel (chosen `3 > 2`) **holds**
+(`w1_floor_condition_holds`) — crossing the wall for this (args-disciplined) derivation. Since a's
+`retTy = .var 1 0` is low, an *undisciplined* derivation (sublevel 2) can raise a's floor to 3 with
+`retTy` fixed — so G30 closes either way. -/
+
+/-- The G30 program, well-typed with `a`'s defn sublevel chosen `3` (> `w`'s level 2). -/
+theorem w1 : HasType (m := Unit) 1 []
+    (let_ "a" (lambda "x" (variable_ "x"))
+      (lambda "w" (apply (variable_ "a") (variable_ "w"))))
+    (.fun (.var 2 0) .empty (.var 2 0)) .empty := by
+  have hxdefn : HasType (m := Unit) 3 [("x", Scheme.mono (.var 1 0))]
+      (variable_ "x") (.var 1 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 3) (Γ := [("x", Scheme.mono (.var 1 0))])
+      (x := "x") (s := Scheme.mono (.var 1 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have haw : HasType (m := Unit) 3
+      [("w", Scheme.mono (.var 2 0)),
+       ("a", Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))]
+      (apply (variable_ "a") (variable_ "w")) (.var 2 0) .empty := by
+    have hainst : (Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0))).instantiateV [.var 2 0]
+        = .fun (.var 2 0) .empty (.var 2 0) := by decide
+    have ha := HasType.var (m := Unit) (lvl := 3)
+      (Γ := [("w", Scheme.mono (.var 2 0)),
+             ("a", Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))])
+      (x := "a") (s := Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))
+      (args := [.var 2 0]) (ε := .empty) (a := ()) (by decide)
+    rw [hainst] at ha
+    have hw := HasType.var (m := Unit) (lvl := 3)
+      (Γ := [("w", Scheme.mono (.var 2 0)),
+             ("a", Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))])
+      (x := "w") (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rw [Scheme.instantiateV_mono] at hw
+    exact HasType.app ha (Ty.effWeaken_refl _) hw
+  have hlamw : HasType (m := Unit) 2
+      [("a", Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))]
+      (lambda "w" (apply (variable_ "a") (variable_ "w")))
+      (.fun (.var 2 0) .empty (.var 2 0)) .empty :=
+    HasType.lam (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) haw
+  exact HasType.let_poly (by omega)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hxdefn (by intro b hb; cases hb) hlamw
+
+/-- The wall: `a`'s args `[.var 2 0]` break the old `HasTypeRT.var` condition `⊆ {0, s.level}`. -/
+theorem w1_old_condition_fails : ¬ (∀ l ∈ (Ty.var 2 0).levels, l = 0 ∨ l = 1) := by decide
+
+/-- The crossing: the floor-widened condition (`l < 3`, a's sublevel) holds for `[.var 2 0]`. -/
+theorem w1_floor_condition_holds : ∀ l ∈ (Ty.var 2 0).levels, l = 0 ∨ l = 1 ∨ l < 3 := by decide
+
 end Eyg.Types.G2Validation
