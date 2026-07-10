@@ -77,9 +77,26 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   structure. That (not escaping-`retTy`, not the flawed V8) is the wall witness to build next, tested
   against the *re-typing* route (not only the raise route). See
   `plan/progress/2026-07-10-G2-generation-semantics-moot-escaping-not-wall.md`.
-  NEXT: build the G16 internal-generalization interleaving witness (a closure whose body is a
-  `let_poly` whose gen level interleaves with an escaping binder), instantiated to force a raise, and
-  test whether the re-typing route establishes readiness or genuinely blocks. Compiler-first.
+  (10) **The interleaving wall is now CONSTRUCTED — W2** (2026-07-10, `G2Validation.lean`:
+  `w2_interleave_body`, `w2_interleave_retTy_not_below_sublevel`, `w2_interleave_closure`). The natural
+  interleaving *entry* derivation of V8's closure body `let g=\y.y in \w. g x` — `g` generalized at its
+  low natural ambient `3`, `\w` binder chosen at `3` so `retTy = .var 3 0 → .var 2 0` carries level
+  `3 =` sublevel `3` — is *valid and well-typed*, and (finding 9) an admissible arbitrary entry to
+  `soundness`. At it: the universal-closing lemma's `hretTy < lvl'` **fails**, and no threshold raise
+  transports it (`v8_moving_g_moves_retTy`/`v8_fixing_retTy_strands_g`, now anchored to a *constructed*
+  entry). Yet readiness is semantically true via re-generalizing `g` fresh at 5 (`v8`) — a *different*
+  derivation the substitution/raise keystone (`genAtV_closure_ready_value_node`, `Substitution.lean:168`,
+  still on the `l = 0 ∨ l = lvl` bound) cannot reach. **So the residual is REAL and the current
+  keystone cannot discharge it.** This closes the prove-or-refute: unconditional route B needs a
+  re-derivation/structural-relabel keystone (G16, and no threshold raise provides it) **or** the
+  entry-premise restriction (`ArgsDisc`, §2/§4) / decoupled-`let_poly` (finding 5). The restriction
+  path is the sign-off-ready one. See
+  `plan/progress/2026-07-10-G2-interleaving-wall-constructed-W2.md`.
+  NEXT: **Phase-0 sign-off** on the entry-premise replacement (§4) / decoupled-`let_poly` direction —
+  the interleaving witness (W2) shows an unrestricted-entry `soundness` cannot be discharged by the
+  substitution/raise keystone; the restriction confines entry to disciplined derivations (retTy < lvl'
+  at every closure), which the universal-closing lemma already covers. Alternatively (higher risk),
+  attempt the re-derivation keystone as a general lemma before committing to the rule change.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness

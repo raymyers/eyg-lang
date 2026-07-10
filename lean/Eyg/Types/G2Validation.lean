@@ -616,4 +616,110 @@ theorem r4_escaping_closure_ready_high_arg : HasTypeV (m := Unit)
     (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
     hbody (.refl _)
 
+/-! ## W2 — the genuine INTERLEAVING wall witness (2026-07-10)
+
+The W1 note flagged the interleaving residual "not yet constructed as a genuine blocked case." W2
+constructs it: the **natural interleaving ENTRY derivation** of V8's closure body
+`let g = \y.y in \w. g x`, with `g` generalized at its LOW natural ambient `3` and the `\w` binder
+chosen AT that same level `3` — so `retTy = .var 3 0 → .var 2 0` carries level `3` `=` the closure
+sublevel `3` (`interleave_retTy_not_below_sublevel`). This is a *valid, well-typed* derivation
+(`interleave_body`, `interleave_closure`) — and per finding (9) the entry to `soundness` is
+*arbitrary*, so this interleaving derivation is an admissible entry.
+
+At this derivation:
+- the **universal-closing lemma** (`genAtV_instantiate_lam_ready_universal`) does **not** apply: its
+  `∀ l ∈ retTy.levels, l < lvl'` premise fails (level 3 ⊀ sublevel 3);
+- the **raise route** cannot transport it to a covered form: to move `g`'s gen level 3 the raise
+  threshold `t ≤ 3` also moves `retTy`'s binder level 3, changing the advertised type; any `t > 3`
+  strands `g` at 3 where the instantiation still collides (`v8_moving_g_moves_retTy` /
+  `v8_fixing_retTy_strands_g` — the same arithmetic, now anchored to a *constructed* entry).
+
+Yet readiness is **semantically true**: the SAME closure value is typeable with `g` re-generalized
+fresh at 5 (`v8`), where `retTy {3,2} < 5` is disciplined. The two derivations genuinely differ; the
+substitution/raise keystone (`genAtV_closure_ready_value_node`, `Substitution.lean:168`, still on the
+`l = 0 ∨ l = lvl` args bound) transports the stored one and cannot reach the fresh one.
+
+**Verdict.** The interleaving residual is REAL and reachable as an arbitrary entry derivation. The
+current substitution/raise keystone cannot discharge its readiness. Unconditional route B therefore
+needs **either** a re-derivation (structural-relabel) keystone — the G16 type-fixed relabel, which
+`v8_moving_g_moves_retTy`/`v8_fixing_retTy_strands_g` show no threshold raise provides — **or** the
+entry-premise restriction (`ArgsDisc`, §2/§4) / decoupled-`let_poly` rule (finding 5,
+`G2DecoupledSpike.lean`), a judgment change needing Phase-0 sign-off. -/
+
+-- W2: the natural interleaving entry derivation (g generalized at low ambient 3; \w binder at 3).
+theorem w2_interleave_body : HasType (m := Unit) 3 [("x", Scheme.mono (.var 2 0))]
+    (let_ "g" (lambda "y" (variable_ "y"))
+      (lambda "w" (apply (variable_ "g") (variable_ "x"))))
+    (.fun (.var 3 0) .empty (.var 2 0)) .empty := by
+  have hgy : HasType (m := Unit) 4
+      [("y", Scheme.mono (.var 3 0)), ("x", Scheme.mono (.var 2 0))]
+      (variable_ "y") (.var 3 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 4)
+      (Γ := [("y", Scheme.mono (.var 3 0)), ("x", Scheme.mono (.var 2 0))])
+      (x := "y") (s := Scheme.mono (.var 3 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hg : HasType (m := Unit) 5
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (variable_ "g") (.fun (.var 2 0) .empty (.var 2 0)) .empty := by
+    have hginst : (Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))).instantiateV [.var 2 0]
+        = .fun (.var 2 0) .empty (.var 2 0) := by decide
+    have h := HasType.var (m := Unit) (lvl := 5)
+      (Γ := [("w", Scheme.mono (.var 3 0)),
+             ("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+             ("x", Scheme.mono (.var 2 0))])
+      (x := "g") (s := Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0)))
+      (args := [.var 2 0]) (ε := .empty) (a := ()) (by decide)
+    rwa [hginst] at h
+  have hx : HasType (m := Unit) 5
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (variable_ "x") (.var 2 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 5)
+      (Γ := [("w", Scheme.mono (.var 3 0)),
+             ("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+             ("x", Scheme.mono (.var 2 0))])
+      (x := "x") (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hgx : HasType (m := Unit) 5
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (apply (variable_ "g") (variable_ "x")) (.var 2 0) .empty :=
+    HasType.app hg (Ty.effWeaken_refl _) hx
+  have hlamw : HasType (m := Unit) 4
+      [("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (lambda "w" (apply (variable_ "g") (variable_ "x")))
+      (.fun (.var 3 0) .empty (.var 2 0)) .empty :=
+    HasType.lam (lvl' := 5) (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hgx
+  exact HasType.let_poly (by omega)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hgy
+    (by intro b hb l hl
+        rcases List.mem_singleton.mp hb with rfl
+        simp only [Scheme.mono, Ty.levels, List.mem_singleton] at hl; omega)
+    hlamw
+
+/-- W2's `retTy` carries level 3 `=` the closure sublevel 3, NOT `< 3` — the universal-closing
+lemma's `hretTy` premise fails on this valid, arbitrary-entry interleaving derivation. -/
+theorem w2_interleave_retTy_not_below_sublevel :
+    ¬ (∀ l ∈ (Ty.fun (.var 3 0) .empty (.var 2 0)).levels, l < 3) := by decide
+
+/-- The closure VALUE built from the interleaving body type-checks (sublevel 3). -/
+theorem w2_interleave_closure : HasTypeV (m := Unit)
+    (.Closure "x"
+      (let_ "g" (lambda "y" (variable_ "y"))
+        (lambda "w" (apply (variable_ "g") (variable_ "x")))) [])
+    (.fun (.var 2 0) .empty (.fun (.var 3 0) .empty (.var 2 0))) :=
+  HasTypeV.closure (lvl' := 3) (argTy := .var 2 0) (εb := .empty)
+    (retTy := .fun (.var 3 0) .empty (.var 2 0)) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    w2_interleave_body (.refl _)
+
 end Eyg.Types.G2Validation
