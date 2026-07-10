@@ -50,9 +50,16 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   the floor keystone — no `ArgsDisc`, no rule change. Covers all combinator polymorphism (retTy at the
   generalized level), subsuming G30 + V1–V7. See
   `plan/progress/2026-07-10-G2-universal-readiness-closing-case-GREEN.md`.
-  NEXT (compiler-first): the residual is now sharply isolated to the **escaping-`retTy`** case
-  (retTy/εb/Γ level `≥ lvl'`) — build it as a genuine consumed obligation, or prove it unreachable
-  (→ route B closes fully). This decides unconditional route B honestly.
+  (8) **Residual is a LEVEL CHOICE, not an obstruction** (2026-07-10, `r1_disciplined_body`): the
+  sharpest escaping-`retTy` candidate `\x. (let g=\y.x in \w. g w)` **admits a disciplined derivation**
+  (`g` fresh at 5, `\w`'s binder level 3 < sublevel 5), so its `retTy < lvl'` — the CLOSING case, which
+  `genAtV_instantiate_lam_ready_universal` discharges. A binder's *level* is independent of its
+  *ambient*, so the same closure syntax admits a `retTy < lvl'` derivation. The remaining open question
+  is **generation-semantics**: is the program's inference forced to produce escaping schemes (binder
+  level `=` ambient) or free to produce disciplined ones? If disciplined ⇒ route B closes fully via the
+  universal-closing lemma; if escaping ⇒ need a re-derivation (generation) lemma or the decoupling.
+  See `plan/progress/2026-07-10-G2-universal-readiness-closing-case-GREEN.md`.
+  NEXT: examine `Generation.lean`'s binder-level assignment to decide the generation-semantics question.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
