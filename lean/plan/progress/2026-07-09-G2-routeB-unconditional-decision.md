@@ -48,9 +48,35 @@ instantiation `[.var 2 0]`. Compiles; axioms `[propext, Quot.sound]`. The readin
 generalizes the inner `g` at a **fresh** level (3 ≠ 2), sidestepping capture — machine-checked
 demonstration that universal, `ArgsDisc`-free readiness holds even where the `substAt` route captures.
 
-## Next
+## Sharper crux (refinement — a uniform shift is the WRONG operation)
 
-Attack `hasType_shiftGE` in a spike. Increments: define the level-`≥ c` shift on `Ty` (+ commutation
-with `substAt`/`instantiateV`/`genAtV`), then the `HasType` equivariance induction, then universal
-readiness, then wire into a universal `EnvWf.cons` promise. Refutation surface: the var-arm
-instantiation relabel and the `let_poly` genAtV-arity preservation under the shift.
+A uniform "shift all levels `≥ c` by `N`" does **not** work: `retTy` can carry inner *lambda-binder*
+levels `≥ lvl'` (e.g. a body returning `\w.w : .var m 0 → .var m 0` with `m ≥ lvl'`), which a uniform
+shift would move — changing the closure's advertised type. No single cutoff `c` separates "inner gen
+levels to move" from "binder levels that must stay," because they interleave.
+
+The **right** operation is a *targeted* alpha-rename of exactly the inner **let_poly gen levels that
+collide with the incoming args**. Crucial fact making it clean: a let-generalized level is **bound**
+(generalized inside its `let`), so it **never escapes** into `retTy`/`argTy`/context — relabeling it
+leaves the closure's scheme and final type **untouched**. So the operation is
+`substAt k (fun i => var f i)` (the existing type-level relabel, `length_filter_levels_relabel` /
+`substAt_relabel_getD` / `instantiateV_genAtV_relabel`) applied at each colliding inner gen level `k`,
+`f` chosen fresh above the args.
+
+Note also: this relabel shifts a gen level **up** (`f > lvl`), so it is **not** an instance of
+`hasType_substAt_multi` (whose σ-range must be `< lvl`, i.e. downward). It is genuinely new
+machinery — the G15/G16 wall — but now with the complete type-level relabel toolkit already in
+`Scheme.lean`.
+
+## The lemma to prove (the real remaining crux)
+
+`hasType_relabel_gen` — relabeling a single reachable `let_poly`'s generalization level `k` to a
+fresh `f` (`f` avoiding everything in the derivation) preserves `HasType`. Semantically obvious
+(alpha-renaming a bound level); the proof is a `HasType` induction that rewrites `genAtV k → genAtV f`
+at the target node via the type-level relabel lemmas and threads freshness. Universal readiness then:
+for given args, relabel each colliding inner gen level fresh-above-args, then apply
+`genAtV_instantiate_lam_ready_floor` (all args now `< the raised inner levels`, i.e. floor-satisfied).
+
+**Status: not a refutation** — V7 proves the value IS typeable at the capture-prone instantiation, so
+universal readiness is *semantically true*; the open question is purely the proof-architecture lemma
+`hasType_relabel_gen`. That is the focused next-session target.
