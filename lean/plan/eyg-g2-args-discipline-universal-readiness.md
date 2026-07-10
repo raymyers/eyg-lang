@@ -44,8 +44,15 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   The escaping-`retTy` residual (candidates keep having low/generalized `retTy` that raise fixes, or
   `x` unused → no capture) is **not yet constructed as a genuine blocked case** — route B may close
   more broadly than feared. See `plan/progress/2026-07-10-G2-V8-error-correction-W1-real-wall.md`.
-  NEXT (compiler-first): either construct the escaping-`retTy` residual as a real blocked case, or
-  prove the maintenance/invariant that makes it impossible — deciding unconditional route B honestly.
+  (7) **Universal readiness for the CLOSING case — GREEN** (2026-07-10,
+  `genAtV_instantiate_lam_ready_universal`): when `Γ`/`argTy`/`retTy`/`εb` levels are all `< lvl'`,
+  readiness holds at ANY args via `hasType_fullRaise` (lifts the sublevel above the args, type fixed) +
+  the floor keystone — no `ArgsDisc`, no rule change. Covers all combinator polymorphism (retTy at the
+  generalized level), subsuming G30 + V1–V7. See
+  `plan/progress/2026-07-10-G2-universal-readiness-closing-case-GREEN.md`.
+  NEXT (compiler-first): the residual is now sharply isolated to the **escaping-`retTy`** case
+  (retTy/εb/Γ level `≥ lvl'`) — build it as a genuine consumed obligation, or prove it unreachable
+  (→ route B closes fully). This decides unconditional route B honestly.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
