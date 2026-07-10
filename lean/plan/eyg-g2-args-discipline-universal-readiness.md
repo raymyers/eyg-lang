@@ -59,7 +59,27 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   level `=` ambient) or free to produce disciplined ones? If disciplined ⇒ route B closes fully via the
   universal-closing lemma; if escaping ⇒ need a re-derivation (generation) lemma or the decoupling.
   See `plan/progress/2026-07-10-G2-universal-readiness-closing-case-GREEN.md`.
-  NEXT: examine `Generation.lean`'s binder-level assignment to decide the generation-semantics question.
+  (9) **Generation-semantics question SETTLED — it is MOOT; escaping-`retTy` is NOT the wall**
+  (2026-07-10, `G2Validation.lean`: `r2_escaping_defn`, `r3_escaping_closure`,
+  `r4_escaping_closure_ready_high_arg`). `Generation.lean` is the **inversion**-lemma file, not an
+  inference algorithm; `Generalization.lean`'s docstring pins inference as a *separate, unbuilt (T8)*
+  layer — the judgment is purely **declarative** (`HasType.var` quantifies over arbitrary args). So
+  "is inference forced to escape?" has no referent: the entry derivation to `soundness` is arbitrary.
+  Binder levels (`HasType.lam`, `Typing.lean:111`) are `argTy.levels < lvl'` with `lvl'` a *free*
+  choice `≥` ambient — **not** pinned to ambient; the system admits both disciplined (R1) and escaping
+  (R2) derivations of the same syntax. **But escaping-`retTy` is not a readiness wall**: R4 shows the
+  escaping closure's readiness at a *high* arg (level 5 ≥ stored sublevel 1) is establishable by
+  **re-typing** the body at a fresh sublevel dominating the *fixed, bounded* escaping level (1) and the
+  arg (5). The universal-closing lemma's `hretTy < lvl'` is a limitation of *that* lemma (it reuses the
+  stored sublevel via `hasType_fullRaise`), not an obstruction. **The true residual is narrower**: a
+  closure body with **internal generalization** (a captured polymorphic `let`) whose gen level a
+  uniform raise cannot move while keeping the advertised type fixed — the G16 two-modes/interleaving
+  structure. That (not escaping-`retTy`, not the flawed V8) is the wall witness to build next, tested
+  against the *re-typing* route (not only the raise route). See
+  `plan/progress/2026-07-10-G2-generation-semantics-moot-escaping-not-wall.md`.
+  NEXT: build the G16 internal-generalization interleaving witness (a closure whose body is a
+  `let_poly` whose gen level interleaves with an escaping binder), instantiated to force a raise, and
+  test whether the re-typing route establishes readiness or genuinely blocks. Compiler-first.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness

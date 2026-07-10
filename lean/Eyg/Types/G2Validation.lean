@@ -504,4 +504,116 @@ theorem r1_disciplined_body : HasType (m := Unit) 5 [("x", Scheme.mono (.var 1 0
 theorem r1_retTy_below_sublevel :
     ∀ l ∈ (Ty.fun (.var 3 0) .empty (.var 1 0)).levels, l < 5 := by decide
 
+/-! ## R2–R4 — settling the generation-semantics question (2026-07-10)
+
+`Generation.lean` turned out to be the **inversion**-lemma file, not an inference algorithm; and
+`Generalization.lean`'s docstring pins that inference is a *separate, unbuilt (T8) layer* — the
+judgment is purely **declarative**, `HasType.var` quantifying over *arbitrary* instantiation args.
+So the "is inference forced to escape?" framing is **moot**: there is no inference to force anything,
+and the entry derivation to `soundness` is an *arbitrary* well-typed derivation.
+
+Binder-level assignment lives in `HasType.lam` (`Typing.lean:111`): `lvl ≤ lvl'` (sublevel a *free*
+choice `≥` ambient) and `argTy.levels < lvl'` (binder levels strictly *below* the sublevel, otherwise
+free — **not** pinned to the ambient). So the declarative system admits **both** disciplined (R1) and
+escaping derivations of the same syntax.
+
+**R2/R3** — an escaping-`retTy` closure is genuinely constructible: the K-ish defn `\a. \w2. a` with
+the inner binder `w2` chosen at level `1` `=` the outer sublevel `1`, so the outer `retTy` carries a
+level `≥` its own sublevel (`r2_retTy_not_below_sublevel`). The closure **value** type-checks
+(`r3_escaping_closure`), and at that closure the universal-closing lemma's `hretTy < lvl'` premise
+**fails** (`r3_retTy_not_below_sublevel`).
+
+**R4 — but escaping-`retTy` is NOT a readiness wall (for a body without internal generalization).**
+Readiness for the *same* escaping closure at a **high** arg (`[.var 5 0]`, level 5 ≥ the stored
+sublevel 1) is establishable by **re-typing** the body at a *fresh* sublevel `6` dominating both the
+arg (5) and the *fixed* escaping level (1). The escaping level is a bounded constant of the program,
+so a dominating sublevel always exists. Hence the escaping-`retTy` case per se is a level choice at
+readiness-*construction* time, not an obstruction — the universal-closing lemma's `hretTy < lvl'` is a
+limitation of *that* lemma (it reuses the stored sublevel via `hasType_fullRaise`), not a wall.
+
+**Verdict.** The genuine residual is *narrower* than "escaping `retTy`": it is exactly a closure body
+with **internal generalization** (a captured polymorphic `let`) whose gen level a uniform raise
+cannot move while keeping the advertised type fixed — the G16 two-modes / interleaving structure. That
+(not escaping-`retTy`, and not the flawed V8) is the true remaining wall witness to build, tested
+against the *re-typing* route above (not only the raise route). -/
+
+-- R2: the escaping-`retTy` defn `\a. \w2. a` (outer sublevel 1, inner binder `w2` at level 1).
+theorem r2_escaping_defn : HasType (m := Unit) 0 []
+    (lambda "a" (lambda "w2" (variable_ "a")))
+    (.fun (.var 0 0) .empty (.fun (.var 1 0) .empty (.var 0 0))) .empty := by
+  have ha : HasType (m := Unit) 2
+      [("w2", Scheme.mono (.var 1 0)), ("a", Scheme.mono (.var 0 0))]
+      (variable_ "a") (.var 0 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 2)
+      (Γ := [("w2", Scheme.mono (.var 1 0)), ("a", Scheme.mono (.var 0 0))])
+      (x := "a") (s := Scheme.mono (.var 0 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hinner : HasType (m := Unit) 1 [("a", Scheme.mono (.var 0 0))]
+      (lambda "w2" (variable_ "a")) (.fun (.var 1 0) .empty (.var 0 0)) .empty :=
+    HasType.lam (lvl' := 2) (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ha
+  exact HasType.lam (lvl' := 1) (by omega)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hinner
+
+/-- R2's outer sublevel is 1; its `retTy` carries level 1, NOT `< 1` — escaping. -/
+theorem r2_retTy_not_below_sublevel :
+    ¬ (∀ l ∈ (Ty.fun (.var 1 0) .empty (.var 0 0)).levels, l < 1) := by decide
+
+-- R3: the escaping closure **value** type-checks at `(genAtV 0 …).instantiateV [.integer]`.
+theorem r3_escaping_closure : HasTypeV (m := Unit)
+    (.Closure "a" (lambda "w2" (variable_ "a")) [])
+    ((Scheme.genAtV 0 (.fun (.var 0 0) .empty (.fun (.var 1 0) .empty (.var 0 0)))).instantiateV
+      [.integer]) := by
+  have hinst : (Scheme.genAtV 0 (.fun (.var 0 0) .empty (.fun (.var 1 0) .empty (.var 0 0)))).instantiateV
+      [.integer] = .fun .integer .empty (.fun (.var 1 0) .empty .integer) := by decide
+  rw [hinst]
+  have ha : HasType (m := Unit) 2
+      [("w2", Scheme.mono (.var 1 0)), ("a", Scheme.mono .integer)]
+      (variable_ "a") .integer .empty := by
+    have h := HasType.var (m := Unit) (lvl := 2)
+      (Γ := [("w2", Scheme.mono (.var 1 0)), ("a", Scheme.mono .integer)])
+      (x := "a") (s := Scheme.mono .integer) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hbody : HasType (m := Unit) 1 [("a", Scheme.mono .integer)]
+      (lambda "w2" (variable_ "a")) (.fun (.var 1 0) .empty .integer) .empty :=
+    HasType.lam (lvl' := 2) (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ha
+  exact HasTypeV.closure (lvl' := 1) (argTy := .integer) (εb := .empty)
+    (retTy := .fun (.var 1 0) .empty .integer) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels] at hl; exact (List.not_mem_nil hl).elim)
+    hbody (.refl _)
+
+/-- R3's closure `retTy` (post-instantiation) carries level 1, NOT `< 1` — the universal-closing
+lemma's `hretTy` premise fails at this closure. -/
+theorem r3_retTy_not_below_sublevel :
+    ¬ (∀ l ∈ (Ty.fun (.var 1 0) .empty (Ty.integer)).levels, l < 1) := by decide
+
+-- R4: readiness for the escaping closure at a HIGH arg (`[.var 5 0]`) — establishable by re-typing
+-- the body at a fresh sublevel 6 dominating both the arg (5) and the fixed escaping level (1).
+theorem r4_escaping_closure_ready_high_arg : HasTypeV (m := Unit)
+    (.Closure "a" (lambda "w2" (variable_ "a")) [])
+    ((Scheme.genAtV 0 (.fun (.var 0 0) .empty (.fun (.var 1 0) .empty (.var 0 0)))).instantiateV
+      [.var 5 0]) := by
+  have hinst : (Scheme.genAtV 0 (.fun (.var 0 0) .empty (.fun (.var 1 0) .empty (.var 0 0)))).instantiateV
+      [.var 5 0] = .fun (.var 5 0) .empty (.fun (.var 1 0) .empty (.var 5 0)) := by decide
+  rw [hinst]
+  have ha : HasType (m := Unit) 7
+      [("w2", Scheme.mono (.var 1 0)), ("a", Scheme.mono (.var 5 0))]
+      (variable_ "a") (.var 5 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 7)
+      (Γ := [("w2", Scheme.mono (.var 1 0)), ("a", Scheme.mono (.var 5 0))])
+      (x := "a") (s := Scheme.mono (.var 5 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hbody : HasType (m := Unit) 6 [("a", Scheme.mono (.var 5 0))]
+      (lambda "w2" (variable_ "a")) (.fun (.var 1 0) .empty (.var 5 0)) .empty :=
+    HasType.lam (lvl' := 7) (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) ha
+  exact HasTypeV.closure (lvl' := 6) (argTy := .var 5 0) (εb := .empty)
+    (retTy := .fun (.var 1 0) .empty (.var 5 0)) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbody (.refl _)
+
 end Eyg.Types.G2Validation
