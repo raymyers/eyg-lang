@@ -56,9 +56,38 @@ statement change, no `{0,s.level}` bound.
 3. Wire into `MStateWf`/var-preservation; confirm the consumption site's args levels are always
    `< floor` after the raise (the raise is chosen per-consumption to make it so).
 
+## Sharp boundary (traced concretely with `instantiateV_raiseScheme_U`)
+
+**What closes — every binding whose `retTy` levels are `< its sublevel lvl'` (all combinator
+polymorphism).** For `let a = \x.x in \w. a w`, `a` is consumed at `[.var 2 0]` (level 2 = `w`'s
+level). If the derivation chose `a`'s sublevel `lvl' = 2`, the floor condition `2 < lvl'` fails.
+Fix: `fullRaise` `a`'s stored derivation `2 → 2+o`. Since `a`'s `retTy = .var 1 0` (level `1 < 2`),
+`raiseTy 2 o` **fixes `retTy`** (`raiseTy_eq_self_of_levels_lt`) — `a`'s advertised type is unchanged
+and its floor now clears the arg. The floor keystone then discharges. No `ArgsDisc`, no statement
+change.
+
+**Residual hard case — the interleaving.** A binding whose `retTy` carries an *inner-lambda-binder*
+level `m ≥ lvl'` (e.g. a body returning `\w.w : .var m 0 → …` with `m ≥ lvl'`), consumed at an arg
+`≥ m`. Raising the floor past `m` would move `retTy`'s level `m`, changing the advertised type — the
+same interleaving G16 hit. **Open question: is this case reachable by a well-typed program?** If
+provably unreachable (an invariant like "a binding actually *instantiated* at level `≥ m` cannot have
+`m` escape into its own `retTy`"), route B closes fully. If a concrete reachable program forces it,
+that is the refutation → route A (per-binding floor promise, disciplined derivations) or a
+gen-level/ambient-decoupling rule change is forced.
+
+## Sub-lemmas the closing case needs (mutual, next session)
+
+- **`hasTypeV_raiseTy` / `envWf_raiseCtx_U`** (mutual): `HasTypeV v τ → HasTypeV v (raiseTy t o τ)` and
+  `EnvWf env Γ → EnvWf env (raiseCtx_U t o Γ)`, `1 ≤ t`. The value-level analog of `hasType_fullRaise`
+  — a mutual induction over the `HasTypeV`/`EnvWf` structure (closure arm delegates to
+  `hasType_fullRaise` on the stored body + `envWf_raiseCtx_U` on the captured env; `instantiateV_
+  raiseScheme_U` handles the readiness-promise arm). This is the concrete build. Substantial but
+  well-defined.
+- Then `hasTypeV_closure_raise_floor` (lift sublevel, fix type) is a corollary for the closing case.
+
 ## Status
 
-**Prove, not refute** (V7). The crux raise lemma is **already landed** (`hasType_fullRaise`, uniform
-mode); the type-fixed two-modes wall G16 hit is **sidestepped** here because we raise the *env
-binding's floor* (fixing its type, since its gen vars are below the threshold) rather than trying to
-fix an interleaved retTy. Next session: the two sub-lemmas above, then the `EnvWf.cons` refactor.
+**Prove, not refute** for the closing case (V7 + the trace above); the residual interleaving case is
+a genuine open reachability question — the honest refutation surface. The crux raise machinery is
+**already landed** (`hasType_fullRaise`). Next session: the mutual `hasTypeV_raiseTy`/`envWf_raiseCtx_U`,
+then decide the residual case by proving unreachability or constructing the witness.
