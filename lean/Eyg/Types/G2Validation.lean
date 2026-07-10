@@ -7,8 +7,8 @@ Permanent machine-checked witnesses for the `eyg-g2-args-discipline-universal-re
 (Phase 1). These are the *consumption-side* facts that the G1 Phase-6 wall (G27–G31) proved could
 not be routed through any `{0, s.level}`-bounded `HasTypeRT`/readiness architecture — yet which are
 plainly **true** of the exact counterexample values at their fatal instantiations. Landing them here
-pins the plan's premise: the old architecture was not asking for something false; it merely could not
-witness it. See `plan/eyg-g2-args-discipline-universal-readiness.md` §1 and its appendix.
+pins the plan's premise: the old architecture was not asking for something false; it merely could
+not witness it. See `plan/eyg-g2-args-discipline-universal-readiness.md` §1 and its appendix.
 
 - **V1** — the G30 counterexample value `\x.x` typed at `(genAtV 1 (α→α)).instantiateV [.var 2 0]`
   (the single off-level instantiation `HasTypeRT` could not witness).
@@ -175,6 +175,72 @@ theorem v6 : HasTypeV (m := Unit) (.Closure "x" (lambda "y" (variable_ "x")) [])
       (lambda "y" (variable_ "x")) (.fun (.var 2 1) .empty (.var 2 0)) .empty :=
     HasType.lam (le_refl 3)
       (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hx
+  exact HasTypeV.closure (lvl' := 3) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbody (.refl _)
+
+-- V7 — the decisive capture-prone case (for the unconditional-readiness prove/refute).
+/-- **V7.** A closure whose body contains an **inner generalizable `let`**, typed at an off-scheme
+instantiation — the case V1/V2 do not exercise (they have no inner `let_poly`, hence no capture
+risk). The closure `\x. (let g = \y.y in g x)` has scheme `genAtV 1 (α→α)`; instantiated at
+`[.var 2 0]` it must inhabit `.var 2 0 → .var 2 0`. The runtime **value** carries no fixed inner
+gen level, so the readiness derivation is free to generalize the inner `g` at a **fresh** level
+(here 3 ≠ 2), sidestepping the capture that the `substAt`-route hits. Machine-checked evidence that
+universal (`ArgsDisc`-free) readiness holds even in the capture-prone case — the crux of route B. -/
+theorem v7 : HasTypeV (m := Unit)
+    (.Closure "x"
+      (let_ "g" (lambda "y" (variable_ "y")) (apply (variable_ "g") (variable_ "x"))) [])
+    ((Scheme.genAtV 1 defnA).instantiateV [.var 2 0]) := by
+  have hinst : (Scheme.genAtV 1 defnA).instantiateV [.var 2 0]
+      = .fun (.var 2 0) .empty (.var 2 0) := by decide
+  rw [hinst]
+  -- inner defn `\y.y` : g's scheme body, generalized fresh at level 3
+  have hgy : HasType (m := Unit) 4
+      [("y", Scheme.mono (.var 3 0)), ("x", Scheme.mono (.var 2 0))]
+      (variable_ "y") (.var 3 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 4)
+      (Γ := [("y", Scheme.mono (.var 3 0)), ("x", Scheme.mono (.var 2 0))])
+      (x := "y") (s := Scheme.mono (.var 3 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  -- inner let body `g x`, with g : genAtV 3 (β→β) instantiated at [.var 2 0]
+  have hg : HasType (m := Unit) 4
+      [("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (variable_ "g") (.fun (.var 2 0) .empty (.var 2 0)) .empty := by
+    have hginst : (Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))).instantiateV [.var 2 0]
+        = .fun (.var 2 0) .empty (.var 2 0) := by decide
+    have h := HasType.var (m := Unit) (lvl := 4)
+      (Γ := [("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+             ("x", Scheme.mono (.var 2 0))])
+      (x := "g") (s := Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0)))
+      (args := [.var 2 0]) (ε := .empty) (a := ()) (by decide)
+    rwa [hginst] at h
+  have hxx : HasType (m := Unit) 4
+      [("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (variable_ "x") (.var 2 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 4)
+      (Γ := [("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+             ("x", Scheme.mono (.var 2 0))])
+      (x := "x") (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hgx : HasType (m := Unit) 4
+      [("g", Scheme.genAtV 3 (.fun (.var 3 0) .empty (.var 3 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (apply (variable_ "g") (variable_ "x")) (.var 2 0) .empty :=
+    HasType.app hg (Ty.effWeaken_refl _) hxx
+  have hbody : HasType (m := Unit) 3 [("x", Scheme.mono (.var 2 0))]
+      (let_ "g" (lambda "y" (variable_ "y")) (apply (variable_ "g") (variable_ "x")))
+      (.var 2 0) .empty :=
+    HasType.let_poly (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+      hgy
+      (by intro b hb l hl
+          rcases List.mem_singleton.mp hb with rfl
+          simp only [Scheme.mono, Ty.levels, List.mem_singleton] at hl; omega)
+      hgx
   exact HasTypeV.closure (lvl' := 3) (by omega) EnvWf.nil
     (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
     hbody (.refl _)

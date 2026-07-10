@@ -7,9 +7,14 @@ description: Rearchitect the runtime typing invariant to close G1 Phase 6's clos
   bodies need no grounding at apply. Keystones instance-validated (machine-checked, this doc's
   appendix) at HEAD 1d92756d; full generality gated behind a Phase-1 spike.
 date: 2026-07-09
-status: PROPOSED — awaiting user sign-off on the one statement-level change (the soundness entry
-  premise `HasTypeRT h` is REPLACED by `ArgsDisc … h`; same spec-refinement class as the authorized
-  G20 strict-sublevel reshape). Nothing executed beyond the validation appendix.
+status: PIVOTED to route B (2026-07-09, user decision). The Phase-1 gate is GREEN
+  (`hasType_substAt_multi` proven). User rejected the `ArgsDisc`-CONDITIONAL soundness (route A) in
+  favour of keeping `soundness` UNCONDITIONAL over the full `HasType` judgment. Active target: a
+  prove-or-refute of the level-raise lemma `hasType_shiftGE` that would make universal readiness
+  hold with no `ArgsDisc` and no `{0,s.level}` bound. See
+  `plan/progress/2026-07-09-G2-routeB-unconditional-decision.md`. If the raise walls, fall back to
+  route A (the material below). The Phase-1 spike lemmas (multi + floor keystone + V1–V7 witnesses)
+  serve both routes.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
