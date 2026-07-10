@@ -33,7 +33,19 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   `plan/progress/2026-07-10-G2-B1prime-decoupled-prototype.md`. **Real next step: migrate the live
   `HasType.let_poly` to chosen-fresh `gl`** — a judgment change (needs sign-off) delivering
   unconditional soundness (standard Rémy), re-checking the downstream cone (Generation, Substitution,
-  Runtime `EnvWf`, Soundness). AWAITING user sign-off to scope/execute the migration.
+  Runtime `EnvWf`, Soundness).
+  (6) **CORRECTION (2026-07-10):** the V8-based "B1 blocked" conclusion was a reasoning error — V8 is
+  a true readiness *value* witness but NOT a wall witness (a closure's `hfv` forces the arg below its
+  sublevel, hence below inner gen levels; and V8's `g=\y.y` never captures `x`). Ground truth:
+  `HasTypeRT.var` (Typing.lean:968) records args `⊆ {0, s.level}`; the wall is *maintaining* that
+  across a closure-apply. The correct witness is **W1 = G30** (`let a=\x.x in \w. a w`, machine-checked
+  `w1`/`w1_old_condition_fails`/`w1_floor_condition_holds`): old `{0,s.level}` fails at `a`'s arg
+  `.var 2 0`; floor-widened `l < 3` crosses it. **G30 closes** (a's `retTy` low → floor+raise works).
+  The escaping-`retTy` residual (candidates keep having low/generalized `retTy` that raise fixes, or
+  `x` unused → no capture) is **not yet constructed as a genuine blocked case** — route B may close
+  more broadly than feared. See `plan/progress/2026-07-10-G2-V8-error-correction-W1-real-wall.md`.
+  NEXT (compiler-first): either construct the escaping-`retTy` residual as a real blocked case, or
+  prove the maintenance/invariant that makes it impossible — deciding unconditional route B honestly.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
