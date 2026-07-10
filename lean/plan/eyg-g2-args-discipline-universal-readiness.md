@@ -7,14 +7,18 @@ description: Rearchitect the runtime typing invariant to close G1 Phase 6's clos
   bodies need no grounding at apply. Keystones instance-validated (machine-checked, this doc's
   appendix) at HEAD 1d92756d; full generality gated behind a Phase-1 spike.
 date: 2026-07-09
-status: PIVOTED to route B (2026-07-09, user decision). The Phase-1 gate is GREEN
-  (`hasType_substAt_multi` proven). User rejected the `ArgsDisc`-CONDITIONAL soundness (route A) in
-  favour of keeping `soundness` UNCONDITIONAL over the full `HasType` judgment. Active target: a
-  prove-or-refute of the level-raise lemma `hasType_shiftGE` that would make universal readiness
-  hold with no `ArgsDisc` and no `{0,s.level}` bound. See
-  `plan/progress/2026-07-09-G2-routeB-unconditional-decision.md`. If the raise walls, fall back to
-  route A (the material below). The Phase-1 spike lemmas (multi + floor keystone + V1–V7 witnesses)
-  serve both routes.
+status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`hasType_substAt_multi`).
+  Findings: (1) `soundness` is already unconditional over `HasType`; the wall is `EnvWf.cons`'s
+  `{0,s.level}` promise, not the statement. (2) Readiness is *semantically true for all instantiations*
+  — V1–V8 machine-checked, incl. **V8** the depth-2 interleaving case. So route B is a genuine PROVE,
+  not a refute. (3) The already-landed `hasType_fullRaise` (threshold raise) closes only the
+  non-interleaving case (all combinator polymorphism); **V8 proves threshold-raise is insufficient in
+  general** (resolves G16's open suspicion). Unconditional route B therefore needs the *type-fixed
+  structural relabel* (re-derive inner gen levels fresh — G16's two-modes lemma, of which V8 is the
+  minimal depth-2 target) OR a closure re-architecture; else fall back to route A (material below).
+  See `plan/progress/2026-07-10-G2-residual-reachability-RESOLVED-V8.md` and the two
+  `2026-07-09-G2-routeB-*` notes. AWAITING user decision: attempt B1 (type-fixed relabel vs V8),
+  B2 (re-architecture), or accept A.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
