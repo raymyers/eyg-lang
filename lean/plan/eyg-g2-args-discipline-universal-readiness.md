@@ -26,8 +26,14 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   keystone discharge readiness by construction. See
   `plan/progress/2026-07-10-G2-B1-blocked-ruleCoupling.md`.
   See also `2026-07-10-G2-residual-reachability-RESOLVED-V8.md` and the `2026-07-09-G2-routeB-*` notes.
-  AWAITING user decision: B1′ (decouple-gen-level rule change — needs sign-off), B2 (re-architecture),
-  or accept route A (conditional, material below).
+  (5) **B1′ prototyped — decoupling CONFIRMED as the fix** (2026-07-10, `G2DecoupledSpike.lean`):
+  a decoupled-`gl` `let_poly` types V8 with `g` fresh at 5, ambient at 2 (Payoff 1 machine-checked);
+  with `gl` private, no use-site arg equals it, so readiness holds with no raise (Payoff 2 traced,
+  reduced to a free-by-construction side condition). See
+  `plan/progress/2026-07-10-G2-B1prime-decoupled-prototype.md`. **Real next step: migrate the live
+  `HasType.let_poly` to chosen-fresh `gl`** — a judgment change (needs sign-off) delivering
+  unconditional soundness (standard Rémy), re-checking the downstream cone (Generation, Substitution,
+  Runtime `EnvWf`, Soundness). AWAITING user sign-off to scope/execute the migration.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
