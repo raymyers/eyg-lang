@@ -16,9 +16,18 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   general** (resolves G16's open suspicion). Unconditional route B therefore needs the *type-fixed
   structural relabel* (re-derive inner gen levels fresh — G16's two-modes lemma, of which V8 is the
   minimal depth-2 target) OR a closure re-architecture; else fall back to route A (material below).
-  See `plan/progress/2026-07-10-G2-residual-reachability-RESOLVED-V8.md` and the two
-  `2026-07-09-G2-routeB-*` notes. AWAITING user decision: attempt B1 (type-fixed relabel vs V8),
-  B2 (re-architecture), or accept A.
+  (4) **B1 attempted and BLOCKED** (2026-07-10, machine-checked vs V8): `HasType.let_poly`
+  generalizes at *exactly* its conclusion ambient (`genAtV lvl`), so gen levels can only move
+  monotonically (via `raiseTy`), which cannot cross a binder level — `v8_moving_g_moves_retTy` /
+  `v8_fixing_retTy_strands_g` prove no threshold separates "move `g`" from "fix `retTy`". The
+  fresh-`g` derivation is a genuinely different derivation, not a transform. So the type-fixed relabel
+  does not exist. The clean fix for UNCONDITIONAL soundness is a **judgment change**: decouple
+  gen-level from ambient in `let_poly` (standard Rémy — pick a fresh `gl`), which makes the floor
+  keystone discharge readiness by construction. See
+  `plan/progress/2026-07-10-G2-B1-blocked-ruleCoupling.md`.
+  See also `2026-07-10-G2-residual-reachability-RESOLVED-V8.md` and the `2026-07-09-G2-routeB-*` notes.
+  AWAITING user decision: B1′ (decouple-gen-level rule change — needs sign-off), B2 (re-architecture),
+  or accept route A (conditional, material below).
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
