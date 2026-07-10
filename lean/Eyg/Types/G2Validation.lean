@@ -245,4 +245,93 @@ theorem v7 : HasTypeV (m := Unit)
     (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
     hbody (.refl _)
 
+-- V8 — the interleaving witness (the residual-reachability prove/refute).
+/-- **V8.** The depth-2 case G16 suspected but never machine-confirmed: a closure whose `retTy`
+carries an inner-lambda-binder level (3) *above* an inner `let_poly` gen level, typed at a colliding
+instantiation. The closure `\x. (let g = \y.y in \w. g x)` has type `α → (γ → α)` — scheme
+`genAtV 1 (.var 1 0 → (.var 3 0 → .var 1 0))`; instantiated at `[.var 2 0]` it must inhabit
+`.var 2 0 → (.var 3 0 → .var 2 0)`. The *natural* stored derivation would generalize `g` at `b`'s
+sublevel `2`, interleaving with the `retTy` binder level `3` — so no threshold `raiseTy` moves `g`
+(≤ 2) while fixing `retTy`'s level 3. **Yet the value IS typeable**: generalize `g` **fresh** at 5,
+and the colliding instantiation `g @ [.var 2 0]` no longer captures. So readiness is *semantically
+true even in the interleaving case*; the difficulty is purely proof-architectural (a fixed stored
+derivation transported by a threshold raise cannot reach it — a fresh re-derivation can). This is
+why route B is a "prove", and why the closing route must re-derive fresh (or relabel structurally),
+not threshold-raise. -/
+theorem v8 : HasTypeV (m := Unit)
+    (.Closure "x"
+      (let_ "g" (lambda "y" (variable_ "y"))
+        (lambda "w" (apply (variable_ "g") (variable_ "x")))) [])
+    ((Scheme.genAtV 1 (.fun (.var 1 0) .empty (.fun (.var 3 0) .empty (.var 1 0)))).instantiateV
+      [.var 2 0]) := by
+  have hinst :
+      (Scheme.genAtV 1 (.fun (.var 1 0) .empty (.fun (.var 3 0) .empty (.var 1 0)))).instantiateV
+        [.var 2 0]
+      = .fun (.var 2 0) .empty (.fun (.var 3 0) .empty (.var 2 0)) := by decide
+  rw [hinst]
+  -- g's defn `\y.y`, generalized FRESH at level 5 (≠ 2, ≠ 3 — avoids the interleaving collision)
+  have hgy : HasType (m := Unit) 6
+      [("y", Scheme.mono (.var 5 0)), ("x", Scheme.mono (.var 2 0))]
+      (variable_ "y") (.var 5 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 6)
+      (Γ := [("y", Scheme.mono (.var 5 0)), ("x", Scheme.mono (.var 2 0))])
+      (x := "y") (s := Scheme.mono (.var 5 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  -- `g x` at ambient 7: g : genAtV 5 (β→β) instantiated at the colliding [.var 2 0]
+  have hg : HasType (m := Unit) 7
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (variable_ "g") (.fun (.var 2 0) .empty (.var 2 0)) .empty := by
+    have hginst :
+        (Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0))).instantiateV [.var 2 0]
+        = .fun (.var 2 0) .empty (.var 2 0) := by decide
+    have h := HasType.var (m := Unit) (lvl := 7)
+      (Γ := [("w", Scheme.mono (.var 3 0)),
+             ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0))),
+             ("x", Scheme.mono (.var 2 0))])
+      (x := "g") (s := Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0)))
+      (args := [.var 2 0]) (ε := .empty) (a := ()) (by decide)
+    rwa [hginst] at h
+  have hx : HasType (m := Unit) 7
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (variable_ "x") (.var 2 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 7)
+      (Γ := [("w", Scheme.mono (.var 3 0)),
+             ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0))),
+             ("x", Scheme.mono (.var 2 0))])
+      (x := "x") (s := Scheme.mono (.var 2 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hgx : HasType (m := Unit) 7
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (apply (variable_ "g") (variable_ "x")) (.var 2 0) .empty :=
+    HasType.app hg (Ty.effWeaken_refl _) hx
+  have hlamw : HasType (m := Unit) 6
+      [("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 5 0))),
+       ("x", Scheme.mono (.var 2 0))]
+      (lambda "w" (apply (variable_ "g") (variable_ "x")))
+      (.fun (.var 3 0) .empty (.var 2 0)) .empty :=
+    HasType.lam (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hgx
+  have hbody : HasType (m := Unit) 5 [("x", Scheme.mono (.var 2 0))]
+      (let_ "g" (lambda "y" (variable_ "y"))
+        (lambda "w" (apply (variable_ "g") (variable_ "x"))))
+      (.fun (.var 3 0) .empty (.var 2 0)) .empty :=
+    HasType.let_poly (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+      hgy
+      (by intro b hb l hl
+          rcases List.mem_singleton.mp hb with rfl
+          simp only [Scheme.mono, Ty.levels, List.mem_singleton] at hl; omega)
+      hlamw
+  exact HasTypeV.closure (lvl' := 5) (by omega) EnvWf.nil
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hbody (.refl _)
+
 end Eyg.Types.G2Validation
