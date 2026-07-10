@@ -334,4 +334,33 @@ theorem v8 : HasTypeV (m := Unit)
     (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
     hbody (.refl _)
 
+/-! ## V8's B1 obstruction, machine-checked — no separating raise threshold
+
+`HasType.let_poly` generalizes at **exactly** its conclusion ambient `lvl` (`genAtV lvl`, body at
+`lvl+1`): an inner `let`'s gen level is rigidly tied to the ambient at which its node is typed, so
+it cannot be changed within a fixed derivation without moving ambients — i.e. only by a **monotone**
+`raiseTy`. For V8 that is impossible: to move `g`'s gen level (2) the raise threshold `t` must be
+`t ≤ 2`, but then `t ≤ 3` so the same raise moves `retTy`'s inner-binder level (3), changing the
+closure's advertised type; and any `t` that fixes level 3 (`t > 3`) leaves `g` stranded at 2, where
+the instantiation `[.var 2 0]` still captures. The two facts below pin this: **no single threshold
+separates "move `g`" from "fix `retTy`".** So B1 (relabel the fixed stored derivation) cannot close
+V8 by any threshold raise — the fresh-`g` derivation V8 exhibits is a genuinely *different*
+derivation, not a transform of the stored one. -/
+
+/-- Any raise that can move `g`'s gen level 2 (threshold `t ≤ 2`) necessarily moves `retTy`'s
+inner-binder level 3 — changing the closure's advertised type. -/
+theorem v8_moving_g_moves_retTy (o t : Nat) (ho : 1 ≤ o) (ht : t ≤ 2) :
+    Ty.raiseTy t o (.var 3 0) ≠ .var 3 0 := by
+  simp only [Ty.raiseTy, if_pos (by omega : t ≤ 3)]
+  intro h; injection h with h1 _; omega
+
+/-- Any raise that fixes `retTy`'s inner-binder level 3 strands `g` at level 2 — where the
+instantiation `[.var 2 0]` still captures `g`'s gen level 2. -/
+theorem v8_fixing_retTy_strands_g (o t : Nat) (ho : 1 ≤ o)
+    (hfix : Ty.raiseTy t o (.var 3 0) = .var 3 0) :
+    Ty.raiseTy t o (.var 2 0) = .var 2 0 := by
+  have ht : ¬ t ≤ 3 := by
+    intro hle; simp only [Ty.raiseTy, if_pos hle] at hfix; injection hfix with h1 _; omega
+  simp only [Ty.raiseTy, if_neg (by omega : ¬ t ≤ 2)]
+
 end Eyg.Types.G2Validation
