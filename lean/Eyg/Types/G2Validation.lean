@@ -425,4 +425,83 @@ theorem w1_old_condition_fails : ¬ (∀ l ∈ (Ty.var 2 0).levels, l = 0 ∨ l 
 /-- The crossing: the floor-widened condition (`l < 3`, a's sublevel) holds for `[.var 2 0]`. -/
 theorem w1_floor_condition_holds : ∀ l ∈ (Ty.var 2 0).levels, l = 0 ∨ l = 1 ∨ l < 3 := by decide
 
+/-! ## R1 — the escaping-`retTy` candidate admits a DISCIPLINED (closing) derivation
+
+The residual for unconditional route B is the escaping-`retTy` case: a closure whose `retTy` has a
+level `≥ lvl'`. The sharpest candidate is `\x. (let g = \y.x in \w. g w)` — `x` flows into `g`'s
+generalized defn, and `\w` is *inside* `g`'s let, so `\w`'s binder level can sit above `g`'s gen
+level. R1 machine-checks that this closure **admits a disciplined derivation**: `g` generalized
+fresh at 5, and `\w`'s binder level chosen **3** (kept *below* the sublevel 5). Then
+`retTy = .var 3 0 → .var 1 0` has all levels `{3, 1} < lvl' = 5` (`r1_retTy_below_sublevel`) — the
+CLOSING case, so `genAtV_instantiate_lam_ready_universal` discharges readiness at any args.
+
+So the escaping-`retTy` residual is a **level choice**, not an inherent obstruction: a binder's
+*level* is independent of its *ambient* (here binder 3 under ambient 6), so the same closure syntax
+admits a `retTy < lvl'` derivation. The remaining open question is whether the *program's inference*
+is forced to produce an escaping scheme (binder level `=` ambient) or free to produce a disciplined
+one — a
+generation-semantics question, not a readiness-transform obstruction. -/
+theorem r1_disciplined_body : HasType (m := Unit) 5 [("x", Scheme.mono (.var 1 0))]
+    (let_ "g" (lambda "y" (variable_ "x"))
+      (lambda "w" (apply (variable_ "g") (variable_ "w"))))
+    (.fun (.var 3 0) .empty (.var 1 0)) .empty := by
+  have hgdefn : HasType (m := Unit) 6
+      [("y", Scheme.mono (.var 5 0)), ("x", Scheme.mono (.var 1 0))]
+      (variable_ "x") (.var 1 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 6)
+      (Γ := [("y", Scheme.mono (.var 5 0)), ("x", Scheme.mono (.var 1 0))])
+      (x := "x") (s := Scheme.mono (.var 1 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hg : HasType (m := Unit) 7
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0))),
+       ("x", Scheme.mono (.var 1 0))]
+      (variable_ "g") (.fun (.var 3 0) .empty (.var 1 0)) .empty := by
+    have hginst : (Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0))).instantiateV [.var 3 0]
+        = .fun (.var 3 0) .empty (.var 1 0) := by decide
+    have h := HasType.var (m := Unit) (lvl := 7)
+      (Γ := [("w", Scheme.mono (.var 3 0)),
+             ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0))),
+             ("x", Scheme.mono (.var 1 0))])
+      (x := "g") (s := Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0)))
+      (args := [.var 3 0]) (ε := .empty) (a := ()) (by decide)
+    rwa [hginst] at h
+  have hw : HasType (m := Unit) 7
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0))),
+       ("x", Scheme.mono (.var 1 0))]
+      (variable_ "w") (.var 3 0) .empty := by
+    have h := HasType.var (m := Unit) (lvl := 7)
+      (Γ := [("w", Scheme.mono (.var 3 0)),
+             ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0))),
+             ("x", Scheme.mono (.var 1 0))])
+      (x := "w") (s := Scheme.mono (.var 3 0)) (args := ([] : List Ty)) (ε := .empty)
+      (a := ()) (by decide)
+    rwa [Scheme.instantiateV_mono] at h
+  have hgw : HasType (m := Unit) 7
+      [("w", Scheme.mono (.var 3 0)),
+       ("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0))),
+       ("x", Scheme.mono (.var 1 0))]
+      (apply (variable_ "g") (variable_ "w")) (.var 1 0) .empty :=
+    HasType.app hg (Ty.effWeaken_refl _) hw
+  have hlamw : HasType (m := Unit) 6
+      [("g", Scheme.genAtV 5 (.fun (.var 5 0) .empty (.var 1 0))),
+       ("x", Scheme.mono (.var 1 0))]
+      (lambda "w" (apply (variable_ "g") (variable_ "w")))
+      (.fun (.var 3 0) .empty (.var 1 0)) .empty :=
+    HasType.lam (by omega)
+      (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega) hgw
+  exact HasType.let_poly (by omega)
+    (by intro l hl; simp only [Ty.levels, List.mem_singleton] at hl; omega)
+    hgdefn
+    (by intro b hb l hl
+        rcases List.mem_singleton.mp hb with rfl
+        simp only [Scheme.mono, Ty.levels, List.mem_singleton] at hl; omega)
+    hlamw
+
+/-- R1's `retTy` sits entirely below the sublevel 5 — the closing case. -/
+theorem r1_retTy_below_sublevel :
+    ∀ l ∈ (Ty.fun (.var 3 0) .empty (.var 1 0)).levels, l < 5 := by decide
+
 end Eyg.Types.G2Validation
