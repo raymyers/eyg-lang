@@ -232,11 +232,11 @@ theorem hasType_substAt_le_of_multi {ℓ : Nat} (hℓ : ℓ ≠ 0) (σ : Nat →
   hasType_substAt_multi hℓ σ (fun i l hl => (hσ i l hl).imp_right Or.inl) hng hlt hΓ
 
 /-- **The floor-conditioned term-level readiness keystone.** The `hasType_substAt_multi`-powered
-generalization of `genAtV_instantiate_lam_ready_le`: a value-restricted lambda's `genAtV ℓ`-scheme is
+generalization of `genAtV_instantiate_lam_ready_le`: a value-restricted lambda's `genAtV ℓ`-scheme
 realised as a genuine `substAt ℓ` re-typing of its own body derivation at instantiation args whose
 levels obey the **floor** form `l = 0 ∨ l = ℓ ∨ (l < lvl' ∧ PolyAboveFV l Γ ⟨lam⟩)` — with `lvl'`
 (the body sublevel) as the floor `B`. This is the consumption site the plan's §3 names: exactly the
-G30/G31 off-scheme instantiation levels are now admitted (they satisfy `l < lvl'`), with no grounding.
+G30/G31 off-scheme instantiation levels are now admitted (they satisfy `l < lvl'`), no grounding.
 The `_le` keystone is the `hargs ⊆ {0, ℓ}` special case. -/
 theorem genAtV_instantiate_lam_ready_floor {ℓ : Nat} (hℓ : ℓ ≠ 0)
     {lvl' : Nat} {Γ : Ctx} {x : String} {lbody : Tree.Node m} {la : m}
@@ -295,5 +295,52 @@ theorem genAtV_instantiate_lam_ready_floor {ℓ : Nat} (hℓ : ℓ ≠ 0)
     have hfix : substCtxAt ℓ (fun i => args.getD i (.var ℓ i)) Γ = Γ := substCtxAt_fix hΓwf
     rw [hfix] at hlam
     simpa only [Ty.substAt, hdefn] using hlam
+
+/-! ## Universal readiness for the closing case (via `hasType_fullRaise`) -/
+
+/-- `raiseScheme_U` fixes a scheme whose gen level and body levels are all `< t`. -/
+theorem raiseScheme_U_eq_self {t o : Nat} {s : Scheme}
+    (hlvl : s.level < t) (hbody : ∀ l ∈ s.body.levels, l < t) :
+    raiseScheme_U t o s = s := by
+  simp only [raiseScheme_U, if_neg (Nat.not_le.mpr hlvl), Ty.raiseTy_eq_self_of_levels_lt hbody]
+
+/-- `raiseCtx_U` fixes a context all of whose schemes it fixes. -/
+theorem raiseCtx_U_eq_self {t o : Nat} {Γ : Ctx}
+    (h : ∀ b ∈ Γ, raiseScheme_U t o b.2 = b.2) : raiseCtx_U t o Γ = Γ := by
+  induction Γ with
+  | nil => rfl
+  | cons b tl ih =>
+      rw [raiseCtx_U_cons, ih (fun c hc => h c (List.mem_cons_of_mem _ hc)),
+        h b List.mem_cons_self]
+
+/-- **Universal readiness for the CLOSING case.** When the closure's captured context `Γ`, `argTy`,
+`retTy`, and `εb` all have levels `< lvl'` (the body sublevel), readiness holds at **any** args:
+raise
+the stored body's sublevel above the args by a fresh offset `o` (the closure's advertised type is
+unchanged — every moved level is `< lvl'` = the raise threshold, so `raiseTy` fixes it), then the
+floor keystone discharges. No `ArgsDisc`, no rule change — only `hasType_fullRaise` (landed) + the
+floor keystone. The residual is exactly the escaping-`retTy` case where a `< lvl'` premise fails. -/
+theorem genAtV_instantiate_lam_ready_universal {ℓ lvl' : Nat} {Γ : Ctx} {x : String}
+    {lbody : Tree.Node m} {la : m} {argTy εb retTy ε : Ty}
+    (hℓ : ℓ ≠ 0) (hlt : ℓ ≤ lvl') (h1 : 1 ≤ lvl')
+    (hfv : ∀ l ∈ argTy.levels, l < lvl')
+    (hretTy : ∀ l ∈ retTy.levels, l < lvl')
+    (hεb : ∀ l ∈ εb.levels, l < lvl')
+    {hbody : HasType lvl' ((x, .mono argTy) :: Γ) lbody retTy εb}
+    (hΓpa : ∀ l, PolyAboveFV l Γ ⟨.Lambda x lbody, la⟩)
+    (hΓwf : CtxWfV ℓ Γ) (hΓlt : CtxWfV lvl' Γ) (hΓsl : ∀ b ∈ Γ, b.2.level < lvl')
+    (o : Nat) (ho : 1 ≤ o) (args : List Ty)
+    (hargbound : ∀ t ∈ args, ∀ l ∈ t.levels, l < lvl' + o) :
+    HasType ℓ Γ ⟨.Lambda x lbody, la⟩
+      ((Scheme.genAtV ℓ (.fun argTy εb retTy)).instantiateV args) ε := by
+  have hraised := hasType_fullRaise (t := lvl') (o := o) h1 hbody (le_refl lvl')
+  rw [raiseCtx_U_cons, raiseScheme_U_mono h1, Ty.raiseTy_eq_self_of_levels_lt hfv,
+      raiseCtx_U_eq_self
+        (fun b hb => raiseScheme_U_eq_self (hΓsl b hb) (fun l hl => hΓlt b hb l hl)),
+      Ty.raiseTy_eq_self_of_levels_lt hretTy, Ty.raiseTy_eq_self_of_levels_lt hεb] at hraised
+  exact genAtV_instantiate_lam_ready_floor hℓ (by omega : ℓ ≤ lvl' + o)
+    (fun l hl => by have := hfv l hl; omega)
+    (noGenAt_of_lt hraised (by omega)) (hΓpa ℓ) hΓwf args
+    (fun t ht l hl => Or.inr (Or.inr ⟨hargbound t ht l hl, hΓpa l⟩))
 
 end Eyg.Types
