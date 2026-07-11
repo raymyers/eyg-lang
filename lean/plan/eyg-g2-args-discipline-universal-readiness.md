@@ -92,11 +92,29 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   entry-premise restriction (`ArgsDisc`, §2/§4) / decoupled-`let_poly` (finding 5). The restriction
   path is the sign-off-ready one. See
   `plan/progress/2026-07-10-G2-interleaving-wall-constructed-W2.md`.
-  NEXT: **Phase-0 sign-off** on the entry-premise replacement (§4) / decoupled-`let_poly` direction —
-  the interleaving witness (W2) shows an unrestricted-entry `soundness` cannot be discharged by the
-  substitution/raise keystone; the restriction confines entry to disciplined derivations (retTy < lvl'
-  at every closure), which the universal-closing lemma already covers. Alternatively (higher risk),
-  attempt the re-derivation keystone as a general lemma before committing to the rule change.
+  (11) **Phase 0 SIGNED OFF (user, 2026-07-10): bolt the discipline on at the front door.** The entry
+  premise is restricted to *closure-disciplined* derivations (every lambda's `retTy`/`εb` `< lvl'`),
+  not a rule change. (12) **Phase 2 spike GREEN — `ClosDisc` + universal readiness** (2026-07-10,
+  `Eyg/Types/G2DiscSpike.lean`, no sorry, `[propext, Classical.choice, Quot.sound]`):
+  - `ClosDisc` — the front-door discipline predicate, `NoGenAt`-shaped (indexed by the `HasType`
+    derivation). `lam`/`let_poly` arms record `retTy.levels < lvl' ∧ εb.levels < lvl'`; **recurses into
+    lambda/defn bodies** (static, storable). Because the universal-closing lemma needs no args
+    condition, `var`/`builtin` arms are **unconditional** — **no floor carrier**, a real simplification
+    over the plan's original `ArgsDisc` (which is hereby superseded by `ClosDisc`).
+  - `closDisc_closure_ready_any` — universal readiness at **any** args (picks the raise offset per args
+    via `argsRaiseOffset`), from the closing-case discipline; consumes `genAtV_instantiate_lam_ready_universal`.
+  - `closDisc_closure_ready_value` — the value-level payoff: universal `HasTypeV (Closure …)
+    ((genAtV ℓ defnTy).instantiateV args)` for every `args` (the shape a discipline-widened `EnvWf.cons`
+    stores). Two residual hypotheses (`hΓpa : ∀ l, PolyAboveFV l Γ`, `hΓsl : ∀ b ∈ Γ, b.2.level < lvl'`)
+    are standard captured-context invariants deferred to the Phase-3 runtime threading. NOTE the
+    `∀ l, PolyAboveFV l Γ` shape effectively demands the captured context be **mono-only** for the
+    universal lemma — a Phase-3 risk to check (poly captures may need the floor route after all).
+  See `plan/progress/2026-07-10-G2-phase2-closDisc-spike-GREEN.md`.
+  NEXT: **Phase 3** — widen `EnvWf.cons`'s promise to the universal form (drop the `l = 0 ∨ l = s.level`
+  bound), store `ClosDisc` on `HasTypeV.closure`, swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`,
+  and swap `soundness`'s entry premise `HasTypeRT h → ClosDisc h`. Discharge the `hΓpa`/`hΓsl` context
+  invariants via the runtime well-formedness (and settle the mono-only-`hΓpa` risk). Compiler-first;
+  keep `Soundness.lean` red only across the authorized Session-A/B pairing.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
