@@ -138,7 +138,15 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
     poly-capturing closures. Carrier-free throughout. The def-site/use-site alignment (plan risk #1/#3)
     is discharged by `polyAboveFV_of_argCond` (freshness = `CtxPolyBd` + `CtxWfV`).
   See `plan/progress/2026-07-10-G2-phase2b-polycapture-RESOLVED.md`.
-  NEXT: **Phase 3 (runtime re-thread)** — widen `EnvWf.cons`'s promise to the conditional form
+  (15) **Phase 3 started — `ClosDisc` promoted to the build tree** (2026-07-10,
+  `Eyg/Types/ClosDisc.lean`, builds green via `lake build Eyg.Types.ClosDisc`, no sorry). The predicate
+  (with the Phase-2b `var`/`builtin` args condition) now lives in its own module depending only on
+  `HasType` (`Typing`), positioned **before `Runtime`** so the next step can `import Eyg.Types.ClosDisc`
+  in `Runtime.lean` and add a `ClosDisc` field to `HasTypeV.closure`. `G2DiscSpike.lean` now imports the
+  promoted definition (readiness lemmas stay there pending the `G2Spike`-chain promotion). This is the
+  first *additive, green* atom of the runtime re-thread; the breaking `EnvWf`/`HasTypeV`/`MStateWf`/
+  `soundness` surgery is the paired Session-A/B that follows.
+  NEXT: **Phase 3 (runtime re-thread), continued** — widen `EnvWf.cons`'s promise to the conditional form
   `∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ s.level ≤ l) → HasTypeV v (s.instantiateV args)`; store
   `ClosDisc` on `HasTypeV.closure`; swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`; swap
   `soundness`'s entry premise `HasTypeRT h → ClosDisc h`. Discharge the readiness at the `let_poly`
