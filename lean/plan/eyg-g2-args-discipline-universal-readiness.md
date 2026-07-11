@@ -98,9 +98,9 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   `Eyg/Types/G2DiscSpike.lean`, no sorry, `[propext, Classical.choice, Quot.sound]`):
   - `ClosDisc` — the front-door discipline predicate, `NoGenAt`-shaped (indexed by the `HasType`
     derivation). `lam`/`let_poly` arms record `retTy.levels < lvl' ∧ εb.levels < lvl'`; **recurses into
-    lambda/defn bodies** (static, storable). Because the universal-closing lemma needs no args
-    condition, `var`/`builtin` arms are **unconditional** — **no floor carrier**, a real simplification
-    over the plan's original `ArgsDisc` (which is hereby superseded by `ClosDisc`).
+    lambda/defn bodies** (static, storable). `var`/`builtin` arms currently unconditional (see the
+    correction in finding 13 — an arg-level `PolyAboveFV` avoidance must be added back for poly
+    capture).
   - `closDisc_closure_ready_any` — universal readiness at **any** args (picks the raise offset per args
     via `argsRaiseOffset`), from the closing-case discipline; consumes `genAtV_instantiate_lam_ready_universal`.
   - `closDisc_closure_ready_value` — the value-level payoff: universal `HasTypeV (Closure …)
@@ -110,11 +110,28 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
     `∀ l, PolyAboveFV l Γ` shape effectively demands the captured context be **mono-only** for the
     universal lemma — a Phase-3 risk to check (poly captures may need the floor route after all).
   See `plan/progress/2026-07-10-G2-phase2-closDisc-spike-GREEN.md`.
-  NEXT: **Phase 3** — widen `EnvWf.cons`'s promise to the universal form (drop the `l = 0 ∨ l = s.level`
-  bound), store `ClosDisc` on `HasTypeV.closure`, swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`,
-  and swap `soundness`'s entry premise `HasTypeRT h → ClosDisc h`. Discharge the `hΓpa`/`hΓsl` context
-  invariants via the runtime well-formedness (and settle the mono-only-`hΓpa` risk). Compiler-first;
-  keep `Soundness.lean` red only across the authorized Session-A/B pairing.
+  (13) **RISK CONFIRMED (2026-07-10, `G2DiscSpike.lean:hΓpa_fails`, `[propext]`): the universal route
+  covers only MONO-capturing closures.** The universal readiness lemma needs `∀ l, PolyAboveFV l Γ`,
+  which forces the captured `Γ` mono. But a closure that captures and USES an outer poly binding is the
+  **ordinary** nested-polymorphism shape `let a = id in let b = \w. a w in b 5` (`b` is `let_poly`, its
+  captured `Γ` holds the poly `a`, its body uses `a`) — common, not an edge case. So `ClosDisc`'s
+  `var`/`builtin` arms **cannot stay unconditional**: the plan's args-**avoidance** condition
+  (`arg levels ∉ polySchemeLevels Γ`, i.e. `PolyAboveFV` at the arg levels) must be **restored** on the
+  `var`/`builtin` arms and in the `EnvWf.cons` promise, and readiness for the poly-capture fragment
+  falls back to the **floor keystone** (`genAtV_instantiate_lam_ready_floor`, whose `hargs` already
+  carries `PolyAboveFV l Γ`). Corrections to finding (12): (a) the numeric floor `l < lvl'` IS
+  eliminated (delivered by the universal raise), but (b) the `PolyAboveFV` set-avoidance is **not** —
+  it returns, so `ArgsDisc` is only *partly* superseded. The avoidance is nonetheless **carrier-free**
+  (`Γ` is a derivation index, so `PolyAboveFV l Γ e` is computable from it — no floor list to thread).
+  See `plan/progress/2026-07-10-G2-phase3-polycapture-risk-CONFIRMED.md`.
+  NEXT: **Phase 2b** (before touching runtime) — augment `ClosDisc.var`/`.builtin` with the arg-level
+  `PolyAboveFV l Γ` condition, and prove a **hybrid** `closDisc_closure_ready_value` that covers the
+  poly-capture fragment via the floor keystone (the promise carries `∀ arg level l, l = 0 ∨ l = s.level
+  ∨ (PolyAboveFV l Γ)`). Then **Phase 3**: widen `EnvWf.cons` to this conditional promise, store
+  `ClosDisc` on `HasTypeV.closure`, swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`, swap
+  `soundness`'s entry premise `HasTypeRT h → ClosDisc h`, discharge `hΓsl`/`PolyAboveFV` from runtime
+  well-formedness. Compiler-first; keep `Soundness.lean` red only across the authorized Session-A/B
+  pairing.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness

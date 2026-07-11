@@ -14,12 +14,18 @@ sublevel `lvl'`. Those are exactly the derivations a Rémy/OCaml-style inference
 generalization levels), and exactly the CLOSING case the universal readiness lemma
 (`genAtV_instantiate_lam_ready_universal`, finding 7) discharges at **any** args.
 
-Because the universal lemma needs **no** args condition, `ClosDisc`'s `var`/`builtin` arms are
-**unconditional** — there is no per-binding "floor" and hence no floor carrier to thread (a
-simplification over the plan's original `ArgsDisc`). The only new content lives on the `lam` and
-`let_poly` arms: `retTy.levels < lvl'` and `εb.levels < lvl'`. Unlike `HasTypeRT`, `ClosDisc`
-**recurses into lambda/defn bodies** (it is a static, whole-derivation property), so it is storable on
-a closure value and consumed as-is at apply time.
+The only new content on the `lam`/`let_poly` arms is `retTy.levels < lvl'` and `εb.levels < lvl'`.
+Unlike `HasTypeRT`, `ClosDisc` **recurses into lambda/defn bodies** (it is a static, whole-derivation
+property), so it is storable on a closure value and consumed as-is at apply time.
+
+**Scope note (see the RISK section below).** `ClosDisc`'s `var`/`builtin` arms are currently
+unconditional, and the universal readiness lemma discharges the promise **only for MONO-capturing
+closures**. The de-risking probe (`hΓpa_fails`) confirms that a closure capturing and using a
+*polymorphic* binding (the ordinary `let a = id in let b = \w. a w in b 5` shape) needs the args
+**avoidance** condition retained — so the final `var`/`builtin` arm and the `EnvWf.cons` promise will
+carry `PolyAboveFV` at the arg levels (carrier-free — `Γ` is a derivation index), falling back to the
+floor keystone for that fragment. The numeric floor `l < lvl'` is still eliminated by the universal
+raise; only the set-avoidance is recorded.
 
 Spike; additive; validated with `lake env lean` (independent of the WIP `Soundness.lean`).
 -/
@@ -155,12 +161,13 @@ theorem closDisc_closure_ready_any {ℓ lvl' : Nat} {Γ : Ctx} {x : String}
       hΓpa hΓwf hΓlt hΓsl (argsRaiseOffset args) (argsRaiseOffset_pos args) args
       (fun _ ht _ hl => lt_of_mem_args ht hl)
 
-/-- **Universal closure-VALUE readiness from the discipline fields.** Mirrors
+/-- **Universal closure-VALUE readiness from the discipline fields (MONO-capture fragment).** Mirrors
 `genAtV_closure_ready_value` but with **no** args condition: given the CLOSING-case discipline
-(`argTy`/`retTy`/`εb` `< lvl'`) plus the two standard captured-context invariants (`hΓpa`, `hΓsl` —
-to be supplied by the Phase-3 runtime threading), the closure value is well-typed at
-`(genAtV ℓ defnTy).instantiateV args` for **every** `args`. This is exactly the promise a
-discipline-widened `EnvWf.cons` will store. -/
+(`argTy`/`retTy`/`εb` `< lvl'`) plus the captured-context invariants, the closure value is well-typed
+at `(genAtV ℓ defnTy).instantiateV args` for **every** `args`. **Caveat:** `hΓpa : ∀ l, PolyAboveFV l Γ`
+is satisfiable only when the captured `Γ` is mono (see `hΓpa_fails`); the poly-capture fragment needs
+the floor keystone with a retained arg-level `PolyAboveFV` condition (Phase 3). `hΓsl` is a standard
+runtime invariant deferred to Phase-3 threading. -/
 theorem closDisc_closure_ready_value {ℓ lvl' : Nat} {Γ : Ctx} {x : String}
     {lbody : Tree.Node m} {la : m} {argTy εb retTy : Ty}
     (hℓ : ℓ ≠ 0) (hlt : ℓ < lvl')
@@ -179,6 +186,42 @@ theorem closDisc_closure_ready_value {ℓ lvl' : Nat} {Γ : Ctx} {x : String}
     (hbody := hbody) hΓpa hΓwf hΓlt hΓsl args
   obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heq⟩ := inv_lambda hlam
   exact HasTypeV.closure (Nat.le_trans (Nat.one_le_iff_ne_zero.mpr hℓ) hle') henv hfv' hbody' heq
+
+/-! ## RISK CONFIRMED — the universal route covers only MONO-capturing closures
+
+`closDisc_closure_ready_value` requires `hΓpa : ∀ l, PolyAboveFV l Γ ⟨lam⟩`. `PolyAboveFV l Γ e`
+demands each free var's scheme be `arity = 0 ∨ (level ≠ 0 ∧ level ≠ l)`; for a **poly** binding
+(`arity ≠ 0`) the right disjunct fails at `l = level`, so `∀ l` forces the captured context to be
+**mono-only**. `hΓpa_fails` machine-confirms this for `Γcap = [a : ∀α.α→α]` and the body `\w. a`.
+
+This is **not** an edge case: a closure that captures and *uses* an outer polymorphic binding is the
+ordinary nested-polymorphism shape `let a = id in let b = \w. a w in b 5` — here `b` is `let_poly`,
+its captured context holds the poly `a`, and its body uses `a`. So the universal route alone does
+**not** discharge `EnvWf.cons`'s promise for such closures.
+
+**Consequence for the design.** The `var`/`builtin` arms cannot stay fully unconditional after all: the
+promise must retain the plan's args-**avoidance** condition (`arg levels ∉ polySchemeLevels Γ`, i.e.
+`PolyAboveFV` at the arg levels) so the readiness lemma can avoid capturing a captured scheme's gen
+level. That condition is **carrier-free** (`Γ` is a derivation index, so `PolyAboveFV l Γ e` is
+computable from the index) — but it does mean the promise stays **conditional**, and the underlying
+readiness must fall back to the **floor keystone** (`genAtV_instantiate_lam_ready_floor`, whose
+`hargs` already carries `PolyAboveFV l Γ`) rather than the fully-universal lemma, for the poly-capture
+fragment. The `l < lvl'` floor widening is still delivered by the universal raise; only the
+`PolyAboveFV` avoidance must be recorded. See
+`plan/progress/2026-07-10-G2-phase3-polycapture-risk-CONFIRMED.md`. -/
+
+abbrev Γcap : Ctx := [("a", Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))]
+
+/-- The universal route's `∀ l, PolyAboveFV l Γ ⟨lam⟩` is **false** when the closure captures and uses
+a polymorphic binding — so `closDisc_closure_ready_value` does not apply to poly-capturing closures. -/
+theorem hΓpa_fails : ¬ (∀ l, PolyAboveFV l Γcap ⟨.Lambda "w" (variable_ "a"), ()⟩) := by
+  intro h
+  have h1 := h 1
+  have : (Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0))).arity = 0 ∨
+      ((Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0))).level ≠ 0 ∧
+       (Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0))).level ≠ 1) := by
+    apply h1 "a" _ _ rfl; decide
+  revert this; decide
 
 /-! ## Inhabitation
 
