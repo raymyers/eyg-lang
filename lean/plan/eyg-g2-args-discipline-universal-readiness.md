@@ -167,13 +167,31 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   for `stackSeg_conv_input`'s assign case), additive/green, `[propext, Classical.choice, Quot.sound]`.
   Runtime migration reverted to keep the cone green (only `Soundness.lean` red, as before).
   See `plan/progress/2026-07-11-G2-phase3-field-population-gap.md`.
-  NEXT: **additive spike for `closDisc_fullRaise` + `closDisc_substAt_multi`** — validate with
-  `lake env lean` against a locally-migrated `Runtime.olean` (add the field, don't commit) to
-  compiler-confirm the level argument. This is the go/no-go gate. ONLY once it is green is the
-  entangled Runtime/Substitution/Machine breaking edit worth landing (Session-A) — the `Substitution`
-  producers cannot re-green without it. Then widen `EnvWf.cons`, store `ClosDisc` on `HasTypeV.closure`,
-  swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`, swap `soundness`'s entry premise `HasTypeRT h →
-  ClosDisc h`; keep `Soundness.lean` the only red file across the Session-A/B pairing.
+  (17) **Field-population gate GREEN (2026-07-11, `Eyg/Types/G2ClosDiscReadySpike.lean`, no sorry,
+  `[propext, Classical.choice, Quot.sound]`).** `ClosDisc` **is** preserved through both halves of the
+  readiness transform, so the `ClosDisc hbody` field on `HasTypeV.closure` CAN be supplied at the
+  readiness site — the finding-16 gap closes. Two bundled companions (returning `⟨h', ClosDisc h'⟩` at
+  the transformed type):
+  - `closDisc_substAt_multi` — companion of `hasType_substAt_multi`. `var`/`builtin` args discipline
+    survives with `σ`-levels `0 ∨ ℓ ≤ l` (**exactly the widened promise precondition**); `lam`/`let_poly`
+    `retTy`/`εb` bounds survive with **no new σ-condition**.
+  - `closDisc_fullRaise` — companion of `hasType_fullRaise`. The uniform `+o` relabel shifts every bound
+    `< lvl'` to `< lvl' + o`; args discipline survives (`raiseScheme_U` raises `.level` in lock-step).
+  Two compiler-adjudicated design wins (the dependent-inversion friction the plan flagged): (a) **induct
+  on `ClosDisc` directly**, not `NoGenAt` — `HasType.lam` hides `lvl'` from its type, so `ClosDisc.lam`'s
+  `retTy < lvl'` fields are *un-invertable* at a node (`cases` binds a fresh `lvl'`); inducting on
+  `ClosDisc` gets the fields for free. (b) **Drop `NoGenAt` entirely** — its only structural need
+  (`let_poly`'s `lvl ≠ ℓ`) follows from a *strict* numeric `ℓ < lvl`, which the `argsRaiseOffset` raise
+  supplies (`noGenAt_of_lt`-style). So no derivation-indexed predicate is cross-inverted, and the level
+  argument is fully machine-checked (not in-head). See
+  `plan/progress/2026-07-11-G2-phase3-field-population-gate-GREEN.md`.
+  NEXT: **re-thread the readiness lemmas** (`closDisc_closure_ready_value_hybrid` etc.) to carry
+  `ClosDisc` through `closDisc_fullRaise` + `closDisc_substAt_multi` and hand it to the new field — an
+  additive spike against a locally-migrated `Runtime.olean` (add the field, don't commit). Then the
+  entangled Session-A breaking edit is unblocked: widen `EnvWf.cons`, store `ClosDisc` on
+  `HasTypeV.closure`, swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`, swap `soundness`'s entry premise
+  `HasTypeRT h → ClosDisc h`; keep `Soundness.lean` the only red file across the Session-A/B pairing.
+  (The `closDisc_ctxConv` companion for `stackSeg_conv_input` is already landed, finding 16.)
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
