@@ -146,14 +146,34 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   promoted definition (readiness lemmas stay there pending the `G2Spike`-chain promotion). This is the
   first *additive, green* atom of the runtime re-thread; the breaking `EnvWf`/`HasTypeV`/`MStateWf`/
   `soundness` surgery is the paired Session-A/B that follows.
-  NEXT: **Phase 3 (runtime re-thread), continued** — widen `EnvWf.cons`'s promise to the conditional form
-  `∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ s.level ≤ l) → HasTypeV v (s.instantiateV args)`; store
-  `ClosDisc` on `HasTypeV.closure`; swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`; swap
-  `soundness`'s entry premise `HasTypeRT h → ClosDisc h`. Discharge the readiness at the `let_poly`
-  preservation site via `closDisc_closure_ready_value_hybrid`, supplying `CtxPolyBd`/`CtxWfV`/`hΓsl`
-  from the runtime well-formedness already threaded (`CtxPolyBd` exists in `Typing.lean`). Pair
-  Session-A (non-Soundness cone green) / Session-B (Soundness) per the authorized pattern; keep
-  `Soundness.lean` red only across that pairing.
+  (16) **Phase 3 field-population GAP found (2026-07-11) — corrects the finding-14 "RESOLVED"
+  overclaim; + `closDisc_ctxConv` landed additive/green** (`33d507fa`). Spiking the real Runtime
+  migration (add `ClosDisc hbody` field to `HasTypeV.closure`, widen `EnvWf.cons` to `l = 0 ∨ s.level
+  ≤ l`, swap `StackSegWf` frames RT→ClosDisc) **compiler-confirms** that `closDisc_closure_ready_value`
+  and `_hybrid` were written against the OLD field-less closure: both end `HasTypeV.closure … hbody'
+  heq` where `hbody'` is `inv_lambda`-reconstructed from a **raise-then-substituted** derivation
+  (`hasType_fullRaise` + `hasType_substAt_multi` inside the readiness lemma). The new field needs
+  `ClosDisc hbody'` — i.e. **`ClosDisc` preserved through the raise and the substitution** — which the
+  Phase-2b spike never exercised (no field existed). So the poly-capture readiness *type* is proven but
+  the *field population* is NOT; finding 14's "RESOLVED" is premature for the storable form. The design
+  is still expected to close: the readiness lemma's own `argsRaiseOffset` raise dominates every arg
+  level and lifts nested lambda sublevels to `λ+o`, so a level-`ℓ` substitution keeps every nested
+  `retTy.levels < λ+o` — discipline preserved (a LEVEL argument, to be **compiler-verified**, not
+  trusted — cf. the V8 in-head error). Real Session-A core = a **ClosDisc-carrying re-derivation**:
+  `closDisc_fullRaise` (mirror the `+o` relabel) + `closDisc_substAt_multi` (the ~200-line companion of
+  `hasType_substAt_multi`, bundling `⟨h', ClosDisc h'⟩` at the substituted type, same shape as
+  `hasTypeRT_ctxConv`), then re-thread the readiness lemmas to hand the ClosDisc to the field. Landed
+  this turn: `closDisc_ctxConv`/`closDisc_ctxHead_conv` in `ClosDisc.lean` (the `HasTypeRT`-companion
+  for `stackSeg_conv_input`'s assign case), additive/green, `[propext, Classical.choice, Quot.sound]`.
+  Runtime migration reverted to keep the cone green (only `Soundness.lean` red, as before).
+  See `plan/progress/2026-07-11-G2-phase3-field-population-gap.md`.
+  NEXT: **additive spike for `closDisc_fullRaise` + `closDisc_substAt_multi`** — validate with
+  `lake env lean` against a locally-migrated `Runtime.olean` (add the field, don't commit) to
+  compiler-confirm the level argument. This is the go/no-go gate. ONLY once it is green is the
+  entangled Runtime/Substitution/Machine breaking edit worth landing (Session-A) — the `Substitution`
+  producers cannot re-green without it. Then widen `EnvWf.cons`, store `ClosDisc` on `HasTypeV.closure`,
+  swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`, swap `soundness`'s entry premise `HasTypeRT h →
+  ClosDisc h`; keep `Soundness.lean` the only red file across the Session-A/B pairing.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
