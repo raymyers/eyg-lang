@@ -98,4 +98,96 @@ inductive ClosDisc {m : Type} :
       (hτ : Ty.TyEquiv τ τ') (hε : Ty.TyEquiv ε ε') :
       ClosDisc h → ClosDisc (HasType.conv h hτ hε)
 
+/-- **`ClosDisc`-indexed context-binding conversion** (the `ClosDisc` companion to
+`hasTypeRT_ctxConv`). Unlike `HasTypeRT`, `ClosDisc` recurses into lambda/defn bodies, so the
+`lam`/`let_poly` arms rebuild the body's `ClosDisc` from the induction hypothesis rather than
+re-deriving a plain `HasType`. Consumed by `stackSeg_conv_input` (via `closDisc_ctxHead_conv`). -/
+theorem closDisc_ctxConv {m : Type} {lvl : Nat} {Γ₀ : Ctx} {e : Tree.Node m} {τ ε : Ty}
+    {h : HasType lvl Γ₀ e τ ε} (hcd : ClosDisc h) :
+    ∀ (Δ Γ : Ctx) (x : String) (σ σ' : Ty),
+      Γ₀ = Δ ++ (x, .mono σ) :: Γ → Ty.TyEquiv σ' σ →
+      ∃ h' : HasType lvl (Δ ++ (x, .mono σ') :: Γ) e τ ε, ClosDisc h' := by
+  induction hcd with
+  | @var lvl Γ₁ y s args ε' a hl hargs =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      rw [List.lookup_append] at hl
+      cases hΔ : Δ.lookup y with
+      | some v =>
+          rw [hΔ, Option.some_or] at hl; cases hl
+          exact ⟨HasType.var (by rw [List.lookup_append, hΔ, Option.some_or]),
+            ClosDisc.var (by rw [List.lookup_append, hΔ, Option.some_or]) hargs⟩
+      | none =>
+          rw [hΔ, Option.none_or] at hl
+          by_cases hyx : (y == x) = true
+          · simp only [List.lookup_cons, hyx] at hl; cases hl
+            refine ⟨HasType.conv
+              (HasType.var (s := .mono σ') (args := args)
+                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx]))
+              ?_ (.refl _), ClosDisc.conv ?_ (.refl _)
+                (ClosDisc.var (s := .mono σ') (args := args)
+                  (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx])
+                  hargs)⟩
+            · simp only [Scheme.instantiateV_mono]; exact hc
+            · simp only [Scheme.instantiateV_mono]; exact hc
+          · simp only [List.lookup_cons, hyx] at hl ⊢
+            exact ⟨HasType.var (s := s) (args := args)
+                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx]; exact hl),
+              ClosDisc.var (s := s) (args := args)
+                (by simp only [List.lookup_append, hΔ, Option.none_or, List.lookup_cons, hyx]; exact hl) hargs⟩
+  | @lam lvl lvl' Γ₁ z body argTy εb retTy ε' a hle hfv hret hεb hbody cdbody ih =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨hb', cdb'⟩ := ih ((z, .mono argTy) :: Δ) Γ x σ σ' rfl hc
+      exact ⟨HasType.lam hle hfv hb', ClosDisc.lam hle hfv hret hεb cdb'⟩
+  | @app lvl Γ₁ f arg argTy εf retTy ε' a hf hw harg cdf cdarg ihf iharg =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨hf', cdf'⟩ := ihf Δ Γ x σ σ' rfl hc
+      obtain ⟨harg', cdarg'⟩ := iharg Δ Γ x σ σ' rfl hc
+      exact ⟨HasType.app hf' hw harg', ClosDisc.app (hw := hw) cdf' cdarg'⟩
+  | @let_ lvl lvl' Γ₁ z defn body defnTy bodyTy ε' a hdefn hle hfv hbody cdd cdb ihd ihb =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨hd', cdd'⟩ := ihd Δ Γ x σ σ' rfl hc
+      obtain ⟨hb', cdb'⟩ := ihb ((z, .mono defnTy) :: Δ) Γ x σ σ' rfl hc
+      exact ⟨HasType.let_ hd' hle hfv hb', ClosDisc.let_ hle hfv cdd' cdb'⟩
+  | @let_poly lvl lvl' Γ₁ z lx lbody la body argTy εb retTy bodyTy ε' a hstrict hfv hret hεb
+      hbodydefn hcw hbody cddefn cdbody ihdefn ihbody =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨hbd', cdbd'⟩ := ihdefn ((lx, Scheme.mono argTy) :: Δ) Γ x σ σ' rfl hc
+      obtain ⟨hb', cdb'⟩ :=
+        ihbody ((z, Scheme.genAtV lvl (.fun argTy εb retTy)) :: Δ) Γ x σ σ' rfl hc
+      have hcw' := ctxWfV_ctxConv hc hcw
+      exact ⟨HasType.let_poly hstrict hfv hbd' hcw' hb',
+        ClosDisc.let_poly hstrict hfv hret hεb (hcw := hcw') cdbd' cdb'⟩
+  | int => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.int, ClosDisc.int⟩
+  | str => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.str, ClosDisc.str⟩
+  | bin => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.bin, ClosDisc.bin⟩
+  | builtin hs hargs =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      exact ⟨HasType.builtin hs, ClosDisc.builtin hs hargs⟩
+  | tail => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.tail, ClosDisc.tail⟩
+  | cons => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.cons, ClosDisc.cons⟩
+  | tag => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.tag, ClosDisc.tag⟩
+  | nocases =>
+      intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.nocases, ClosDisc.nocases⟩
+  | case_ => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.case_, ClosDisc.case_⟩
+  | select => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.select, ClosDisc.select⟩
+  | extend => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.extend, ClosDisc.extend⟩
+  | overwrite =>
+      intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.overwrite, ClosDisc.overwrite⟩
+  | empty => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.empty, ClosDisc.empty⟩
+  | perform =>
+      intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.perform, ClosDisc.perform⟩
+  | handle => intro Δ Γ x σ σ' heq hc; subst heq; exact ⟨HasType.handle, ClosDisc.handle⟩
+  | @conv lvl Γ₁ e' τ' τ'' ε₁ ε₂ hh hτ hε cdh ih =>
+      intro Δ Γ x σ σ' heq hc; subst heq
+      obtain ⟨h'', cdh''⟩ := ih Δ Γ x σ σ' rfl hc
+      exact ⟨HasType.conv h'' hτ hε, ClosDisc.conv hτ hε cdh''⟩
+
+/-- The head-binding (`Δ = []`) specialization of `closDisc_ctxConv`, the form `stackSeg_conv_input`
+uses. -/
+theorem closDisc_ctxHead_conv {m : Type} {lvl : Nat} {Γ : Ctx} {e : Tree.Node m} {x : String}
+    {σ σ' τ ε : Ty} {h : HasType lvl ((x, .mono σ) :: Γ) e τ ε} (hcd : ClosDisc h)
+    (hc : Ty.TyEquiv σ' σ) :
+    ∃ h' : HasType lvl ((x, .mono σ') :: Γ) e τ ε, ClosDisc h' :=
+  closDisc_ctxConv hcd [] Γ x σ σ' rfl hc
+
 end Eyg.Types
