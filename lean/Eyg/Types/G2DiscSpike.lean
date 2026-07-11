@@ -18,14 +18,17 @@ The only new content on the `lam`/`let_poly` arms is `retTy.levels < lvl'` and `
 Unlike `HasTypeRT`, `ClosDisc` **recurses into lambda/defn bodies** (it is a static, whole-derivation
 property), so it is storable on a closure value and consumed as-is at apply time.
 
-**Scope note (see the RISK section below).** `ClosDisc`'s `var`/`builtin` arms are currently
-unconditional, and the universal readiness lemma discharges the promise **only for MONO-capturing
-closures**. The de-risking probe (`hΓpa_fails`) confirms that a closure capturing and using a
-*polymorphic* binding (the ordinary `let a = id in let b = \w. a w in b 5` shape) needs the args
-**avoidance** condition retained — so the final `var`/`builtin` arm and the `EnvWf.cons` promise will
-carry `PolyAboveFV` at the arg levels (carrier-free — `Γ` is a derivation index), falling back to the
-floor keystone for that fragment. The numeric floor `l < lvl'` is still eliminated by the universal
-raise; only the set-avoidance is recorded.
+**The `var`/`builtin` args condition (Phase 2b).** The universal readiness lemma alone covers only
+MONO-capturing closures (`hΓpa_fails`): a closure that captures and uses a *polymorphic* binding — the
+ordinary `let a = id in let b = \w. a w in b 5` — needs an arg-level `PolyAboveFV` avoidance. The
+`var`/`builtin` arms carry the **Γ-free** condition `∀ arg level l, l = 0 ∨ s.level ≤ l`, which — via
+the freshness invariant `CtxPolyBd Γ` (captured poly levels `≠ 0`, `∈ body`) + `CtxWfV s.level Γ` —
+*implies* `PolyAboveFV l Γ` at every arg level (`polyAboveFV_of_argCond` below). This is exactly the
+Rémy-inference shape (a scheme is instantiated at fresh vars at the current level `≥ s.level`, or at
+generalized-away `0`), so it rejects nothing a real inferencer produces. The numeric floor `l < lvl'`
+is eliminated by the universal raise; only this set-avoidance is recorded — and it is **carrier-free**
+(`s.level` is on the scheme; `Γ` is a derivation index). Readiness for the poly-capture fragment goes
+through the floor keystone (`closDisc_closure_ready_value_hybrid`).
 
 Spike; additive; validated with `lake env lean` (independent of the WIP `Soundness.lean`).
 -/
@@ -45,7 +48,8 @@ storable and consumed without re-establishment. `var`/`builtin`/atomics are unco
 inductive ClosDisc {m : Type} :
     {lvl : Nat} → {Γ : Ctx} → {e : Tree.Node m} → {τ ε : Ty} →
     HasType lvl Γ e τ ε → Prop where
-  | var {lvl Γ x s args ε a} (hl : Γ.lookup x = some s) :
+  | var {lvl Γ x s args ε a} (hl : Γ.lookup x = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ s.level ≤ l) :
       ClosDisc (HasType.var (lvl := lvl) (Γ := Γ) (x := x) (s := s) (args := args)
         (ε := ε) (a := a) hl)
   | lam {lvl lvl' Γ x body argTy εb retTy ε a}
@@ -76,7 +80,8 @@ inductive ClosDisc {m : Type} :
       ClosDisc (HasType.str (m := m) (lvl := lvl) (Γ := Γ) (s := s) (ε := ε) (a := a))
   | bin {lvl Γ b ε a} :
       ClosDisc (HasType.bin (m := m) (lvl := lvl) (Γ := Γ) (b := b) (ε := ε) (a := a))
-  | builtin {lvl Γ id s args ε a} (hs : Builtins.scheme id = some s) :
+  | builtin {lvl Γ id s args ε a} (hs : Builtins.scheme id = some s)
+      (hargs : ∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ s.level ≤ l) :
       ClosDisc (HasType.builtin (lvl := lvl) (Γ := Γ) (args := args) (ε := ε) (a := a) hs)
   | tail {lvl Γ elem ε a} :
       ClosDisc (HasType.tail (m := m) (lvl := lvl) (Γ := Γ) (elem := elem) (ε := ε) (a := a))
@@ -187,28 +192,92 @@ theorem closDisc_closure_ready_value {ℓ lvl' : Nat} {Γ : Ctx} {x : String}
   obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heq⟩ := inv_lambda hlam
   exact HasTypeV.closure (Nat.le_trans (Nat.one_le_iff_ne_zero.mpr hℓ) hle') henv hfv' hbody' heq
 
-/-! ## RISK CONFIRMED — the universal route covers only MONO-capturing closures
+/-! ## Phase 2b — the hybrid readiness covering the POLY-capture fragment
 
-`closDisc_closure_ready_value` requires `hΓpa : ∀ l, PolyAboveFV l Γ ⟨lam⟩`. `PolyAboveFV l Γ e`
-demands each free var's scheme be `arity = 0 ∨ (level ≠ 0 ∧ level ≠ l)`; for a **poly** binding
-(`arity ≠ 0`) the right disjunct fails at `l = level`, so `∀ l` forces the captured context to be
-**mono-only**. `hΓpa_fails` machine-confirms this for `Γcap = [a : ∀α.α→α]` and the body `\w. a`.
+The bridge: the Γ-free arg condition `l = 0 ∨ ℓ ≤ l` (`ℓ = s.level`), under the standard freshness
+invariant `CtxPolyBd Γ` + `CtxWfV ℓ Γ`, implies `PolyAboveFV l Γ e` at every arg level — so a
+poly-capturing closure's readiness is dischargeable by the floor keystone (after the universal raise),
+with **no** `∀ l` mono-only requirement. -/
 
-This is **not** an edge case: a closure that captures and *uses* an outer polymorphic binding is the
-ordinary nested-polymorphism shape `let a = id in let b = \w. a w in b 5` — here `b` is `let_poly`,
-its captured context holds the poly `a`, and its body uses `a`. So the universal route alone does
-**not** discharge `EnvWf.cons`'s promise for such closures.
+/-- **Def-site ↔ use-site bridge.** The Γ-free `l = 0 ∨ ℓ ≤ l` gives `PolyAboveFV l Γ e` (`ℓ` the
+closure's gen level = `s.level`): a captured poly binding's level is `≠ 0` (`CtxPolyBd`) and `< ℓ ≤ l`
+(`CtxWfV ℓ Γ`), hence `≠ l`; the `l = 0` case is `≠ 0` directly. -/
+theorem polyAboveFV_of_argCond {ℓ l : Nat} {Γ : Ctx} {e : Tree.Node m}
+    (hnz : CtxPolyBd Γ) (hΓwf : CtxWfV ℓ Γ) (hl : l = 0 ∨ ℓ ≤ l) :
+    PolyAboveFV l Γ e := by
+  rcases hl with rfl | hle
+  · intro x _ s hlk
+    by_cases h0 : s.arity = 0
+    · exact Or.inl h0
+    · obtain ⟨hne0, _⟩ := hnz (x, s) (lookup_mem hlk) h0
+      exact Or.inr ⟨hne0, hne0⟩
+  · exact polyAboveFV_of_ctxPolyBd hnz
+      (fun b hb lv hlv => Nat.lt_of_lt_of_le (hΓwf b hb lv hlv) hle)
 
-**Consequence for the design.** The `var`/`builtin` arms cannot stay fully unconditional after all: the
-promise must retain the plan's args-**avoidance** condition (`arg levels ∉ polySchemeLevels Γ`, i.e.
-`PolyAboveFV` at the arg levels) so the readiness lemma can avoid capturing a captured scheme's gen
-level. That condition is **carrier-free** (`Γ` is a derivation index, so `PolyAboveFV l Γ e` is
-computable from the index) — but it does mean the promise stays **conditional**, and the underlying
-readiness must fall back to the **floor keystone** (`genAtV_instantiate_lam_ready_floor`, whose
-`hargs` already carries `PolyAboveFV l Γ`) rather than the fully-universal lemma, for the poly-capture
-fragment. The `l < lvl'` floor widening is still delivered by the universal raise; only the
-`PolyAboveFV` avoidance must be recorded. See
-`plan/progress/2026-07-10-G2-phase3-polycapture-risk-CONFIRMED.md`. -/
+/-- **Poly-aware readiness lemma.** `genAtV_instantiate_lam_ready_universal` with its `∀ l` mono-only
+`hΓpa` split into `PolyAboveFV ℓ Γ` (at the gen level) + a per-arg-level `PolyAboveFV`. Same raise +
+floor keystone mechanism; works for POLY-capturing closures. -/
+theorem genAtV_ready_polyaware {ℓ lvl' : Nat} {Γ : Ctx} {x : String}
+    {lbody : Tree.Node m} {la : m} {argTy εb retTy ε : Ty}
+    (hℓ : ℓ ≠ 0) (hlt : ℓ ≤ lvl') (h1 : 1 ≤ lvl')
+    (hfv : ∀ l ∈ argTy.levels, l < lvl')
+    (hretTy : ∀ l ∈ retTy.levels, l < lvl')
+    (hεb : ∀ l ∈ εb.levels, l < lvl')
+    {hbody : HasType lvl' ((x, .mono argTy) :: Γ) lbody retTy εb}
+    (hΓpaℓ : PolyAboveFV ℓ Γ ⟨.Lambda x lbody, la⟩)
+    (hΓwf : CtxWfV ℓ Γ) (hΓlt : CtxWfV lvl' Γ) (hΓsl : ∀ b ∈ Γ, b.2.level < lvl')
+    (o : Nat) (ho : 1 ≤ o) (args : List Ty)
+    (hargbound : ∀ t ∈ args, ∀ l ∈ t.levels, l < lvl' + o)
+    (hargpa : ∀ t ∈ args, ∀ l ∈ t.levels, PolyAboveFV l Γ ⟨.Lambda x lbody, la⟩) :
+    HasType ℓ Γ ⟨.Lambda x lbody, la⟩
+      ((Scheme.genAtV ℓ (.fun argTy εb retTy)).instantiateV args) ε := by
+  have hraised := hasType_fullRaise (t := lvl') (o := o) h1 hbody (le_refl lvl')
+  rw [raiseCtx_U_cons, raiseScheme_U_mono h1, Ty.raiseTy_eq_self_of_levels_lt hfv,
+      raiseCtx_U_eq_self
+        (fun b hb => raiseScheme_U_eq_self (hΓsl b hb) (fun l hl => hΓlt b hb l hl)),
+      Ty.raiseTy_eq_self_of_levels_lt hretTy, Ty.raiseTy_eq_self_of_levels_lt hεb] at hraised
+  exact genAtV_instantiate_lam_ready_floor hℓ (by omega : ℓ ≤ lvl' + o)
+    (fun l hl => by have := hfv l hl; omega)
+    (noGenAt_of_lt hraised (by omega)) hΓpaℓ hΓwf args
+    (fun t ht l hl => Or.inr (Or.inr ⟨hargbound t ht l hl, hargpa t ht l hl⟩))
+
+/-- **Hybrid closure-VALUE readiness (POLY-capture fragment).** The promise a discipline-widened
+`EnvWf.cons` stores: for every `args` satisfying the Γ-free `l = 0 ∨ ℓ ≤ l` condition (recorded on
+`ClosDisc.var`/`.builtin`), the closure value inhabits `(genAtV ℓ defnTy).instantiateV args`. Covers
+poly-capturing closures via `CtxPolyBd`; no mono-only requirement. -/
+theorem closDisc_closure_ready_value_hybrid {ℓ lvl' : Nat} {Γ : Ctx} {x : String}
+    {lbody : Tree.Node m} {la : m} {argTy εb retTy : Ty}
+    (hℓ : ℓ ≠ 0) (hlt : ℓ < lvl')
+    (hfv : ∀ l ∈ argTy.levels, l < lvl')
+    (hret : ∀ l ∈ retTy.levels, l < lvl')
+    (hεb : ∀ l ∈ εb.levels, l < lvl')
+    (hbody : HasType lvl' ((x, .mono argTy) :: Γ) lbody retTy εb)
+    (hnz : CtxPolyBd Γ) (hΓwf : CtxWfV ℓ Γ) (hΓsl : ∀ b ∈ Γ, b.2.level < lvl')
+    {env : Env m} (henv : EnvWf env Γ) :
+    ∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ ℓ ≤ l) →
+      HasTypeV (Value.Closure x lbody env)
+        ((Scheme.genAtV ℓ (.fun argTy εb retTy)).instantiateV args) := by
+  intro args hargcond
+  have hΓlt : CtxWfV lvl' Γ := fun b hb l hl => Nat.lt_trans (hΓwf b hb l hl) hlt
+  have hΓpaℓ : PolyAboveFV ℓ Γ ⟨.Lambda x lbody, la⟩ :=
+    polyAboveFV_of_argCond hnz hΓwf (Or.inr (le_refl ℓ))
+  have hargpa : ∀ t ∈ args, ∀ l ∈ t.levels, PolyAboveFV l Γ ⟨.Lambda x lbody, la⟩ :=
+    fun t ht l hl => polyAboveFV_of_argCond hnz hΓwf (hargcond t ht l hl)
+  have hlam := genAtV_ready_polyaware (ε := .empty) hℓ (Nat.le_of_lt hlt) (by omega) hfv hret hεb
+    (hbody := hbody) hΓpaℓ hΓwf hΓlt hΓsl (argsRaiseOffset args) (argsRaiseOffset_pos args) args
+    (fun _ ht _ hl => lt_of_mem_args ht hl) hargpa
+  obtain ⟨lvl'', aTy, eb, rt, hle', hfv', hbody', heq⟩ := inv_lambda hlam
+  exact HasTypeV.closure (Nat.le_trans (Nat.one_le_iff_ne_zero.mpr hℓ) hle') henv hfv' hbody' heq
+
+/-! ## Why the mono-only route was insufficient (the motivating witness, now RESOLVED by 2b)
+
+`closDisc_closure_ready_value` requires `hΓpa : ∀ l, PolyAboveFV l Γ ⟨lam⟩`, which forces the captured
+context **mono-only**. `hΓpa_fails` machine-confirms this for `Γcap = [a : ∀α.α→α]` and body `\w. a`
+(the ordinary `let a = id in let b = \w. a w in b 5` poly-capture shape). Phase 2b
+(`closDisc_closure_ready_value_hybrid` above) resolves it: the Γ-free `l = 0 ∨ ℓ ≤ l` arg condition
++ `CtxPolyBd`/`CtxWfV` discharge readiness for poly-capturing closures via the floor keystone. This
+witness is retained as the regression pinning *why* the plain universal route needed strengthening.
+See `plan/progress/2026-07-10-G2-phase2b-polycapture-RESOLVED.md`. -/
 
 abbrev Γcap : Ctx := [("a", Scheme.genAtV 1 (.fun (.var 1 0) .empty (.var 1 0)))]
 

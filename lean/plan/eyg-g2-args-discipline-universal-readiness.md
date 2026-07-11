@@ -124,14 +124,28 @@ status: ROUTE B, prove-or-refute RESOLVED (2026-07-10). Phase-1 gate GREEN (`has
   it returns, so `ArgsDisc` is only *partly* superseded. The avoidance is nonetheless **carrier-free**
   (`Γ` is a derivation index, so `PolyAboveFV l Γ e` is computable from it — no floor list to thread).
   See `plan/progress/2026-07-10-G2-phase3-polycapture-risk-CONFIRMED.md`.
-  NEXT: **Phase 2b** (before touching runtime) — augment `ClosDisc.var`/`.builtin` with the arg-level
-  `PolyAboveFV l Γ` condition, and prove a **hybrid** `closDisc_closure_ready_value` that covers the
-  poly-capture fragment via the floor keystone (the promise carries `∀ arg level l, l = 0 ∨ l = s.level
-  ∨ (PolyAboveFV l Γ)`). Then **Phase 3**: widen `EnvWf.cons` to this conditional promise, store
-  `ClosDisc` on `HasTypeV.closure`, swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`, swap
-  `soundness`'s entry premise `HasTypeRT h → ClosDisc h`, discharge `hΓsl`/`PolyAboveFV` from runtime
-  well-formedness. Compiler-first; keep `Soundness.lean` red only across the authorized Session-A/B
-  pairing.
+  (14) **Phase 2b GREEN — poly-capture RESOLVED** (2026-07-10, `G2DiscSpike.lean`, no sorry,
+  `[propext, Classical.choice, Quot.sound]`). The `var`/`builtin` arms now carry the **Γ-free** arg
+  condition `∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ s.level ≤ l` (recordable at the var node — purely
+  `s` + `args`, the exact Rémy-inference shape). New lemmas:
+  - `polyAboveFV_of_argCond` — the def-site↔use-site bridge: `l = 0 ∨ ℓ ≤ l` + `CtxPolyBd Γ` +
+    `CtxWfV ℓ Γ` ⟹ `PolyAboveFV l Γ e` (reuses the *existing* `polyAboveFV_of_ctxPolyBd`/`CtxPolyBd`
+    invariant — no new runtime invariant needed).
+  - `genAtV_ready_polyaware` — the universal lemma with its `∀ l` mono-only `hΓpa` split into
+    `PolyAboveFV ℓ Γ` + per-arg-level `PolyAboveFV` (same raise + floor mechanism; poly-capture OK).
+  - `closDisc_closure_ready_value_hybrid` — the promise a widened `EnvWf.cons` stores: `∀ args,
+    (l = 0 ∨ ℓ ≤ l) → HasTypeV (Closure …) ((genAtV ℓ defnTy).instantiateV args)`, covering
+    poly-capturing closures. Carrier-free throughout. The def-site/use-site alignment (plan risk #1/#3)
+    is discharged by `polyAboveFV_of_argCond` (freshness = `CtxPolyBd` + `CtxWfV`).
+  See `plan/progress/2026-07-10-G2-phase2b-polycapture-RESOLVED.md`.
+  NEXT: **Phase 3 (runtime re-thread)** — widen `EnvWf.cons`'s promise to the conditional form
+  `∀ args, (∀ t ∈ args, ∀ l ∈ t.levels, l = 0 ∨ s.level ≤ l) → HasTypeV v (s.instantiateV args)`; store
+  `ClosDisc` on `HasTypeV.closure`; swap `MStateWf`/`StackWf*`/frames RT → `ClosDisc`; swap
+  `soundness`'s entry premise `HasTypeRT h → ClosDisc h`. Discharge the readiness at the `let_poly`
+  preservation site via `closDisc_closure_ready_value_hybrid`, supplying `CtxPolyBd`/`CtxWfV`/`hΓsl`
+  from the runtime well-formedness already threaded (`CtxPolyBd` exists in `Typing.lean`). Pair
+  Session-A (non-Soundness cone green) / Session-B (Soundness) per the authorized pattern; keep
+  `Soundness.lean` red only across that pairing.
 ---
 
 # G2 — close Caveat 5 via a static args-level discipline + universal readiness
